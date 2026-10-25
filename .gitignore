@@ -1,0 +1,13 @@
+/node_modules/
+/android/
+/dist/
+/build/
+/out/
+/site/
+/apk-dist/
+*.apk
+*.aab
+*.idsig
+.DS_Store
+.playwright-cli/
+test-results/

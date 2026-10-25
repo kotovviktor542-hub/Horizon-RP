@@ -1,0 +1,12 @@
+{
+  "appId": "com.kotovviktor.horizonrp",
+  "appName": "Horizon RP",
+  "webDir": "www",
+  "android": {
+    "allowMixedContent": true,
+    "backgroundColor": "#090b12"
+  },
+  "server": {
+    "androidScheme": "https"
+  }
+}

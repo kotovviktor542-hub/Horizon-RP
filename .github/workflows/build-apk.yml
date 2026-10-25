@@ -1,0 +1,127 @@
+name: Build Android APK
+
+on:
+  push:
+    branches:
+      - main
+      - 'arena/**'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-apk-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Setup JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup Android SDK 34
+        run: |
+          echo "ANDROID_HOME=$ANDROID_SDK_ROOT" >> $GITHUB_ENV
+          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT" >> $GITHUB_ENV
+          SDKMANAGER=$(find "$ANDROID_SDK_ROOT/cmdline-tools" -name sdkmanager -type f | head -1)
+          yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
+          "$SDKMANAGER" --install "platform-tools" "platforms;android-34" "build-tools;34.0.0"
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Run engine & content tests
+        run: npm test
+
+      - name: Generate Android icons
+        run: npm run icons
+
+      - name: Generate & patch Capacitor Android project
+        run: |
+          npx cap add android
+          npx cap sync android
+          npm run patch-android
+
+      - name: Build Release APK with Gradle
+        run: |
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleRelease --no-daemon --stacktrace
+
+      - name: Align & Sign APK
+        run: |
+          BT=$(ls -d "$ANDROID_SDK_ROOT"/build-tools/* | sort -V | tail -1)
+          RAW=$(find android/app/build/outputs/apk/release -name "*.apk" | head -1)
+          "$BT/zipalign" -p -f 4 "$RAW" aligned.apk
+
+          if ! "$BT/apksigner" sign \
+            --ks android-keys/release.p12 \
+            --ks-type PKCS12 \
+            --ks-pass pass:horizon2026 \
+            --key-pass pass:horizon2026 \
+            --ks-key-alias horizonrp \
+            --out signed.apk aligned.apk; then
+            echo "Fallback: generating JKS keystore with keytool..."
+            keytool -genkeypair -v -keystore fallback.keystore -alias horizonrp \
+              -keyalg RSA -keysize 2048 -validity 10000 \
+              -storepass horizon2026 -keypass horizon2026 \
+              -dname "CN=Horizon RP, OU=Mobile, O=HorizonRP, L=Amsterdam, C=NL"
+            "$BT/apksigner" sign \
+              --ks fallback.keystore \
+              --ks-pass pass:horizon2026 \
+              --key-pass pass:horizon2026 \
+              --ks-key-alias horizonrp \
+              --out signed.apk aligned.apk
+          fi
+
+          "$BT/apksigner" verify --verbose signed.apk
+
+      - name: Prepare APK file
+        id: prep
+        run: |
+          mkdir -p apk-dist
+          APK_NAME="HorizonRP-build${{ github.run_number }}.apk"
+          cp signed.apk "apk-dist/$APK_NAME"
+          ls -lh "apk-dist/$APK_NAME"
+          echo "apk_path=apk-dist/$APK_NAME" >> $GITHUB_OUTPUT
+          echo "apk_name=$APK_NAME" >> $GITHUB_OUTPUT
+
+      - name: Upload APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: HorizonRP-apk-build${{ github.run_number }}
+          path: ${{ steps.prep.outputs.apk_path }}
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v1.0.0-build${{ github.run_number }}
+          target_commitish: ${{ github.sha }}
+          name: Horizon RP · Сборка ${{ github.run_number }}
+          body: |
+            ## ⚔️ Horizon: Пепел Рубежа — Android APK (Сборка ${{ github.run_number }})
+
+            Полноценная 2D экшен-выживание и RPG для телефонов Android:
+            - 🌍 **Открытый мир 4800×4800** из 5 биомов (Изумрудная Пустошь, Багровые Руины, Ядовитые Топи, Морозный Пик, Разлом Горизонта) + цикл дня и ночи
+            - ⚔️ **6 уникальных видов оружия** (Меч, Парные Кинжалы, Лук Бури, Молот Титана, Посох Звёздного Пламени, Коса Горизонта) с заточкой до `+10`
+            - ⚡ **3 боевые способности** (Вихрь Пламени, Громовой Прыжок, Эфирный Бастион) + прыжки по оси Z через ловушки и ударные волны
+            - 💀 **14 видов монстров и 4 многофазных босса** (Морграт, Ксилла, Валькор, Азариэль)
+            - 🗝️ **4 секретные локации с загадками**, 15 рецептов ремесла, квесты, контракты охотника, 16 достижений, карта с туманом войны и быстрым перемещением
+            - 📱 Работает **100% офлайн**, оптимизировано под слабые Android-устройства (настройки графики и звука, автосохранение).
+          files: ${{ steps.prep.outputs.apk_path }}
+          draft: false
+          prerelease: false
