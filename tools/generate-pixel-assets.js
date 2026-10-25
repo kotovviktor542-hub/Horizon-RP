@@ -1050,6 +1050,324 @@ function generateTiles() {
   makeTile('#1d5f8a', '#164b6e', '#38bdf8', 'water.png');
 }
 
+// 11. РАСШИРЕНИЕ VEXMORA: 12 новых типов врагов, 10 уникальных боссов, 16 новых видов оружия, пленники, специалисты базы и клетки
+function generateVexmoraExpansion() {
+  // Вспомогательный генератор 6-кадрового гуманоидного/спец-врага (32x32 × 6)
+  const makeHumanoidEnemy = (file, cfg) => {
+    const fw = cfg.size || 32, fh = cfg.size || 32;
+    const pc = new PixelCanvas(fw * 6, fh);
+    const mid = Math.floor(fw / 2);
+    for (let f = 0; f < 6; f++) {
+      const ox = f * fw, step = f % 4, isAtk = f >= 4;
+      const bob = step % 2 === 1 ? -1 : 0;
+      const cx = ox + mid, by = fh - 4 + bob;
+      pc.ellipse(ox + mid, fh - 3, cfg.size === 40 ? 9 : 6, 2, '#00000055');
+      const lOff = step === 1 ? -2 : 0, rOff = step === 3 ? -2 : 0;
+      pc.rect(cx - 5, by - 7 + lOff, 4, 6, cfg.pants);
+      pc.rect(cx + 1, by - 7 + rOff, 4, 6, cfg.pants);
+      pc.rect(cx - 6, by - 17, 12, 10, cfg.torso);
+      if (cfg.vest) pc.rect(cx - 5, by - 16, 10, 7, cfg.vest);
+      if (cfg.tank) pc.rect(cx - 8, by - 17, 3, 9, cfg.tank);
+      // Руки / щит / оружие
+      const armX = isAtk ? 4 : 1;
+      pc.rect(cx - 8, by - 16, 3, 7, cfg.torso);
+      pc.rect(cx + 5, by - 16, 3 + armX, 4, cfg.gun || cfg.torso);
+      if (cfg.shield) {
+        pc.rect(cx + 5, by - 20, 5, 16, '#334155');
+        pc.rect(cx + 6, by - 18, 3, 4, '#38bdf8');
+      }
+      // Голова и шлем/визор
+      pc.circle(cx, by - 21, 5, cfg.skin || '#eac096');
+      if (cfg.helmet) pc.rect(cx - 6, by - 27, 12, 5, cfg.helmet);
+      if (cfg.visor) pc.rect(cx - 4, by - 22, 8, 2, cfg.visor);
+      else {
+        pc.pset(cx - 2, by - 22, cfg.eye || '#ef4444');
+        pc.pset(cx + 2, by - 22, cfg.eye || '#ef4444');
+      }
+      if (cfg.badge) pc.pset(cx, by - 13, cfg.badge);
+      pc.outlineRegion(ox, 0, fw, fh, PAL.outline);
+    }
+    pc.save(`characters/${file}`);
+  };
+
+  makeHumanoidEnemy('runner_sheet.png',        { torso: '#7f1d1d', pants: '#312e81', skin: '#84a96b', eye: '#fef08a' });
+  makeHumanoidEnemy('gunner_sheet.png',        { torso: '#475569', vest: '#991b1b', pants: '#1e293b', gun: '#111827', helmet: '#1f2937' });
+  makeHumanoidEnemy('sniper_enemy_sheet.png',  { torso: '#365314', vest: '#4d7c0f', pants: '#1a2e05', helmet: '#3f6212', visor: '#4ade80', gun: '#1f2937' });
+  makeHumanoidEnemy('heavy_armor_sheet.png',   { torso: '#334155', vest: '#64748b', pants: '#1e293b', helmet: '#475569', visor: '#f97316', shield: true });
+  makeHumanoidEnemy('grenadier_sheet.png',     { torso: '#7c2d12', vest: '#ea580c', pants: '#292524', helmet: '#431407', badge: '#fde047', gun: '#f97316' });
+  makeHumanoidEnemy('pyro_sheet.png',          { torso: '#eab308', vest: '#ca8a04', pants: '#422006', helmet: '#dc2626', visor: '#38bdf8', tank: '#ef4444', gun: '#ef4444' });
+  makeHumanoidEnemy('stealth_hunter_sheet.png',{ torso: '#1e1b4b', vest: '#312e81', pants: '#0f172a', helmet: '#0f172a', visor: '#22d3ee', gun: '#38bdf8' });
+  makeHumanoidEnemy('medic_enemy_sheet.png',   { torso: '#e2e8f0', vest: '#dc2626', pants: '#334155', helmet: '#f8fafc', visor: '#ef4444', badge: '#ffffff' });
+  makeHumanoidEnemy('miniboss_warden_sheet.png',   { size: 40, torso: '#1e293b', vest: '#b45309', pants: '#0f172a', helmet: '#fbbf24', visor: '#ef4444', gun: '#38bdf8' });
+  makeHumanoidEnemy('miniboss_punisher_sheet.png', { size: 40, torso: '#3b0764', vest: '#7e22ce', pants: '#1e1b4b', helmet: '#581c87', visor: '#f43f5e', gun: '#94a3b8' });
+
+  // Кислотный Мутант (spitter_sheet.png)
+  const sp = new PixelCanvas(36 * 6, 32);
+  for (let f = 0; f < 6; f++) {
+    const ox = f * 36, step = f % 4, isAtk = f >= 4;
+    const by = 27 - (step % 2);
+    sp.ellipse(ox + 18, 29, 9, 2.5, '#00000055');
+    sp.ellipse(ox + 16, by - 9, 9, 6, '#3f6212');
+    sp.circle(ox + 13, by - 13, 4.5, '#84cc16'); // кислотный мешок
+    sp.circle(ox + 19, by - 14, 3.5, '#a3e635');
+    sp.rect(ox + 22, by - 12, isAtk ? 8 : 5, 5, '#4d7c0f');
+    sp.pset(ox + 25, by - 11, '#fef08a');
+    sp.rect(ox + 10, by - 4, 3, 4, '#365314');
+    sp.rect(ox + 20, by - 4, 3, 4, '#365314');
+    sp.outlineRegion(ox, 0, 36, 32, PAL.outline);
+  }
+  sp.save('characters/spitter_sheet.png');
+
+  // Боевой Дрон-Скаут (drone_sheet.png)
+  const dr = new PixelCanvas(32 * 6, 32);
+  for (let f = 0; f < 6; f++) {
+    const ox = f * 32, hover = (f % 2 === 0) ? 0 : -2;
+    const cx = ox + 16, cy = 15 + hover;
+    dr.ellipse(ox + 16, 28, 6, 2, '#00000045');
+    dr.line(cx - 10, cy - 4, cx + 10, cy - 4, '#64748b', 2);
+    dr.rect(cx - 12 + (f % 2) * 2, cy - 6, 6, 2, '#38bdf8');
+    dr.rect(cx + 6 - (f % 2) * 2, cy - 6, 6, 2, '#38bdf8');
+    dr.ellipse(cx, cy, 6, 4.5, '#334155');
+    dr.circle(cx, cy, 2.5, f >= 4 ? '#facc15' : '#ef4444');
+    dr.outlineRegion(ox, 0, 32, 32, PAL.outline);
+  }
+  dr.save('characters/drone_sheet.png');
+
+  // 10 УНИКАЛЬНЫХ БОССОВ VEXMORA (64x64 × 6 кадров каждый!)
+  const bossSpecs = [
+    { file: 'boss_destroyer.png',       body: '#b45309', plate: '#f59e0b', core: '#ef4444', eye: '#fef08a', style: 'mech_saw' },
+    { file: 'boss_mutant_king.png',     body: '#365314', plate: '#65a30d', core: '#a3e635', eye: '#ef4444', style: 'crown_mutant' },
+    { file: 'boss_commander.png',       body: '#7f1d1d', plate: '#dc2626', core: '#fbbf24', eye: '#fef08a', style: 'shield_cmd' },
+    { file: 'boss_sniper.png',          body: '#1e293b', plate: '#3f6212', core: '#4ade80', eye: '#22c55e', style: 'stalker' },
+    { file: 'boss_giant_beast.png',     body: '#5c3a21', plate: '#9a3412', core: '#fb923c', eye: '#fde047', style: 'quad_beast' },
+    { file: 'boss_mad_scientist.png',   body: '#cbd5e1', plate: '#7e22ce', core: '#22c55e', eye: '#38bdf8', style: 'chemist' },
+    { file: 'boss_shadow_assassin.png', body: '#0f172a', plate: '#4c1d95', core: '#c084fc', eye: '#e879f9', style: 'assassin' },
+    { file: 'boss_war_robot.png',       body: '#1d4ed8', plate: '#60a5fa', core: '#38bdf8', eye: '#facc15', style: 'war_mech' },
+    { file: 'boss_general.png',         body: '#18181b', plate: '#ca8a04', core: '#ef4444', eye: '#ff3b3b', style: 'general' },
+    { file: 'boss_vexmora.png',         body: '#1e1b4b', plate: '#be123c', core: '#22d3ee', eye: '#ffffff', style: 'archon' }
+  ];
+
+  for (const bs of bossSpecs) {
+    const bw = 64, bh = 64;
+    const bc = new PixelCanvas(bw * 6, bh);
+    for (let f = 0; f < 6; f++) {
+      const ox = f * bw, step = f % 4, isAtk = f >= 4;
+      const bob = step % 2 === 1 ? -2 : 0;
+      const cx = ox + 32, by = 58 + bob;
+      bc.ellipse(ox + 32, 59, 19, 5, '#00000072');
+
+      if (bs.style === 'quad_beast') {
+        // Четвероногий Гигантский Зверь с рогами и огненной гривой
+        const st = step === 1 ? 3 : step === 3 ? -3 : 0;
+        bc.rect(cx - 18 + st, by - 14, 7, 14, bs.body);
+        bc.rect(cx - 7 - st, by - 14, 7, 14, bs.body);
+        bc.rect(cx + 5 + st, by - 14, 7, 14, bs.body);
+        bc.rect(cx + 14 - st, by - 14, 7, 14, bs.body);
+        bc.ellipse(cx, by - 24, 21, 12, bs.body);
+        bc.ellipse(cx + 12, by - 30, 12, 10, bs.plate);
+        bc.line(cx + 16, by - 38, cx + 25, by - 49, '#fef3c7', 3);
+        bc.line(cx + 8, by - 39, cx + 14, by - 50, '#fef3c7', 3);
+        bc.circle(cx + 17, by - 31, 2.5, bs.eye);
+        bc.rect(cx + 15, by - 22, 9, 3, '#ffffff');
+      } else {
+        // Ноги / гусеницы
+        const lOff = step === 1 ? -3 : 0, rOff = step === 3 ? -3 : 0;
+        if (bs.style === 'mech_saw') {
+          bc.brickRect(cx - 18, by - 14, 14, 13, '#374151', '#111827', '#6b7280');
+          bc.brickRect(cx + 4, by - 14, 14, 13, '#374151', '#111827', '#6b7280');
+        } else {
+          bc.brickRect(cx - 13, by - 16 + lOff, 10, 15, bs.body, '#111827', bs.plate);
+          bc.brickRect(cx + 3, by - 16 + rOff, 10, 15, bs.body, '#111827', bs.plate);
+        }
+
+        // Крылья/ореол финального босса VEXMORA
+        if (bs.style === 'archon') {
+          bc.line(cx - 8, by - 36, cx - 27, by - 52 + (f % 2) * 3, bs.core, 4);
+          bc.line(cx + 8, by - 36, cx + 27, by - 52 + (f % 2) * 3, bs.core, 4);
+          bc.line(cx - 8, by - 28, cx - 25, by - 34, bs.plate, 3);
+          bc.line(cx + 8, by - 28, cx + 25, by - 34, bs.plate, 3);
+        }
+
+        // Мощный бронированный корпус
+        bc.ellipse(cx, by - 29, 16, 14, bs.body);
+        bc.brickRect(cx - 12, by - 39, 24, 18, bs.plate, bs.body, '#ffffff44');
+        bc.circle(cx, by - 30, 5, bs.core);
+        bc.circle(cx, by - 30, 2, '#ffffff');
+
+        // Наплечники и спецдетали каждого босса
+        bc.circle(cx - 17, by - 37, 7, bs.body);
+        bc.circle(cx + 17, by - 37, 7, bs.body);
+
+        if (bs.style === 'crown_mutant') {
+          bc.line(cx - 8, by - 53, cx - 10, by - 60, '#facc15', 2);
+          bc.line(cx, by - 54, cx, by - 62, '#facc15', 2);
+          bc.line(cx + 8, by - 53, cx + 10, by - 60, '#facc15', 2);
+        } else if (bs.style === 'war_mech') {
+          bc.rect(cx - 22, by - 50, 9, 10, '#334155');
+          bc.rect(cx + 13, by - 50, 9, 10, '#334155');
+          bc.circle(cx - 18, by - 46, 2, '#ef4444');
+          bc.circle(cx + 17, by - 46, 2, '#ef4444');
+        } else if (bs.style === 'chemist') {
+          bc.rect(cx - 19, by - 49, 7, 12, '#22c55e');
+          bc.rect(cx + 12, by - 49, 7, 12, '#a855f7');
+        } else if (bs.style === 'general') {
+          bc.rect(cx - 11, by - 56, 22, 5, '#18181b');
+          bc.rect(cx - 8, by - 52, 16, 3, '#facc15');
+        }
+
+        // Руки и уникальное вооружение
+        const slamY = isAtk ? -8 : 0;
+        bc.rect(cx - 25, by - 35 + slamY, 8, 17, bs.body);
+        bc.rect(cx + 17, by - 35 + slamY, 8, 17, bs.body);
+
+        if (bs.style === 'mech_saw') {
+          bc.circle(cx + 22, by - 18 + slamY, 7, '#cbd5e1');
+          bc.circle(cx + 22, by - 18 + slamY, 3, '#ef4444');
+        } else if (bs.style === 'shield_cmd') {
+          bc.brickRect(cx - 28, by - 38, 11, 24, '#334155', '#0f172a', '#fbbf24');
+        } else if (bs.style === 'stalker') {
+          bc.rect(cx + 10, by - 28, 20, 4, '#111827');
+          bc.pset(cx + 29, by - 27, '#ef4444');
+        } else if (bs.style === 'assassin') {
+          bc.line(cx - 24, by - 22, cx - 30, by - 42, '#c084fc', 3);
+          bc.line(cx + 24, by - 22, cx + 30, by - 42, '#c084fc', 3);
+        }
+
+        // Голова и глаза
+        bc.circle(cx, by - 45, 9, bs.body);
+        bc.rect(cx - 6, by - 47, 4, 2, bs.eye);
+        bc.rect(cx + 2, by - 47, 4, 2, bs.eye);
+      }
+      bc.outlineRegion(ox, 0, bw, bh, PAL.outline);
+    }
+    bc.save(`bosses/${bs.file}`);
+  }
+
+  // 16 НОВЫХ ВИДОВ ОРУЖИЯ (итого 24 уникальных пиксель-арт оружия!)
+  const extraWeapons = [
+    ['revolver.png',         '#cbd5e1', '#78350f', 'pistol'],
+    ['autopistol.png',       '#38bdf8', '#1e293b', 'pistol'],
+    ['smg_compact.png',      '#64748b', '#0f172a', 'smg'],
+    ['smg_storm.png',        '#f59e0b', '#1e293b', 'smg'],
+    ['smg_plasma.png',       '#c084fc', '#312e81', 'smg'],
+    ['auto_shotgun.png',     '#dc2626', '#1f2937', 'shotgun'],
+    ['burst_rifle.png',      '#4ade80', '#1e293b', 'rifle'],
+    ['laser_rifle.png',      '#22d3ee', '#0f172a', 'rifle'],
+    ['railgun.png',          '#38bdf8', '#fbbf24', 'sniper'],
+    ['lmg.png',              '#475569', '#854d0e', 'heavy'],
+    ['minigun.png',          '#94a3b8', '#dc2626', 'minigun'],
+    ['katana.png',           '#e879f9', '#1e1b4b', 'blade'],
+    ['crossbow.png',         '#a16207', '#cbd5e1', 'crossbow'],
+    ['grenade_launcher.png', '#f97316', '#374151', 'launcher'],
+    ['rocket_launcher.png',  '#65a30d', '#dc2626', 'launcher'],
+    ['tesla_cannon.png',     '#38bdf8', '#facc15', 'launcher']
+  ];
+
+  for (const [file, colA, colB, type] of extraWeapons) {
+    const wc = new PixelCanvas(32, 16);
+    if (type === 'pistol') {
+      wc.rect(6, 4, 15, 5, colA);
+      wc.rect(7, 9, 5, 5, colB);
+      wc.rect(12, 6, 5, 3, colB);
+    } else if (type === 'smg') {
+      wc.rect(4, 5, 19, 5, colA);
+      wc.rect(8, 10, 4, 5, colB);
+      wc.rect(15, 10, 3, 5, colA);
+      wc.rect(23, 6, 4, 2, '#111827');
+    } else if (type === 'shotgun' || type === 'rifle') {
+      wc.rect(2, 7, 7, 5, colB);
+      wc.rect(9, 5, 14, 5, colA);
+      wc.rect(22, 6, 8, 2, colA);
+      wc.rect(14, 10, 4, 5, colB);
+      wc.rect(12, 3, 6, 2, colB);
+    } else if (type === 'sniper') {
+      wc.rect(1, 7, 7, 4, colB);
+      wc.rect(8, 6, 13, 4, colA);
+      wc.rect(21, 6, 10, 2, colA);
+      wc.rect(10, 3, 9, 3, colB);
+    } else if (type === 'heavy' || type === 'minigun') {
+      wc.rect(2, 5, 9, 6, colB);
+      wc.rect(11, 4, 18, 7, colA);
+      wc.rect(13, 11, 6, 4, colB);
+      if (type === 'minigun') {
+        wc.line(18, 5, 29, 5, '#111827', 1);
+        wc.line(18, 8, 29, 8, '#111827', 1);
+      }
+    } else if (type === 'blade') {
+      wc.line(4, 13, 9, 9, colB, 3);
+      wc.line(9, 9, 28, 2, colA, 2);
+      wc.line(10, 8, 27, 2, '#ffffff', 1);
+    } else if (type === 'crossbow') {
+      wc.rect(4, 7, 20, 3, colA);
+      wc.line(18, 2, 18, 14, colB, 2);
+      wc.line(20, 8, 29, 8, '#fef08a', 2);
+    } else {
+      wc.rect(3, 4, 24, 7, colA);
+      wc.rect(9, 11, 5, 4, colB);
+      wc.rect(24, 3, 5, 9, colB);
+    }
+    wc.outlineRegion(0, 0, 32, 16, PAL.outline);
+    wc.save(`weapons/${file}`);
+  }
+
+  // Новые NPC: Инженер, Механик, Спасённый Боец и Пленник (64x32, 2 кадра)
+  const extraNpcs = [
+    { file: 'npc_engineer.png', coat: '#1d4ed8', hat: '#facc15', shirt: '#38bdf8', pants: '#1e293b' },
+    { file: 'npc_mechanic.png', coat: '#b45309', hat: '#dc2626', shirt: '#f97316', pants: '#292524' },
+    { file: 'npc_fighter.png',  coat: '#3f6212', hat: '#15803d', shirt: '#84cc16', pants: '#1a2e05' },
+    { file: 'npc_prisoner.png', coat: '#ea580c', hat: null,      shirt: '#fdba74', pants: '#7c2d12' }
+  ];
+  for (const spc of extraNpcs) {
+    const nc = new PixelCanvas(64, 32);
+    for (let f = 0; f < 2; f++) {
+      const ox = f * 32, bob = f === 1 ? -1 : 0;
+      const cx = ox + 16, by = 28 + bob;
+      nc.ellipse(ox + 16, 29, 6, 2, '#00000055');
+      nc.rect(cx - 4, by - 6, 3, 5, spc.pants);
+      nc.rect(cx + 1, by - 6, 3, 5, spc.pants);
+      nc.rect(cx - 5, by - 15, 10, 9, spc.coat);
+      nc.rect(cx - 2, by - 14, 4, 7, spc.shirt);
+      nc.circle(cx, by - 20, 4.5, PAL.skin);
+      nc.pset(cx - 2, by - 20, PAL.outline);
+      nc.pset(cx + 2, by - 20, PAL.outline);
+      if (spc.hat) nc.rect(cx - 5, by - 25, 10, 3, spc.hat);
+      nc.outlineRegion(ox, 0, 32, 32, PAL.outline);
+    }
+    nc.save(`characters/${spc.file}`);
+  }
+
+  // Клетка для пленников (закрытая и открытая) + Терминал сигнализации + Контейнер модификаций
+  const cage = new PixelCanvas(44, 44);
+  cage.rect(4, 36, 36, 5, '#475569');
+  cage.rect(4, 6, 36, 4, '#64748b');
+  for (let x = 6; x <= 36; x += 6) cage.rect(x, 8, 2, 29, '#94a3b8');
+  cage.rect(19, 20, 6, 6, '#fbbf24');
+  cage.outlineRegion(0, 0, 44, 44, PAL.outline);
+  cage.save('props/cage.png');
+
+  const cageOpen = new PixelCanvas(44, 44);
+  cageOpen.rect(4, 36, 36, 5, '#475569');
+  cageOpen.rect(4, 6, 36, 4, '#64748b');
+  cageOpen.rect(6, 8, 2, 29, '#94a3b8');
+  cageOpen.rect(36, 8, 2, 29, '#94a3b8');
+  cageOpen.outlineRegion(0, 0, 44, 44, PAL.outline);
+  cageOpen.save('props/cage_open.png');
+
+  const alarm = new PixelCanvas(28, 36);
+  alarm.brickRect(6, 10, 16, 22, '#334155', '#1e293b', '#64748b');
+  alarm.rect(9, 14, 10, 6, '#22d3ee');
+  alarm.circle(14, 6, 3.5, '#ef4444');
+  alarm.outlineRegion(0, 0, 28, 36, PAL.outline);
+  alarm.save('props/alarm_terminal.png');
+
+  const modBox = new PixelCanvas(32, 28);
+  modBox.brickRect(3, 6, 26, 18, '#312e81', '#1e1b4b', '#6366f1');
+  modBox.rect(3, 13, 26, 3, '#22d3ee');
+  modBox.rect(13, 11, 6, 7, '#fbbf24');
+  modBox.outlineRegion(0, 0, 32, 28, PAL.outline);
+  modBox.save('props/mod_crate.png');
+}
+
 generateHeroSheet();
 generateEnemySheets();
 generateNpcs();
@@ -1060,5 +1378,6 @@ generateProps();
 generateBuildings();
 generateEffects();
 generateTiles();
+generateVexmoraExpansion();
 
-console.log('generate-pixel-assets: обновлены текстурированные PNG-спрайты!');
+console.log('generate-pixel-assets: обновлены текстурированные PNG-спрайты VEXMORA!');

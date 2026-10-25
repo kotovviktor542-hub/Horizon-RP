@@ -1,4 +1,4 @@
-// Точка входа Horizon: Выживание (2D Pixel-Art Action-Survival RPG)
+// Точка входа VEXMORA — БОЛЬШОЕ ОБНОВЛЕНИЕ ИГРЫ (2D Pixel-Art Action-Survival RPG)
 
 import { SoundEngine } from './audio.js';
 import { GameEngine } from './engine.js';
@@ -22,6 +22,7 @@ const input = new InputController({
   onJump: () => engine.jump(),
   onDash: () => engine.dash(),
   onGrenade: () => engine.throwGrenade(),
+  onReload: () => engine.reloadWeapon(),
   onCycleWeapon: () => engine.cycleWeapon(),
   onQuickHeal: () => engine.useConsumable('medkit'),
   onSkill: (skillId) => engine.useSkill(skillId),
@@ -92,4 +93,5 @@ function loop(now) {
 renderer.render(engine);
 requestAnimationFrame(loop);
 
-window.__horizonGame = { engine, renderer, ui, input };
+window.__vexmoraGame = { engine, renderer, ui, input };
+window.__horizonGame = window.__vexmoraGame; // совместимый алиас для отладки

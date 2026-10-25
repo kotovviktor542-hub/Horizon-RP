@@ -1,4 +1,4 @@
-// Генератор PNG-иконок приложения Horizon RP без внешних библиотек (чистый Node + zlib)
+// Генератор PNG-иконок приложения VEXMORA без внешних библиотек (чистый Node + zlib)
 import fs from 'node:fs';
 import path from 'node:path';
 import zlib from 'node:zlib';
@@ -103,11 +103,15 @@ function renderEmblem(size, transparentBg = false, roundMask = false) {
         alpha = 255;
       }
 
-      // Буква H в центре
-      const inLeftBar = nx > -0.28 && nx < -0.15 && Math.abs(ny) < 0.34;
-      const inRightBar = nx > 0.15 && nx < 0.28 && Math.abs(ny) < 0.34;
-      const inBridge = Math.abs(nx) <= 0.28 && Math.abs(ny) < 0.065;
-      if (inLeftBar || inRightBar || inBridge) {
+      // Буква V (VEXMORA) в центре: две диагонали, сходящиеся внизу
+      let inV = false;
+      if (ny >= -0.34 && ny <= 0.34) {
+        const tV = (ny + 0.34) / 0.68; // 0 сверху -> 1 внизу
+        const leftX = -0.28 + tV * 0.28;
+        const rightX = 0.28 - tV * 0.28;
+        inV = Math.abs(nx - leftX) < 0.075 || Math.abs(nx - rightX) < 0.075;
+      }
+      if (inV) {
         red = 248;
         green = 250;
         blue = 252;
@@ -142,4 +146,4 @@ for (const [folder, legacySize, fgSize] of densities) {
 
 fs.mkdirSync('www', { recursive: true });
 fs.writeFileSync('www/icon.png', renderEmblem(192, false, false));
-console.log('generate-icons: PNG иконки Horizon RP успешно созданы');
+console.log('generate-icons: PNG иконки VEXMORA успешно созданы');

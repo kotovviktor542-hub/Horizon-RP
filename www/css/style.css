@@ -906,3 +906,71 @@ html, body {
   .combat-cluster { transform: scale(0.88); transform-origin: bottom right; }
   .joystick-zone { transform: scale(0.9); transform-origin: bottom left; }
 }
+
+/* ── VEXMORA 2.0: объявление об обновлении, перезарядка, новые карточки ── */
+.update-banner-btn {
+  width: 100%;
+  margin: 0 0 12px;
+  padding: 9px 12px;
+  border-radius: 9px;
+  border: 2px solid #fbbf24;
+  background: linear-gradient(180deg, rgba(245, 158, 11, 0.28), rgba(180, 83, 9, 0.30));
+  color: #fde68a;
+  font-weight: 900;
+  font-size: 12px;
+  cursor: pointer;
+}
+.update-banner-btn:active { transform: scale(0.98); }
+
+.update-box {
+  max-width: 560px;
+  max-height: 88vh;
+  overflow-y: auto;
+  text-align: left;
+}
+.update-box h3 { text-align: center; font-size: 19px; }
+.update-box .title-badge { display: block; text-align: center; }
+.update-sections { display: flex; flex-direction: column; gap: 8px; margin-bottom: 14px; }
+.update-section {
+  background: rgba(30, 41, 59, 0.8);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  padding: 8px 10px;
+}
+.update-section b { color: #fde68a; font-size: 13px; }
+.update-section p { margin: 3px 0 0 !important; font-size: 12px !important; }
+
+.ctrl-btn.small.reload {
+  right: 158px;
+  bottom: 122px;
+  width: 48px;
+  height: 48px;
+  background: rgba(14, 116, 144, 0.92);
+  border-color: #67e8f9;
+  font-size: 18px;
+}
+.ctrl-btn.small.reload small {
+  position: absolute;
+  bottom: -5px;
+  right: -5px;
+  background: #0f172a;
+  border: 1px solid #67e8f9;
+  border-radius: 8px;
+  padding: 0 5px;
+  font-size: 10px;
+  color: #bae6fd;
+}
+
+.mod-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.mod-chip {
+  font-size: 10px;
+  font-weight: 800;
+  color: #c4b5fd;
+  border: 1px solid rgba(167, 139, 250, 0.6);
+  background: rgba(76, 29, 149, 0.35);
+  padding: 2px 6px;
+  border-radius: 6px;
+}
+.lock-note { color: #f59e0b !important; }
+.ok-note { color: #4ade80 !important; }
+.boss-phase-note { color: #fda4af !important; }

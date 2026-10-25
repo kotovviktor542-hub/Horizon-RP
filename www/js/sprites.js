@@ -1,7 +1,7 @@
 // Пиксель-арт 2.5D рендерер (imageSmoothingEnabled = false, единый масштаб пикселя, Y-сортировка)
 // Отрисовывает каждую модель из независимого прозрачного PNG / спрайт-листа в assets/sprites/**
 
-import { BIOMES, CAMPFIRES, NPCS, WEAPONS, ITEMS, RESOURCES, BOSSES, SECRETS } from './data.js';
+import { BIOMES, CAMPFIRES, NPCS, WEAPONS, ITEMS, RESOURCES, BOSSES, SECRETS, WEAPON_MODS } from './data.js';
 import { getBiomeIdAt, dist2 } from './world.js';
 
 const ASSET_MANIFEST = {
@@ -23,6 +23,36 @@ const ASSET_MANIFEST = {
   npc_quest:     'assets/sprites/characters/npc_quest.png',
   npc_medic:     'assets/sprites/characters/npc_medic.png',
   npc_farmer:    'assets/sprites/characters/npc_farmer.png',
+  npc_engineer:  'assets/sprites/characters/npc_engineer.png',
+  npc_mechanic:  'assets/sprites/characters/npc_mechanic.png',
+  npc_fighter:   'assets/sprites/characters/npc_fighter.png',
+  npc_prisoner:  'assets/sprites/characters/npc_prisoner.png',
+
+  // VEXMORA 2.0: 12 новых типов врагов (6-кадровые спрайт-листы)
+  runner_sheet:         'assets/sprites/characters/runner_sheet.png',
+  gunner_sheet:         'assets/sprites/characters/gunner_sheet.png',
+  sniper_enemy_sheet:   'assets/sprites/characters/sniper_enemy_sheet.png',
+  heavy_armor_sheet:    'assets/sprites/characters/heavy_armor_sheet.png',
+  grenadier_sheet:      'assets/sprites/characters/grenadier_sheet.png',
+  pyro_sheet:           'assets/sprites/characters/pyro_sheet.png',
+  stealth_hunter_sheet: 'assets/sprites/characters/stealth_hunter_sheet.png',
+  spitter_sheet:        'assets/sprites/characters/spitter_sheet.png',
+  drone_sheet:          'assets/sprites/characters/drone_sheet.png',
+  medic_enemy_sheet:    'assets/sprites/characters/medic_enemy_sheet.png',
+  miniboss_warden_sheet:   'assets/sprites/characters/miniboss_warden_sheet.png',
+  miniboss_punisher_sheet: 'assets/sprites/characters/miniboss_punisher_sheet.png',
+
+  // VEXMORA 2.0: 10 уникальных боссов (64x64 x 6 кадров)
+  boss_mutant_king:    'assets/sprites/bosses/boss_mutant_king.png',
+  boss_commander:      'assets/sprites/bosses/boss_commander.png',
+  boss_destroyer:      'assets/sprites/bosses/boss_destroyer.png',
+  boss_sniper:         'assets/sprites/bosses/boss_sniper.png',
+  boss_giant_beast:    'assets/sprites/bosses/boss_giant_beast.png',
+  boss_mad_scientist:  'assets/sprites/bosses/boss_mad_scientist.png',
+  boss_shadow_assassin:'assets/sprites/bosses/boss_shadow_assassin.png',
+  boss_war_robot:      'assets/sprites/bosses/boss_war_robot.png',
+  boss_general:        'assets/sprites/bosses/boss_general.png',
+  boss_vexmora:        'assets/sprites/bosses/boss_vexmora.png',
 
   // Все 8 видов оружия
   wpn_pistol:      'assets/sprites/weapons/pistol.png',
@@ -33,6 +63,24 @@ const ASSET_MANIFEST = {
   wpn_sword:       'assets/sprites/weapons/sword.png',
   wpn_bow:         'assets/sprites/weapons/bow.png',
   wpn_magic_staff: 'assets/sprites/weapons/magic_staff.png',
+
+  // VEXMORA 2.0: ещё 16 видов оружия (итого арсенал 24)
+  wpn_revolver:         'assets/sprites/weapons/revolver.png',
+  wpn_autopistol:       'assets/sprites/weapons/autopistol.png',
+  wpn_smg_compact:      'assets/sprites/weapons/smg_compact.png',
+  wpn_smg_storm:        'assets/sprites/weapons/smg_storm.png',
+  wpn_smg_plasma:       'assets/sprites/weapons/smg_plasma.png',
+  wpn_auto_shotgun:     'assets/sprites/weapons/auto_shotgun.png',
+  wpn_burst_rifle:      'assets/sprites/weapons/burst_rifle.png',
+  wpn_laser_rifle:      'assets/sprites/weapons/laser_rifle.png',
+  wpn_railgun:          'assets/sprites/weapons/railgun.png',
+  wpn_lmg:              'assets/sprites/weapons/lmg.png',
+  wpn_minigun:          'assets/sprites/weapons/minigun.png',
+  wpn_katana:           'assets/sprites/weapons/katana.png',
+  wpn_crossbow:         'assets/sprites/weapons/crossbow.png',
+  wpn_grenade_launcher: 'assets/sprites/weapons/grenade_launcher.png',
+  wpn_rocket_launcher:  'assets/sprites/weapons/rocket_launcher.png',
+  wpn_tesla_cannon:     'assets/sprites/weapons/tesla_cannon.png',
 
   // Все 8 предметов
   itm_medkit:   'assets/sprites/items/medkit.png',
@@ -63,6 +111,10 @@ const ASSET_MANIFEST = {
   prp_bush:       'assets/sprites/props/bush.png',
   prp_tent:       'assets/sprites/props/tent.png',
   prp_fence:      'assets/sprites/props/fence.png',
+  prp_cage:       'assets/sprites/props/cage.png',
+  prp_cage_open:  'assets/sprites/props/cage_open.png',
+  prp_alarm_terminal: 'assets/sprites/props/alarm_terminal.png',
+  prp_mod_crate:  'assets/sprites/props/mod_crate.png',
 
   // Все 9 зданий
   bld_house:      'assets/sprites/buildings/house.png',
@@ -164,6 +216,7 @@ export class Renderer {
     // 2. Трофеи на земле (отдельные PNG предметов) и ударные волны
     this.drawDrops(ctx, engine.drops, camX, camY, w, h);
     this.drawShockwaves(ctx, engine.shockwaves, camX, camY);
+    this.drawTelegraphs(ctx, engine.telegraphs || [], camX, camY);
 
     // 3. Сбор всех видимых объектов мира и Y-сортировка (2.5D глубина)
     const drawables = [];
@@ -205,8 +258,29 @@ export class Renderer {
     }
 
     for (const npc of NPCS) {
+      if (engine.isNpcUnlocked && !engine.isNpcUnlocked(npc)) continue;
       if (npc.x < camX - pad || npc.x > camX + w + pad || npc.y < camY - pad || npc.y > camY + h + pad) continue;
       drawables.push({ kind: 'npc', y: npc.y, obj: npc });
+    }
+
+    for (const site of engine.rescueSites || []) {
+      if (site.state === 'done') continue;
+      if (site.x < camX - pad || site.x > camX + w + pad || site.y < camY - pad || site.y > camY + h + pad) continue;
+      drawables.push({ kind: 'rescue', y: site.npcY, obj: site });
+    }
+
+    for (const cache of engine.world.modCaches || []) {
+      if (cache.looted) continue;
+      if (cache.x < camX - pad || cache.x > camX + w + pad || cache.y < camY - pad || cache.y > camY + h + pad) continue;
+      drawables.push({ kind: 'modcache', y: cache.y, obj: cache });
+    }
+
+    if (engine.companionActive && engine.companion && engine.companion.hp > 0) {
+      drawables.push({ kind: 'companion', y: engine.companion.y, obj: engine.companion });
+    }
+
+    if (engine.contractNpc && engine.contractNpc.active) {
+      drawables.push({ kind: 'contractNpc', y: engine.contractNpc.y, obj: engine.contractNpc });
     }
 
     for (const e of engine.enemies) {
@@ -234,8 +308,12 @@ export class Renderer {
         case 'node':     this.drawNode(ctx, item.obj, camX, camY); break;
         case 'campfire': this.drawCampfire(ctx, item.obj, engine, camX, camY); break;
         case 'npc':      this.drawNpc(ctx, item.obj, engine, camX, camY); break;
-        case 'enemy':    this.drawEnemy(ctx, item.obj, camX, camY); break;
-        case 'boss':     this.drawBoss(ctx, item.obj, camX, camY); break;
+        case 'rescue':   this.drawRescueSite(ctx, item.obj, engine, camX, camY); break;
+        case 'modcache': this.drawModCache(ctx, item.obj, engine, camX, camY); break;
+        case 'companion': this.drawCompanion(ctx, item.obj, engine, camX, camY); break;
+        case 'contractNpc': this.drawContractNpc(ctx, item.obj, engine, camX, camY); break;
+        case 'enemy':    this.drawEnemy(ctx, item.obj, engine, camX, camY); break;
+        case 'boss':     this.drawBoss(ctx, item.obj, engine, camX, camY); break;
         case 'player':   this.drawPlayer(ctx, item.obj, engine, camX, camY); break;
       }
     }
@@ -403,6 +481,7 @@ export class Renderer {
         let col = '#fbbf24';
         if (bld.interactType === 'shop') { badge = '🏪 SHOP'; col = '#4ade80'; }
         else if (bld.interactType === 'heal') { badge = '🏥 +HP'; col = '#38bdf8'; }
+        else if (bld.interactType === 'base_hub') { badge = '🏰 БАЗА'; col = '#fbbf24'; }
         else if (bld.interactType === 'secret_vault') { badge = '🗝️ ЗАМОК'; col = '#c084fc'; }
 
         ctx.font = 'bold 11px monospace';
@@ -525,7 +604,7 @@ export class Renderer {
   }
 
   // ── Враги (Зомби, Бандит, Солдат, Монстр — 6-кадровые спрайт-листы) ──
-  drawEnemy(ctx, e, camX, camY) {
+  drawEnemy(ctx, e, engine, camX, camY) {
     const sx = Math.round(e.x - camX);
     const sy = Math.round(e.y - camY);
     const sz = Math.round(e.z || 0);
@@ -537,15 +616,30 @@ export class Renderer {
     else if (e.attackCd > 1.35) frame = 4;
     else if (moving) frame = Math.floor(e.animTime) % 4;
 
+    // Лазерный прицел снайпера: красная линия предупреждения перед выстрелом!
+    if (e.aiming && engine && engine.player) {
+      ctx.save();
+      ctx.strokeStyle = 'rgba(244, 63, 94, 0.75)';
+      ctx.lineWidth = 2;
+      ctx.setLineDash([6, 5]);
+      ctx.beginPath();
+      ctx.moveTo(sx, sy - 14);
+      ctx.lineTo(Math.round(engine.player.x - camX), Math.round(engine.player.y - camY - 10));
+      ctx.stroke();
+      ctx.restore();
+    }
+
     if (this.imgReady(sheetKey)) {
       const img = this.images[sheetKey];
       const fw = Math.floor(img.naturalWidth / 6);
       const fh = img.naturalHeight;
-      const scale = e.kind === 'infected_runner' ? PIXEL_SCALE * 1.06 : PIXEL_SCALE;
+      const scale = e.isMiniBoss ? PIXEL_SCALE * 1.12 : e.kind === 'infected_runner' ? PIXEL_SCALE * 1.06 : PIXEL_SCALE;
       const dw = Math.round(fw * scale);
       const dh = Math.round(fh * scale);
 
       ctx.save();
+      if (e.isStealthed) ctx.globalAlpha = 0.22;
+      if (e.slowTimer > 0) ctx.globalAlpha = Math.min(ctx.globalAlpha, 0.9);
       ctx.translate(sx, sy - sz);
       if (e.vx < -8) ctx.scale(-1, 1);
       ctx.drawImage(img, frame * fw, 0, fw, fh, Math.round(-dw * 0.5), Math.round(-dh * 0.88), dw, dh);
@@ -558,42 +652,218 @@ export class Renderer {
       ctx.textAlign = 'center';
       ctx.fillText('⚡ОГЛУШЁН', sx, sy - sz - 44);
     }
+    if (e.slowTimer > 0) {
+      ctx.fillStyle = '#7dd3fc';
+      ctx.font = 'bold 10px monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText('❄️ ЗАМЕДЛЕН', sx, sy - sz - 52);
+    }
+    if (e.isMiniBoss) {
+      ctx.fillStyle = '#fbbf24';
+      ctx.font = 'bold 10px monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText(`💀 ${e.name}`, sx, sy - sz - 48);
+    }
 
-    this.drawMiniBar(ctx, sx, sy - sz - 38, 30, Math.max(0, e.hp / e.maxHp), '#ef4444');
+    this.drawMiniBar(ctx, sx, sy - sz - 38, e.isMiniBoss ? 44 : 30, Math.max(0, e.hp / e.maxHp), e.isMiniBoss ? '#f59e0b' : '#ef4444');
   }
 
-  // ── Боссы (6-кадровый boss_sheet.png + фазовая аура) ─────────────────
-  drawBoss(ctx, b, camX, camY) {
+  // ── Боссы VEXMORA: индивидуальные спрайты, фазовая аура, щит и луч прицеливания ──
+  drawBoss(ctx, b, engine, camX, camY) {
     const sx = Math.round(b.x - camX);
     const sy = Math.round(b.y - camY);
     const sz = Math.round(b.z || 0);
 
-    if (b.phase === 2) {
-      ctx.strokeStyle = 'rgba(239, 68, 68, 0.7)';
-      ctx.lineWidth = 3;
+    if (b.aiming && engine && engine.player) {
+      ctx.save();
+      ctx.strokeStyle = 'rgba(244, 63, 94, 0.8)';
+      ctx.lineWidth = 2;
+      ctx.setLineDash([7, 5]);
+      ctx.beginPath();
+      ctx.moveTo(sx, sy - 26);
+      ctx.lineTo(Math.round(engine.player.x - camX), Math.round(engine.player.y - camY - 10));
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    if (b.phase >= 2) {
+      ctx.strokeStyle = b.phase === 3 ? 'rgba(239, 68, 68, 0.85)' : 'rgba(249, 115, 22, 0.6)';
+      ctx.lineWidth = b.phase === 3 ? 4 : 3;
       ctx.beginPath();
       ctx.arc(sx, sy - 20, b.radius + 12 + Math.sin(b.animTime * 2) * 3, 0, Math.PI * 2);
       ctx.stroke();
     }
+    if (b.shieldTimer > 0) {
+      ctx.save();
+      ctx.strokeStyle = 'rgba(56, 189, 248, 0.85)';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.arc(sx, sy - 26, b.radius + 20, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.fillStyle = '#38bdf8';
+      ctx.font = 'bold 10px monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText('🛡️ СИЛОВОЙ ЩИТ', sx, sy - sz - 92);
+      ctx.restore();
+    }
 
     let frame = Math.floor(b.animTime) % 4;
     if (b.hitFlash > 0) frame = 5;
-    else if (b.actionTimer < 0.6 || b.dashActive > 0) frame = 4;
+    else if (b.actionTimer < 0.6 || b.dashActive > 0 || b.aiming) frame = 4;
 
-    if (this.imgReady('boss_sheet')) {
+    const key = b.sprite;
+    if (this.imgReady(key)) {
+      const img = this.images[key];
+      const fw = Math.floor(img.naturalWidth / 6);
+      const fh = img.naturalHeight;
+      const dw = Math.round(fw * PIXEL_SCALE * 1.08);
+      const dh = Math.round(fh * PIXEL_SCALE * 1.08);
+      ctx.save();
+      ctx.translate(sx, sy - sz);
+      ctx.drawImage(img, frame * fw, 0, fw, fh, Math.round(-dw * 0.5), Math.round(-dh * 0.86), dw, dh);
+      ctx.restore();
+    } else if (this.imgReady('boss_sheet')) {
       const img = this.images.boss_sheet;
-      const fw = 48;
-      const fh = 48;
-      const dw = Math.round(fw * PIXEL_SCALE * 1.35);
-      const dh = Math.round(fh * PIXEL_SCALE * 1.35);
-      ctx.drawImage(img, frame * fw, 0, fw, fh, Math.round(sx - dw * 0.5), Math.round(sy - sz - dh * 0.86), dw, dh);
+      ctx.drawImage(img, frame * 48, 0, 48, 48, Math.round(sx - 48), Math.round(sy - sz - 84), 97, 97);
     }
 
     this.drawMiniBar(ctx, sx, sy - sz - 76, 68, Math.max(0, b.hp / b.maxHp), '#f43f5e');
     ctx.font = 'bold 12px sans-serif';
     ctx.textAlign = 'center';
     ctx.fillStyle = '#fda4af';
-    ctx.fillText(`☠️ ${b.name}`, sx, sy - sz - 84);
+    ctx.fillText(`☠️ ${b.name} · Фаза ${b.phase}`, sx, sy - sz - 84);
+  }
+
+  // Красные зоны предупреждения боссов/артиллерии: успей выйти или прыгнуть!
+  drawTelegraphs(ctx, telegraphs, camX, camY) {
+    for (const t of telegraphs) {
+      const sx = Math.round(t.x - camX);
+      const sy = Math.round(t.y - camY);
+      const pulse = 0.55 + Math.sin(performance.now() * 0.02) * 0.2;
+      const remain = Math.max(0, t.timer / (t.maxTimer || 1));
+      ctx.save();
+      ctx.fillStyle = `rgba(239, 68, 68, ${0.20 + pulse * 0.14})`;
+      ctx.strokeStyle = '#ef4444';
+      ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.arc(sx, sy, t.radius, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+      ctx.strokeStyle = 'rgba(254, 226, 226, 0.9)';
+      ctx.beginPath(); ctx.arc(sx, sy, t.radius * remain, 0, Math.PI * 2); ctx.stroke();
+      ctx.fillStyle = '#fecaca';
+      ctx.font = 'bold 15px monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText('⚠', sx, sy + 5);
+      ctx.restore();
+    }
+  }
+
+  // Клетка пленника, терминал сигнализации и сам выживший
+  drawRescueSite(ctx, site, engine, camX, camY) {
+    const p = engine.player;
+    const cageX = Math.round(site.x - camX);
+    const cageY = Math.round(site.y - camY);
+    const isCageType = site.def.type === 'cage' || site.def.type === 'timed';
+    if (isCageType) {
+      const cageKey = site.state === 'ready_claim' ? 'prp_cage_open' : 'prp_cage';
+      if (this.imgReady(cageKey)) {
+        const img = this.images[cageKey];
+        const dw = Math.round(img.naturalWidth * PIXEL_SCALE);
+        const dh = Math.round(img.naturalHeight * PIXEL_SCALE);
+        ctx.drawImage(img, Math.round(cageX - dw * 0.5), Math.round(cageY - dh * 0.8), dw, dh);
+      }
+      if (site.def.hasAlarm) {
+        const ax = Math.round(site.x + 58 - camX);
+        const ay = Math.round(site.y - 12 - camY);
+        if (this.imgReady('prp_alarm_terminal')) {
+          const img = this.images.prp_alarm_terminal;
+          const dw = Math.round(img.naturalWidth * PIXEL_SCALE * 0.9);
+          const dh = Math.round(img.naturalHeight * PIXEL_SCALE * 0.9);
+          ctx.drawImage(img, Math.round(ax - dw * 0.5), Math.round(ay - dh * 0.8), dw, dh);
+        }
+        ctx.font = 'bold 9px monospace';
+        ctx.textAlign = 'center';
+        ctx.fillStyle = site.alarmDisabled ? '#4ade80' : '#f87171';
+        ctx.fillText(site.alarmDisabled ? '🔌 ТРЕВОГА ВЫКЛ' : '🚨 СИГНАЛИЗАЦИЯ', ax, ay - 34);
+      }
+    }
+
+    // Сам выживший (спрайт NPC, покачивание)
+    const nx = Math.round(site.npcX - camX);
+    const ny = Math.round(site.npcY - camY);
+    const key = site.def.sprite;
+    if (this.imgReady(key)) {
+      const frame = Math.floor(site.animTime * 2) % 2;
+      const dw = Math.round(32 * PIXEL_SCALE);
+      const dh = Math.round(32 * PIXEL_SCALE);
+      ctx.drawImage(this.images[key], frame * 32, 0, 32, 32, Math.round(nx - dw * 0.5), Math.round(ny - dh * 0.88), dw, dh);
+    }
+    const near = dist2(p.x, p.y, site.x, site.y) < 640 * 640;
+    ctx.font = 'bold 10px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#fde047';
+    let label = `🆘 ${site.def.name}`;
+    if (site.state === 'timed_active') label = `⏱️ ${Math.max(0, Math.ceil(site.timer))}с · ${site.def.name}`;
+    else if (site.state === 'defending') label = `🩹 Волна ${site.wave}/${site.def.waves || 2} · ${site.def.name}`;
+    else if (site.state === 'ready_claim') label = `🎉 СПАСТИ: ${site.def.name}`;
+    else if (site.state === 'escorting') label = `🛡️ Веди в Убежище: ${site.def.name}`;
+    if (near || site.activated) ctx.fillText(label, nx, ny - 44);
+    if (site.state === 'defending' || site.state === 'escorting') {
+      this.drawMiniBar(ctx, nx, ny - 40, 36, Math.max(0, site.npcHp / site.maxNpcHp), '#4ade80');
+    }
+  }
+
+  drawModCache(ctx, cache, engine, camX, camY) {
+    const sx = Math.round(cache.x - camX);
+    const sy = Math.round(cache.y - camY);
+    if (this.imgReady('prp_mod_crate')) {
+      const img = this.images.prp_mod_crate;
+      const dw = Math.round(img.naturalWidth * PIXEL_SCALE * 1.25);
+      const dh = Math.round(img.naturalHeight * PIXEL_SCALE * 1.25);
+      ctx.drawImage(img, Math.round(sx - dw * 0.5), Math.round(sy - dh * 0.8), dw, dh);
+    }
+    const bob = Math.round(Math.sin(engine.stats.playTime * 4) * 3);
+    ctx.font = 'bold 10px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#c084fc';
+    ctx.fillText(`📦 МОДУЛЬ: ${WEAPON_MODS[cache.modId]?.name || 'Спецконтейнер'}`, sx, sy - 38 + bob);
+  }
+
+  drawCompanion(ctx, c, engine, camX, camY) {
+    const sx = Math.round(c.x - camX);
+    const sy = Math.round(c.y - camY);
+    if (this.imgReady('npc_fighter')) {
+      const frame = Math.floor(c.animTime) % 2;
+      const dw = Math.round(32 * PIXEL_SCALE);
+      const dh = Math.round(32 * PIXEL_SCALE);
+      ctx.drawImage(this.images.npc_fighter, frame * 32, 0, 32, 32, Math.round(sx - dw * 0.5), Math.round(sy - dh * 0.88), dw, dh);
+    }
+    this.drawMiniBar(ctx, sx, sy - 40, 34, Math.max(0, c.hp / c.maxHp), '#4ade80');
+    ctx.font = 'bold 10px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#86efac';
+    ctx.fillText('🤝 Сержант Шрам', sx, sy - 48);
+  }
+
+  drawContractNpc(ctx, n, engine, camX, camY) {
+    const sx = Math.round(n.x - camX);
+    const sy = Math.round(n.y - camY);
+    const key = n.kind === 'captive' ? 'npc_prisoner' : 'npc_fighter';
+    if (n.kind === 'captive' && this.imgReady('prp_cage')) {
+      const img = this.images.prp_cage;
+      const dw = Math.round(img.naturalWidth * PIXEL_SCALE);
+      const dh = Math.round(img.naturalHeight * PIXEL_SCALE);
+      ctx.drawImage(img, Math.round(sx - dw * 0.5), Math.round(sy - dh * 0.8), dw, dh);
+    }
+    if (this.imgReady(key)) {
+      const frame = Math.floor((n.animTime || 0) * 2) % 2;
+      const dw = Math.round(32 * PIXEL_SCALE);
+      const dh = Math.round(32 * PIXEL_SCALE);
+      ctx.drawImage(this.images[key], frame * 32, 0, 32, 32, Math.round(sx - dw * 0.5), Math.round(sy - dh * 0.88), dw, dh);
+    }
+    this.drawMiniBar(ctx, sx, sy - 40, 34, Math.max(0, (n.hp || 100) / (n.maxHp || 100)), '#4ade80');
+    ctx.font = 'bold 10px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#fde047';
+    ctx.fillText(n.kind === 'captive' ? `🗝️ ${n.name}` : `🛡️ ${n.name} — веди в Убежище`, sx, sy - 48);
   }
 
   // ── Главный герой (hero_sheet.png: 4 направления ходьбы, бег, прыжок, атака, урон + оружие в руках!) ──
@@ -801,6 +1071,18 @@ export class Renderer {
         ctx.fillStyle = '#e2e8f0';
         ctx.fillRect(5, -3, 5, 6);
         ctx.restore();
+      } else if (pr.kind === 'rocket' || pr.kind === 'grenade_shell' || pr.kind === 'enemy_grenade' || pr.kind === 'acid') {
+        // Ракета / граната гранатомёта / вражеская граната / кислотный плевок
+        ctx.fillStyle = '#181c24';
+        ctx.fillRect(sx - 8, sy - 8, 16, 16);
+        ctx.fillStyle = pr.color || '#f97316';
+        ctx.fillRect(sx - 6, sy - 6, 12, 12);
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(sx - 2, sy - 2, 4, 4);
+        if (pr.kind === 'rocket') {
+          ctx.fillStyle = '#fb923c';
+          ctx.fillRect(sx - 13, sy - 3, 6, 6);
+        }
       } else {
         // Сфера синей магии
         ctx.fillStyle = '#181c24';
@@ -886,10 +1168,12 @@ export class Renderer {
   }
 
   drawQuestPointer(ctx, engine, w, h) {
-    const q = engine.getActiveQuest();
-    if (!q || !q.targetPos) return;
-    const dx = q.targetPos.x - engine.player.x;
-    const dy = q.targetPos.y - engine.player.y;
+    const target = engine.getObjectiveTarget ? engine.getObjectiveTarget() : null;
+    const q = target ? null : engine.getActiveQuest();
+    const targetPos = target || q?.targetPos;
+    if (!targetPos) return;
+    const dx = targetPos.x - engine.player.x;
+    const dy = targetPos.y - engine.player.y;
     const dist = Math.hypot(dx, dy);
     if (dist < 220) return;
 
@@ -967,12 +1251,32 @@ export class Renderer {
       ctx.fillRect(b.x * sx - 2.5, b.y * sy - 2.5, 5, 5);
     }
 
-    // Цель квеста
-    const q = engine.getActiveQuest();
-    if (q?.targetPos) {
+    // Точки спасения (зелёные) и спецконтейнеры (фиолетовые)
+    ctx.fillStyle = '#4ade80';
+    for (const site of engine.rescueSites || []) {
+      if (site.state === 'done') continue;
+      ctx.fillRect(site.x * sx - 2, site.y * sy - 2, 4, 4);
+    }
+    ctx.fillStyle = '#c084fc';
+    for (const cache of engine.world.modCaches || []) {
+      if (cache.looted) continue;
+      ctx.fillRect(cache.x * sx - 2, cache.y * sy - 2, 4, 4);
+    }
+    // Цель спецоперации
+    if (engine.activeContract) {
+      ctx.strokeStyle = '#f43f5e';
+      ctx.lineWidth = 1.5;
+      ctx.strokeRect(engine.activeContract.x * sx - 3.5, engine.activeContract.y * sy - 3.5, 7, 7);
+    }
+
+    // Цель квеста / спасения / спецоперации
+    const objT = engine.getObjectiveTarget ? engine.getObjectiveTarget() : null;
+    const q = objT ? null : engine.getActiveQuest();
+    const targetP = objT || q?.targetPos;
+    if (targetP) {
       ctx.strokeStyle = '#fde047';
       ctx.lineWidth = 1.5;
-      ctx.strokeRect(q.targetPos.x * sx - 3, q.targetPos.y * sy - 3, 6, 6);
+      ctx.strokeRect(targetP.x * sx - 3, targetP.y * sy - 3, 6, 6);
     }
 
     // Герой

@@ -43,5 +43,5 @@ const server = http.createServer((req, res) => {
 });
 
 server.listen(port, '0.0.0.0', () => {
-  console.log(`Horizon RP server listening on http://0.0.0.0:${port}`);
+  console.log(`VEXMORA server listening on http://0.0.0.0:${port}`);
 });

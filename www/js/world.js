@@ -1,8 +1,8 @@
-// Генератор пиксельного открытого мира (4800x4800):
-// 4 биома, асфальтовые улицы, 9 типов зданий с точными AABB-коллизиями и дверями,
-// 6 видов транспорта (часть управляема!), деревья, кусты, камни, ящики, взрывные бочки, палатки и заборы.
+// Генератор открытого мира VEXMORA (6400x6400):
+// 4 биома, Убежище VEXMORA, 10 арен боссов, 10 точек спасения выживших (клетки + терминалы тревоги),
+// 5 секретных бункеров/складов, 9 типов зданий с AABB-коллизиями, 6 видов транспорта и O(1) сетка препятствий.
 
-import { WORLD_CONFIG, BIOMES, CAMPFIRES, NPCS, SECRETS, BOSSES } from './data.js';
+import { WORLD_CONFIG, BIOMES, CAMPFIRES, SECRETS, BOSSES, RESCUE_MISSIONS } from './data.js';
 
 function mulberry32(seed) {
   let a = seed >>> 0;
@@ -22,24 +22,23 @@ export function dist2(ax, ay, bx, by) {
 }
 
 export function getBiomeIdAt(x, y) {
-  const wave = Math.sin(x * 0.003) * 64 + Math.cos(y * 0.003) * 64;
-  if (x >= 2350 + wave * 0.5 && y < 1520 + wave * 0.5) return 'mountains';
-  if (x > 2940 - wave * 0.5 && y >= 1520 && y <= 3320) return 'city';
-  if (x < 2600 + wave * 0.5 && y > 3140 - wave * 0.4) return 'desert';
+  const wave = Math.sin(x * 0.0024) * 80 + Math.cos(y * 0.0024) * 80;
+  if (y < 1850 + wave * 0.5 && x >= 2100 + wave * 0.4) return 'mountains';
+  if (x > 4050 - wave * 0.5 && y >= 1750 && y <= 4950) return 'city';
+  if (y > 4150 - wave * 0.4 && x < 3950 + wave * 0.4) return 'desert';
   return 'forest';
 }
 
-// Размеры спрайтов и коллизий всех 9 зданий
 const BUILDING_SPECS = {
   house:      { w: 112, h: 96,  colW: 84,  colH: 44, label: 'Жилой дом' },
-  shop:       { w: 116, h: 96,  colW: 88,  colH: 48, label: 'Магазин SHOP' },
-  warehouse:  { w: 120, h: 88,  colW: 96,  colH: 46, label: 'Склад' },
+  shop:       { w: 116, h: 96,  colW: 88,  colH: 48, label: 'Торговый павильон SHOP' },
+  warehouse:  { w: 120, h: 88,  colW: 96,  colH: 46, label: 'Складской ангар' },
   bunker:     { w: 120, h: 92,  colW: 100, colH: 48, label: 'Укреплённый Бункер' },
   watchtower: { w: 68,  h: 112, colW: 40,  colH: 34, label: 'Сторожевая Вышка' },
   factory:    { w: 148, h: 112, colW: 124, colH: 50, label: 'Промышленный Завод' },
-  hospital:   { w: 136, h: 104, colW: 108, colH: 52, label: 'Городская Больница' },
+  hospital:   { w: 136, h: 104, colW: 108, colH: 52, label: 'Медкорпус' },
   police:     { w: 136, h: 100, colW: 108, colH: 50, label: 'Отдел Полиции' },
-  base:       { w: 156, h: 108, colW: 132, colH: 54, label: 'Военная База' }
+  base:       { w: 156, h: 108, colW: 132, colH: 54, label: 'Военный Штаб' }
 };
 
 export function createWorld(seed = 20261025) {
@@ -47,23 +46,26 @@ export function createWorld(seed = 20261025) {
   const W = WORLD_CONFIG.width;
   const H = WORLD_CONFIG.height;
 
-  const buildings = [];     // прямоугольные здания с дверями/тайниками
-  const props = [];         // статические пропы: палатки, заборы, камни (круговая/прямоугольная коллизия)
-  const nodes = [];         // разрушаемые и собираемые объекты: деревья, кусты, ящики, бочки, красные взрывные бочки
-  const vehicles = [];      // транспорт: управляемый (car, moto, jeep) и декоративный (bus, heli, boat)
-  const hazards = [];       // водная преграда с островом
-  const steppingStones = [];// каменные плиты для прыжков через воду
-  const roads = [];         // дороги между локациями
+  const buildings = [];
+  const props = [];
+  const nodes = [];
+  const vehicles = [];
+  const hazards = [];
+  const steppingStones = [];
+  const roads = [];
+  const modCaches = []; // Спецконтейнеры модификаций под охраной мини-боссов
 
   let nextId = 1;
 
-  // Главные дороги мира
+  // Главные магистрали Зоны VEXMORA
   roads.push(
-    { x1: 2360, y1: 2380, x2: 4100, y2: 2380, width: 76, kind: 'asphalt' }, // в Город
-    { x1: 3560, y1: 1680, x2: 3560, y2: 3060, width: 72, kind: 'asphalt' }, // поперечный проспект Города
-    { x1: 2360, y1: 2380, x2: 1380, y2: 3520, width: 62, kind: 'dirt' },    // к Заводу в Пустыне
-    { x1: 2360, y1: 2380, x2: 1360, y2: 1280, width: 58, kind: 'dirt' },    // к Северному Бункеру
-    { x1: 2360, y1: 2380, x2: 3460, y2: 1080, width: 62, kind: 'dirt' }     // в Снежные Горы к Базе
+    { x1: 3160, y1: 3180, x2: 5650, y2: 3180, width: 78, kind: 'asphalt' }, // Восток -> Мегаполис
+    { x1: 4920, y1: 1880, x2: 4920, y2: 4660, width: 74, kind: 'asphalt' }, // Проспект Мегаполиса
+    { x1: 3160, y1: 3180, x2: 1860, y2: 4680, width: 64, kind: 'dirt' },    // ЮЗ -> Промзона Завода
+    { x1: 1860, y1: 4680, x2: 3560, y2: 5640, width: 60, kind: 'dirt' },    // Юг -> Каньон Пустыни
+    { x1: 3160, y1: 3180, x2: 1580, y2: 2180, width: 60, kind: 'dirt' },    // Запад -> Лесная Чаща
+    { x1: 3160, y1: 3180, x2: 4460, y2: 1280, width: 64, kind: 'dirt' },    // Север -> Хребет
+    { x1: 4460, y1: 1280, x2: 5660, y2: 780,  width: 66, kind: 'asphalt' }  // В Цитадель VEXMORA
   );
 
   function addBuilding(kind, x, y, opts = {}) {
@@ -73,138 +75,155 @@ export function createWorld(seed = 20261025) {
       kind,
       name: opts.name || sp.label,
       x,
-      y, // координата Y основания фасада (для корректной 2.5D сортировки!)
+      y,
       spriteW: sp.w,
       spriteH: sp.h,
       colW: sp.colW,
       colH: sp.colH,
-      interactType: opts.interactType || null, // 'shop' | 'heal' | 'loot_once' | 'secret_vault'
+      interactType: opts.interactType || null,
       secretId: opts.secretId || null,
+      smokes: !!opts.smokes,
       looted: false
     });
   }
 
-  // ── 1. ЛАГЕРЬ ВЫЖИВШИХ И ФЕРМА (Лес, центр карты) ────────────────────
-  addBuilding('shop', 2240, 2265, { interactType: 'shop', name: 'Магазин Лагеря (SHOP)' });
-  addBuilding('watchtower', 2555, 2275, { interactType: 'loot_once', name: 'Вышка Дозора' });
-  addBuilding('house', 1960, 2495, { interactType: 'loot_once', name: 'Дом Фермера' });
+  // ── 1. УБЕЖИЩЕ VEXMORA (Главная развиваемая База игрока в центре) ─────
+  addBuilding('shop',       3030, 3065, { interactType: 'shop', name: 'Торговый Отсек VEXMORA' });
+  addBuilding('hospital',   2880, 3260, { interactType: 'heal', name: 'Медблок Убежища' });
+  addBuilding('warehouse',  3380, 3075, { interactType: 'base_hub', name: 'Инженерный и Гаражный Цех' });
+  addBuilding('watchtower', 3480, 3310, { interactType: 'loot_once', name: 'Дозорная Вышка Базы' });
+  addBuilding('house',      2760, 3420, { interactType: 'loot_once', name: 'Агроферма Убежища' });
 
-  // Палатки и заборы лагеря/фермы
   props.push(
-    { id: `pr_${nextId++}`, kind: 'tent', x: 2455, y: 2275, radius: 24 },
-    { id: `pr_${nextId++}`, kind: 'tent', x: 2260, y: 2545, radius: 24 },
-    { id: `pr_${nextId++}`, kind: 'fence', x: 1875, y: 2545, radius: 18 },
-    { id: `pr_${nextId++}`, kind: 'fence', x: 1825, y: 2545, radius: 18 },
-    { id: `pr_${nextId++}`, kind: 'fence', x: 2045, y: 2545, radius: 18 },
-    { id: `pr_${nextId++}`, kind: 'fence', x: 2095, y: 2545, radius: 18 }
+    { id: `pr_${nextId++}`, kind: 'tent', x: 3290, y: 3060, radius: 24 },
+    { id: `pr_${nextId++}`, kind: 'tent', x: 3060, y: 3390, radius: 24 },
+    { id: `pr_${nextId++}`, kind: 'fence', x: 2680, y: 3465, radius: 18 },
+    { id: `pr_${nextId++}`, kind: 'fence', x: 2630, y: 3465, radius: 18 },
+    { id: `pr_${nextId++}`, kind: 'fence', x: 2850, y: 3465, radius: 18 }
   );
 
-  // Стартовые ящики, бочки, кусты и деревья рядом с лагерем
+  // Стартовые ящики, бочки, кусты и деревья рядом с Убежищем
   const starterNodes = [
-    ['crates', 2520, 2420], ['crates', 2160, 2440], ['barrel', 2195, 2445],
-    ['bush', 2120, 2600], ['bush', 2480, 2610], ['tree', 2060, 2340], ['tree', 2650, 2550],
-    ['barrel_red', 2740, 2420]
+    ['crates', 3390, 3390], ['crates', 2940, 3380], ['barrel', 2980, 3390],
+    ['bush', 2910, 3510], ['bush', 3340, 3500], ['tree', 2820, 3090], ['tree', 3560, 3420],
+    ['barrel_red', 3630, 3260]
   ];
   for (const [k, nx, ny] of starterNodes) nodes.push(makeNode(nextId++, k, nx, ny));
 
-  // Мотоцикл у выхода из лагеря (можно сесть и поехать!)
-  vehicles.push({
-    id: 'veh_camp_moto', kind: 'moto', name: 'Мотоцикл разведчика',
-    x: 2610, y: 2335, vx: 0, vy: 0, angle: 0, radius: 20, drivable: true, maxSpeed: 355
-  });
+  vehicles.push(
+    { id: 'veh_base_moto', kind: 'moto', name: 'Развед-мотоцикл Базы', x: 3530, y: 3150, vx: 0, vy: 0, angle: 0, radius: 20, drivable: true, baseSpeed: 360 }
+  );
 
-  // ── 2. ЗАБРОШЕННЫЙ ГОРОД (Восток: Магазин, Больница, Полиция, Дома, Склад) ──
-  addBuilding('hospital', 3430, 2240, { interactType: 'heal', name: 'Городская Больница' });
-  addBuilding('police',   3710, 2240, { interactType: 'loot_once', name: 'Отдел Полиции' });
-  addBuilding('shop',     3430, 2560, { interactType: 'shop', name: 'Городской Супермаркет' });
-  addBuilding('house',    3710, 2560, { interactType: 'loot_once', name: 'Заброшенный Дом' });
-  addBuilding('house',    3430, 1920, { interactType: 'loot_once', name: 'Северный Коттедж' });
-  addBuilding('warehouse', 3820, 1760, {
+  // ── 2. ЗАБРОШЕННЫЙ МЕГАПОЛИС (Восток) ─────────────────────────────────
+  addBuilding('hospital',  4680, 3040, { interactType: 'heal', name: 'Центральная Больница' });
+  addBuilding('police',    5120, 3040, { interactType: 'loot_once', name: 'Управление Полиции' });
+  addBuilding('shop',      4680, 3420, { interactType: 'shop', name: 'Городской Маркет SHOP' });
+  addBuilding('house',     5140, 3420, { interactType: 'loot_once', name: 'Высотный Дом' });
+  addBuilding('house',     4720, 2260, { interactType: 'loot_once', name: 'Северный Особняк' });
+  addBuilding('factory',   5420, 4340, { interactType: 'loot_once', name: 'Техно-Ангар Роботов', smokes: true });
+  addBuilding('warehouse', 4980, 2400, {
     id: 'bld_sec_warehouse',
     interactType: 'secret_vault',
     secretId: 'sec_warehouse_city',
-    name: 'Запертый Спецсклад Полиции'
+    name: 'Спецсклад Полиции'
   });
 
   vehicles.push(
-    { id: 'veh_city_car', kind: 'car', name: 'Городской седан', x: 3250, y: 2450, vx: 0, vy: 0, angle: 0, radius: 24, drivable: true, maxSpeed: 335 },
-    { id: 'veh_city_bus', kind: 'bus', name: 'Разбитый автобус', x: 3560, y: 2740, vx: 0, vy: 0, angle: 0, radius: 34, drivable: false }
+    { id: 'veh_city_car', kind: 'car', name: 'Патрульный седан', x: 4340, y: 3260, vx: 0, vy: 0, angle: 0, radius: 24, drivable: true, baseSpeed: 340 },
+    { id: 'veh_city_bus', kind: 'bus', name: 'Городской автобус', x: 4920, y: 3680, vx: 0, vy: 0, angle: 0, radius: 34, drivable: false }
   );
 
-  // ── 3. ПУСТЫНЯ И ЗАВОД (Юго-Запад: Завод, Вышки, Склад, Бункер, Внедорожник) ──
-  addBuilding('factory',    1140, 3680, { interactType: 'loot_once', name: 'Химзавод №4', smokes: true });
-  addBuilding('warehouse',  1340, 3680, { interactType: 'loot_once', name: 'Цеховой Склад' });
-  addBuilding('watchtower', 1520, 3580, { interactType: 'loot_once', name: 'Южная Вышка' });
-  addBuilding('bunker',     2150, 4260, {
+  // ── 3. ПРОМЗОНА ХИМЗАВОДА И ПЕСЧАНЫЙ КАНЬОН (Юг / Юго-Запад) ──────────
+  addBuilding('factory',    1540, 4880, { interactType: 'loot_once', name: 'Химкомбинат VEXMORA', smokes: true });
+  addBuilding('warehouse',  1760, 4880, { interactType: 'loot_once', name: 'Цеховое Хранилище' });
+  addBuilding('watchtower', 2040, 4720, { interactType: 'loot_once', name: 'Вышка Промзоны' });
+  addBuilding('factory',    2520, 5660, { interactType: 'loot_once', name: 'Био-Лаборатория Векса', smokes: true });
+  addBuilding('bunker',     2820, 5840, {
     id: 'bld_sec_bunker_desert',
     interactType: 'secret_vault',
     secretId: 'sec_bunker_desert',
-    name: 'Подземный Бункер Пустыни'
+    name: 'Подземное Хранилище Лаборатории'
   });
 
-  vehicles.push({
-    id: 'veh_desert_jeep', kind: 'jeep', name: 'Штурмовой внедорожник',
-    x: 1470, y: 3440, vx: 0, vy: 0, angle: 0, radius: 26, drivable: true, maxSpeed: 325
-  });
+  vehicles.push(
+    { id: 'veh_desert_jeep', kind: 'jeep', name: 'Пустынный Бронеджип', x: 1960, y: 4620, vx: 0, vy: 0, angle: 0, radius: 26, drivable: true, baseSpeed: 335 }
+  );
 
-  // ── 4. СЕВЕРО-ЗАПАДНЫЙ БУНКЕР В ЧАЩЕ ЛЕСА ────────────────────────────
-  addBuilding('bunker', 1120, 1220, {
+  // ── 4. ЛЕСНОЙ СЕКТОР НА СЕВЕРО-ЗАПАДЕ ─────────────────────────────────
+  addBuilding('bunker', 1380, 1360, {
     id: 'bld_sec_bunker_west',
     interactType: 'secret_vault',
     secretId: 'sec_bunker_west',
     name: 'Секретный Бункер «Альфа-7»'
   });
-  addBuilding('watchtower', 1270, 1230, { interactType: 'loot_once', name: 'Лесная Вышка' });
-  props.push({ id: `pr_${nextId++}`, kind: 'tent', x: 1440, y: 1230, radius: 24 });
+  addBuilding('watchtower', 1540, 1370, { interactType: 'loot_once', name: 'Северо-Западная Вышка' });
 
-  // ── 5. СНЕЖНЫЕ ГОРЫ И ВОЕННАЯ БАЗА (Северо-Восток) ───────────────────
-  addBuilding('base',       3820, 660, { interactType: 'loot_once', name: 'Штаб Военной Базы' });
-  addBuilding('bunker',     3620, 670, { interactType: 'loot_once', name: 'Арсенал Базы' });
-  addBuilding('watchtower', 3510, 820, { interactType: 'loot_once', name: 'Северная Вышка Базы' });
+  // ── 5. СЕВЕРНЫЙ ХРЕБЕТ И ЦИТАДЕЛЬ VEXMORA ─────────────────────────────
+  addBuilding('base',       4680, 920,  { interactType: 'loot_once', name: 'Штаб Генерала Армии' });
+  addBuilding('base',       5420, 620,  { interactType: 'loot_once', name: 'Цитадель Ядра VEXMORA' });
+  addBuilding('watchtower', 4880, 1120, { interactType: 'loot_once', name: 'Радарная Вышка Хребта' });
+  addBuilding('bunker',     5180, 960,  {
+    id: 'bld_sec_mountain',
+    interactType: 'secret_vault',
+    secretId: 'sec_mountain_vault',
+    name: 'Секретный Арсенал Цитадели'
+  });
 
   vehicles.push(
-    { id: 'veh_base_heli', kind: 'heli', name: 'Военный вертолёт', x: 3680, y: 830, vx: 0, vy: 0, angle: 0, radius: 34, drivable: false },
-    { id: 'veh_base_jeep', kind: 'jeep', name: 'Армейский джип', x: 3340, y: 1160, vx: 0, vy: 0, angle: 0, radius: 26, drivable: true, maxSpeed: 330 }
+    { id: 'veh_base_heli', kind: 'heli', name: 'Штурмовой вертолёт VEXMORA', x: 4820, y: 1020, vx: 0, vy: 0, angle: 0, radius: 34, drivable: false },
+    { id: 'veh_north_jeep', kind: 'jeep', name: 'Арктический Внедорожник', x: 4380, y: 1340, vx: 0, vy: 0, angle: 0, radius: 26, drivable: true, baseSpeed: 340 }
   );
 
-  // ── 6. СЕКРЕТНЫЙ ОСТРОВ КОНТРАБАНДИСТОВ С ЛОДКОЙ И ПЛИТАМИ НА ВОДЕ ───
+  // ── 6. ОСТРОВ КОНТРАБАНДИСТОВ С ПЛИТАМИ ЧЕРЕЗ РЕКУ И КАТЕРОМ ──────────
   hazards.push({
     id: 'river_island',
     kind: 'water_moat',
-    x: 3120,
-    y: 3820,
-    innerRadius: 112,
-    outerRadius: 235
+    x: 4080, y: 4860,
+    innerRadius: 114,
+    outerRadius: 238
   });
-  for (const py of [3570, 3625, 3680]) {
-    steppingStones.push({ x: 3120, y: py, radius: 28 });
+  for (const py of [4608, 4664, 4720]) {
+    steppingStones.push({ x: 4080, y: py, radius: 28 });
   }
   vehicles.push({
     id: 'veh_island_boat', kind: 'boat', name: 'Катер контрабандистов',
-    x: 2995, y: 3825, vx: 0, vy: 0, angle: 0, radius: 22, drivable: false
+    x: 3955, y: 4865, vx: 0, vy: 0, angle: 0, radius: 22, drivable: false
   });
-  addBuilding('warehouse', 3120, 3805, {
+  addBuilding('warehouse', 4080, 4845, {
     id: 'bld_sec_island',
     interactType: 'secret_vault',
     secretId: 'sec_island_stash',
-    name: 'Тайник Контрабандистов'
+    name: 'Тайник Острова Контрабандистов'
   });
 
-  // ── 7. Процедурное расселение деревьев, камней, кустов, ящиков и бочек ──
+  // ── 7. Спецконтейнеры модификаций оружия под охраной Кибер-Карателей ──
+  modCaches.push(
+    { id: 'mcache_1', x: 2280, y: 2640, looted: false, modId: 'mod_scope',  weaponId: 'autopistol' },
+    { id: 'mcache_2', x: 5260, y: 2740, looted: false, modId: 'mod_mag',    weaponId: 'smg_storm' },
+    { id: 'mcache_3', x: 2880, y: 4620, looted: false, modId: 'mod_barrel', weaponId: 'auto_shotgun' }
+  );
+
+  // ── 8. Заполнение ландшафта деревьями, елями, камнями, кустами, ящиками и взрывными бочками ──
   function isClearSpot(x, y, pad = 75) {
-    if (dist2(x, y, 2360, 2380) < (300 + pad) ** 2) return false;
+    if (dist2(x, y, 3160, 3180) < (380 + pad) ** 2) return false;
     for (const c of CAMPFIRES) {
-      if (dist2(x, y, c.x, c.y) < (145 + pad) ** 2) return false;
+      if (dist2(x, y, c.x, c.y) < (160 + pad) ** 2) return false;
     }
     for (const b of Object.values(BOSSES)) {
       if (dist2(x, y, b.x, b.y) < (b.arenaRadius + pad) ** 2) return false;
+    }
+    for (const rm of RESCUE_MISSIONS) {
+      if (dist2(x, y, rm.x, rm.y) < (170 + pad) ** 2) return false;
+    }
+    for (const mc of modCaches) {
+      if (dist2(x, y, mc.x, mc.y) < (130 + pad) ** 2) return false;
     }
     for (const bld of buildings) {
       if (Math.abs(x - bld.x) < bld.colW * 0.5 + pad && Math.abs(y - (bld.y - bld.colH * 0.5)) < bld.colH * 0.5 + pad) {
         return false;
       }
     }
-    if (dist2(x, y, 3120, 3820) < (260 + pad) ** 2) return false;
+    if (dist2(x, y, 4080, 4860) < (265 + pad) ** 2) return false;
     for (const r of roads) {
       const dx = r.x2 - r.x1, dy = r.y2 - r.y1;
       const len2 = dx * dx + dy * dy;
@@ -214,14 +233,14 @@ export function createWorld(seed = 20261025) {
     return true;
   }
 
-  for (let i = 0; i < 460; i++) {
+  for (let i = 0; i < 680; i++) {
     const x = 140 + rand() * (W - 280);
     const y = 140 + rand() * (H - 280);
     if (!isClearSpot(x, y, 52)) continue;
 
     let overlap = false;
     for (let j = nodes.length - 1; j >= Math.max(0, nodes.length - 65); j--) {
-      if (dist2(x, y, nodes[j].x, nodes[j].y) < 76 * 76) { overlap = true; break; }
+      if (dist2(x, y, nodes[j].x, nodes[j].y) < 78 * 78) { overlap = true; break; }
     }
     if (overlap) continue;
 
@@ -229,34 +248,33 @@ export function createWorld(seed = 20261025) {
     const roll = rand();
 
     if (biome === 'forest') {
-      if (roll < 0.46) nodes.push(makeNode(nextId++, 'tree', x, y));
-      else if (roll < 0.72) nodes.push(makeNode(nextId++, 'bush', x, y));
-      else if (roll < 0.86) props.push({ id: `pr_${nextId++}`, kind: 'rock', x, y, radius: 17 });
-      else if (roll < 0.95) nodes.push(makeNode(nextId++, 'crates', x, y));
+      if (roll < 0.45) nodes.push(makeNode(nextId++, 'tree', x, y));
+      else if (roll < 0.70) nodes.push(makeNode(nextId++, 'bush', x, y));
+      else if (roll < 0.84) props.push({ id: `pr_${nextId++}`, kind: 'rock', x, y, radius: 17 });
+      else if (roll < 0.94) nodes.push(makeNode(nextId++, 'crates', x, y));
       else nodes.push(makeNode(nextId++, 'barrel', x, y));
     } else if (biome === 'city') {
-      if (roll < 0.36) nodes.push(makeNode(nextId++, 'crates', x, y));
-      else if (roll < 0.62) nodes.push(makeNode(nextId++, 'barrel', x, y));
+      if (roll < 0.35) nodes.push(makeNode(nextId++, 'crates', x, y));
+      else if (roll < 0.60) nodes.push(makeNode(nextId++, 'barrel', x, y));
       else if (roll < 0.80) nodes.push(makeNode(nextId++, 'barrel_red', x, y));
       else if (roll < 0.92) props.push({ id: `pr_${nextId++}`, kind: 'fence', x, y, radius: 18 });
       else nodes.push(makeNode(nextId++, 'bush', x, y));
     } else if (biome === 'desert') {
-      if (roll < 0.36) props.push({ id: `pr_${nextId++}`, kind: 'rock', x, y, radius: 17 });
-      else if (roll < 0.60) nodes.push(makeNode(nextId++, 'barrel', x, y));
+      if (roll < 0.35) props.push({ id: `pr_${nextId++}`, kind: 'rock', x, y, radius: 17 });
+      else if (roll < 0.58) nodes.push(makeNode(nextId++, 'barrel', x, y));
       else if (roll < 0.78) nodes.push(makeNode(nextId++, 'barrel_red', x, y));
       else if (roll < 0.92) nodes.push(makeNode(nextId++, 'crates', x, y));
       else nodes.push(makeNode(nextId++, 'bush', x, y));
     } else {
-      // mountains
-      if (roll < 0.46) nodes.push(makeNode(nextId++, 'pine_tree', x, y));
-      else if (roll < 0.72) props.push({ id: `pr_${nextId++}`, kind: 'rock', x, y, radius: 17 });
-      else if (roll < 0.88) nodes.push(makeNode(nextId++, 'crates', x, y));
+      if (roll < 0.45) nodes.push(makeNode(nextId++, 'pine_tree', x, y));
+      else if (roll < 0.70) props.push({ id: `pr_${nextId++}`, kind: 'rock', x, y, radius: 17 });
+      else if (roll < 0.86) nodes.push(makeNode(nextId++, 'crates', x, y));
       else nodes.push(makeNode(nextId++, 'barrel_red', x, y));
     }
   }
 
-  // Пространственная сетка статических препятствий (пропы + здания) для O(1) коллизий на Android
-  const CELL = 240;
+  // O(1) пространственная сетка статических пропов
+  const CELL = 260;
   const cols = Math.ceil(W / CELL);
   const rows = Math.ceil(H / CELL);
   const propGrid = Array.from({ length: cols * rows }, () => []);
@@ -295,6 +313,7 @@ export function createWorld(seed = 20261025) {
     hazards,
     steppingStones,
     roads,
+    modCaches,
     queryPropsNear
   };
 }
@@ -303,10 +322,10 @@ function makeNode(numId, kind, x, y) {
   const defs = {
     tree:       { name: 'Лесное дерево',     hp: 50, radius: 16, solid: true,  res: 'wood',   amt: [2, 4] },
     pine_tree:  { name: 'Горная ель',        hp: 60, radius: 16, solid: true,  res: 'wood',   amt: [3, 5] },
-    bush:       { name: 'Ягодный куст',      hp: 20, radius: 13, solid: false, res: 'herb',   amt: [2, 3] },
-    crates:     { name: 'Ящики с припасами', hp: 30, radius: 16, solid: true,  res: 'crates', amt: [1, 2] },
-    barrel:     { name: 'Деревянная бочка',  hp: 28, radius: 13, solid: true,  res: 'barrel', amt: [1, 2] },
-    barrel_red: { name: 'Бочка с топливом',  hp: 22, radius: 13, solid: true,  res: 'boom',   amt: [1, 1], explosive: true }
+    bush:       { name: 'Био-куст',          hp: 20, radius: 13, solid: false, res: 'herb',   amt: [2, 3] },
+    crates:     { name: 'Ящики снабжения',   hp: 30, radius: 16, solid: true,  res: 'crates', amt: [1, 2] },
+    barrel:     { name: 'Бочка с припасами', hp: 28, radius: 13, solid: true,  res: 'barrel', amt: [1, 2] },
+    barrel_red: { name: 'Топливная бочка',   hp: 22, radius: 13, solid: true,  res: 'boom',   amt: [1, 1], explosive: true }
   };
   const d = defs[kind] || defs.crates;
   return {

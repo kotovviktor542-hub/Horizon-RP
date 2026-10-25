@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#0b1220" />
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
-  <title>Horizon: Выживание — 2D Pixel Action RPG</title>
+  <title>VEXMORA — 2D Pixel Action-Survival RPG | Большое обновление 2.0</title>
   <link rel="icon" type="image/png" href="icon.png" />
   <link rel="stylesheet" href="css/style.css" />
 </head>
@@ -16,11 +16,12 @@
   <!-- ГЛАВНОЕ МЕНЮ -->
   <section id="title-screen" class="overlay-screen">
     <div class="title-card">
-      <div class="title-badge">PIXEL-ART 2D SURVIVAL ACTION RPG</div>
-      <h1 class="game-logo">HORIZON<span>ВЫЖИВАНИЕ</span></h1>
+      <div class="title-badge">PIXEL-ART 2D SURVIVAL ACTION RPG · ОБНОВЛЕНИЕ 2.0</div>
+      <h1 class="game-logo">VEXMORA<span>БОЛЬШОЕ ОБНОВЛЕНИЕ ИГРЫ</span></h1>
       <p class="game-subtitle">
-        Исследуй 4 локации (Лес, Город, Пустыня и Снежные Горы), сражайся с зомби, мародёрами, солдатами и 4 боссами, води транспорт, открывай бункеры ключами и собери все 8 видов оружия!
+        Спасай пленников и выживших, развивай Убежище, собирай арсенал из 24 видов оружия с модификациями, сражайся с 16 типами врагов и 10 многофазными боссами — вплоть до финального АРХОНТА VEXMORA!
       </p>
+      <button id="btn-show-update" class="update-banner-btn" type="button">📣 VEXMORA — БОЛЬШОЕ ОБНОВЛЕНИЕ ИГРЫ · Что нового в 2.0?</button>
 
       <div class="title-preview-strip">
         <img src="assets/sprites/weapons/pistol.png" alt="Пистолет" class="px-img" />
@@ -29,6 +30,10 @@
         <img src="assets/sprites/weapons/sniper.png" alt="Снайперка" class="px-img" />
         <img src="assets/sprites/weapons/sword.png" alt="Меч" class="px-img" />
         <img src="assets/sprites/weapons/magic_staff.png" alt="Магия" class="px-img" />
+        <img src="assets/sprites/weapons/minigun.png" alt="Миниган" class="px-img" />
+        <img src="assets/sprites/weapons/railgun.png" alt="Рельсотрон" class="px-img" />
+        <img src="assets/sprites/weapons/tesla_cannon.png" alt="Тесла-пушка" class="px-img" />
+        <img src="assets/sprites/weapons/katana.png" alt="Катана" class="px-img" />
         <img src="assets/sprites/items/medkit.png" alt="Аптечка" class="px-img" />
         <img src="assets/sprites/items/grenade.png" alt="Граната" class="px-img" />
         <img src="assets/sprites/items/key.png" alt="Ключ" class="px-img" />
@@ -36,15 +41,15 @@
       </div>
 
       <div class="title-actions">
-        <button id="btn-continue-game" class="primary-btn hidden">▶ Продолжить выживание</button>
+        <button id="btn-continue-game" class="primary-btn hidden">▶ Продолжить игру VEXMORA (прогресс сохранён)</button>
         <button id="btn-new-game" class="primary-btn accent">⚔️ Новая игра</button>
       </div>
 
       <div class="title-features">
-        <span>🔫 8 оружий + Патроны</span>
-        <span>🏢 9 зданий + Бункеры</span>
-        <span>🚗 Транспорт и Гранаты</span>
-        <span>💾 Автосохранение</span>
+        <span>🔫 24 оружия + Модификации</span>
+        <span>👹 10 боссов · 16 врагов</span>
+        <span>🆘 Спасение NPC · 🏰 База</span>
+        <span>💾 Автосохранение прогресса</span>
       </div>
     </div>
   </section>
@@ -77,6 +82,7 @@
           <span class="stat-chip"><img src="assets/sprites/items/coin.png" class="px-icon" alt="" /><b id="hud-coins">95</b></span>
           <span class="stat-chip"><img src="assets/sprites/items/ammo.png" class="px-icon" alt="" /><b id="hud-ammo">54/120</b></span>
           <span class="stat-chip"><img src="assets/sprites/items/key.png" class="px-icon" alt="" /><b id="hud-keys">1</b></span>
+          <span class="stat-chip" title="Спасено выживших">🆘 <b id="hud-rescued">0/10</b></span>
           <button id="hud-weapon-switch" class="weapon-switch-chip" title="Сменить оружие (Q)">
             <img id="hud-weapon-img" src="assets/sprites/weapons/pistol.png" class="px-icon-w" alt="" />
             <span id="hud-weapon-name">Пистолет</span>
@@ -108,6 +114,8 @@
           <button class="icon-btn" data-open-tab="inventory" title="Арсенал и Рюкзак">🎒<span id="badge-inv" class="dot-badge hidden"></span></button>
           <button class="icon-btn" data-open-tab="hero" title="Характеристики и Навыки">⭐<span id="badge-hero" class="dot-badge hidden"></span></button>
           <button class="icon-btn" data-open-tab="shop" title="Торговец и Крафт">🏪</button>
+          <button class="icon-btn" data-open-tab="base" title="Убежище: отсеки, инженер, гараж, модули">🏰<span id="badge-base" class="dot-badge hidden"></span></button>
+          <button class="icon-btn" data-open-tab="rescue" title="Спасение выживших и пленников">🆘<span id="badge-rescue" class="dot-badge hidden"></span></button>
           <button class="icon-btn" data-open-tab="settings" title="Меню и Настройки">⚙️</button>
         </div>
       </div>
@@ -133,6 +141,10 @@
           <span id="hud-medkits" class="count-pill">3</span>
         </button>
 
+        <button id="btn-reload" class="ctrl-btn small reload" title="Перезарядка (R)">
+          <span>🔄</span><small id="hud-mag">12</small>
+        </button>
+
         <button id="btn-grenade" class="ctrl-btn small grenade" title="Бросить гранату (G)">
           <img src="assets/sprites/items/grenade.png" class="px-btn-img" alt="Граната" />
           <span id="hud-grenades" class="count-pill">2</span>
@@ -155,15 +167,17 @@
     </div>
   </div>
 
-  <!-- МОДАЛЬНОЕ МЕНЮ (Инвентарь, Герой, Магазин SHOP, Крафт, Квесты, Карта, Достижения, Настройки) -->
+  <!-- МОДАЛЬНОЕ МЕНЮ VEXMORA (Арсенал, Герой, Магазин, База, Крафт, Квесты и Боссы, Спасение, Карта, Награды, Настройки) -->
   <section id="modal-panel" class="modal-backdrop hidden">
     <div class="modal-window">
       <header class="modal-tabs">
         <button class="tab-btn active" data-tab="inventory">🎒 Арсенал</button>
         <button class="tab-btn" data-tab="hero">⭐ Герой</button>
         <button class="tab-btn" data-tab="shop">🏪 Магазин</button>
+        <button class="tab-btn" data-tab="base">🏰 База</button>
         <button class="tab-btn" data-tab="craft">🛠️ Крафт</button>
-        <button class="tab-btn" data-tab="quests">📜 Квесты</button>
+        <button class="tab-btn" data-tab="quests">📜 Квесты и Боссы</button>
+        <button class="tab-btn" data-tab="rescue">🆘 Спасение</button>
         <button class="tab-btn" data-tab="map">🗺️ Карта</button>
         <button class="tab-btn" data-tab="achievements">🏅 Награды</button>
         <button class="tab-btn" data-tab="settings">⚙️</button>
@@ -182,11 +196,24 @@
     </div>
   </section>
 
+  <!-- ОБЪЯВЛЕНИЕ: VEXMORA — БОЛЬШОЕ ОБНОВЛЕНИЕ ИГРЫ -->
+  <section id="update-modal" class="modal-backdrop hidden">
+    <div class="dialog-box update-box">
+      <div class="title-badge">ОБНОВЛЕНИЕ 2.0 УСТАНОВЛЕНО</div>
+      <h3 id="update-title">VEXMORA — БОЛЬШОЕ ОБНОВЛЕНИЕ ИГРЫ</h3>
+      <p id="update-lead"></p>
+      <div id="update-sections" class="update-sections"></div>
+      <div class="dialog-actions">
+        <button id="btn-close-update" class="primary-btn accent">⚔️ Понятно — в бой!</button>
+      </div>
+    </div>
+  </section>
+
   <!-- ЭКРАН ВОЗРОЖДЕНИЯ -->
   <section id="death-modal" class="modal-backdrop hidden">
     <div class="dialog-box death-box">
       <h3>💀 Вы тяжело ранены</h3>
-      <p>Союзники эвакуируют вас к ближайшему зажжённому костру со всем снаряжением, оружием и ключами.</p>
+      <p>Союзники эвакуируют вас в Убежище или к ближайшему лагерю со всем снаряжением, оружием, модификациями и ключами.</p>
       <button id="btn-respawn" class="primary-btn accent">🔥 Возродиться у костра</button>
     </div>
   </section>

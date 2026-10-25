@@ -155,6 +155,7 @@ export class InputController {
     this.bindTapButton('btn-jump', () => this.cb.onJump?.());
     this.bindTapButton('btn-dash', () => this.cb.onDash?.());
     this.bindTapButton('btn-grenade', () => this.cb.onGrenade?.());
+    this.bindTapButton('btn-reload', () => this.cb.onReload?.());
     this.bindTapButton('btn-heal', () => this.cb.onQuickHeal?.());
     this.bindTapButton('btn-interact', () => this.cb.onInteract?.());
     this.bindTapButton('hud-weapon-switch', () => this.cb.onCycleWeapon?.());
@@ -175,6 +176,7 @@ export class InputController {
       else if (k === 'k') this.cb.onJump?.();
       else if (k === 'l') this.cb.onDash?.();
       else if (k === 'g') this.cb.onGrenade?.();
+      else if (k === 'r') this.cb.onReload?.();
       else if (k === 'q') this.cb.onCycleWeapon?.();
       else if (k === 'e' || k === 'f') this.cb.onInteract?.();
       else if (k === 'h') this.cb.onQuickHeal?.();
