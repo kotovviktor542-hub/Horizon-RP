@@ -2,7 +2,7 @@
 // 4 биома, Убежище VEXMORA, 10 арен боссов, 10 точек спасения выживших (клетки + терминалы тревоги),
 // 5 секретных бункеров/складов, 9 типов зданий с AABB-коллизиями, 6 видов транспорта и O(1) сетка препятствий.
 
-import { WORLD_CONFIG, BIOMES, CAMPFIRES, SECRETS, BOSSES, RESCUE_MISSIONS } from './data.js';
+import { WORLD_CONFIG, BIOMES, CAMPFIRES, SECRETS, BOSSES, RESCUE_MISSIONS, LOCATIONS } from './data.js';
 
 function mulberry32(seed) {
   let a = seed >>> 0;
@@ -29,6 +29,21 @@ export function getBiomeIdAt(x, y) {
   return 'forest';
 }
 
+// RISE OF THE ABYSS: особая локация в точке мира (или null, если обычный биом)
+export function getLocationIdAt(x, y) {
+  for (const loc of Object.values(LOCATIONS)) {
+    const dx = x - loc.x;
+    const dy = y - loc.y;
+    if (dx * dx + dy * dy <= loc.radius * loc.radius) return loc.id;
+  }
+  return null;
+}
+
+export function getLocationAt(x, y) {
+  const id = getLocationIdAt(x, y);
+  return id ? LOCATIONS[id] : null;
+}
+
 const BUILDING_SPECS = {
   house:      { w: 112, h: 96,  colW: 84,  colH: 44, label: 'Жилой дом' },
   shop:       { w: 116, h: 96,  colW: 88,  colH: 48, label: 'Торговый павильон SHOP' },
@@ -51,6 +66,8 @@ export function createWorld(seed = 20261025) {
   const nodes = [];
   const vehicles = [];
   const hazards = [];
+  const traps = [];   // RISE OF THE ABYSS: шипы, огненные и ядовитые ловушки
+  const chests = [];  // Сундуки (обычные и проклятые)
   const steppingStones = [];
   const roads = [];
   const modCaches = []; // Спецконтейнеры модификаций под охраной мини-боссов
@@ -196,6 +213,50 @@ export function createWorld(seed = 20261025) {
     name: 'Тайник Острова Контрабандистов'
   });
 
+  // ── 6b. RISE OF THE ABYSS: секретные бункеры трёх новых локаций ───────
+  addBuilding('bunker', 560, 940, {
+    id: 'bld_sec_ruins', interactType: 'secret_vault', secretId: 'sec_ruins_vault', name: 'Рунный Склеп Забытых'
+  });
+  addBuilding('bunker', 5140, 5920, {
+    id: 'bld_sec_cursed', interactType: 'secret_vault', secretId: 'sec_cursed_shrine', name: 'Проклятое Святилище Леса'
+  });
+  addBuilding('bunker', 6040, 560, {
+    id: 'bld_sec_abyss', interactType: 'secret_vault', secretId: 'sec_abyss_vault', name: 'Сокровищница Крепости Бездны'
+  });
+  addBuilding('watchtower', 470, 560, { interactType: 'loot_once', name: 'Руинная Башня Стражей' });
+  addBuilding('base', 5980, 300, { interactType: 'loot_once', name: 'Цитадель Крепости Бездны' });
+
+  // Руинные колонны вокруг Забытых Руин
+  for (const [px, py] of [[600, 620], [850, 640], [620, 900], [880, 890], [740, 560], [520, 760], [930, 770]]) {
+    props.push({ id: `pr_${nextId++}`, kind: 'ruins_pillar', x: px, y: py, radius: 15 });
+  }
+
+  // Ловушки локаций: шипы в Руинах, яд в Лесу Проклятых, огонь в Крепости
+  const trapDefs = [
+    ['trap_spikes', 660, 700], ['trap_spikes', 800, 820], ['trap_spikes', 590, 830], ['trap_spikes', 830, 690],
+    ['trap_poison', 4820, 5580], ['trap_poison', 5030, 5780], ['trap_poison', 4860, 5840], ['trap_poison', 5080, 5560],
+    ['trap_fire', 5880, 470], ['trap_fire', 6040, 340], ['trap_fire', 5830, 300], ['trap_fire', 6100, 470]
+  ];
+  for (const [kind, tx, ty] of trapDefs) {
+    traps.push({ id: `trap_${nextId++}`, kind, x: tx, y: ty, radius: 26, damage: kind === 'trap_fire' ? 26 : kind === 'trap_spikes' ? 20 : 16, hitCd: 0 });
+  }
+
+  // Сундуки локаций (часть — проклятые, с засадой и двойной добычей!)
+  const chestDefs = [
+    ['chest_ruins_1', 640, 660, false], ['chest_ruins_2', 880, 950, true],
+    ['chest_cursed_1', 4780, 5750, false], ['chest_cursed_2', 5120, 5520, true],
+    ['chest_abyss_1', 5900, 520, false], ['chest_abyss_2', 6180, 360, true],
+    ['chest_forest_1', 2100, 2900, false], ['chest_city_1', 5300, 2900, false]
+  ];
+  for (const [id, cx, cy, cursed] of chestDefs) {
+    chests.push({ id, x: cx, y: cy, looted: false, cursed });
+  }
+
+  // Кристаллические жилы Бездны (редкий ресурс для легендарного крафта)
+  for (const [cx, cy] of [[690, 840], [790, 610], [5000, 5600], [4760, 5900], [6000, 430], [5850, 560], [6150, 300], [430, 880]]) {
+    nodes.push(makeNode(nextId++, 'crystal_node', cx, cy));
+  }
+
   // ── 7. Спецконтейнеры модификаций оружия под охраной Кибер-Карателей ──
   modCaches.push(
     { id: 'mcache_1', x: 2280, y: 2640, looted: false, modId: 'mod_scope',  weaponId: 'autopistol' },
@@ -314,6 +375,8 @@ export function createWorld(seed = 20261025) {
     steppingStones,
     roads,
     modCaches,
+    traps,
+    chests,
     queryPropsNear
   };
 }
@@ -325,7 +388,8 @@ function makeNode(numId, kind, x, y) {
     bush:       { name: 'Био-куст',          hp: 20, radius: 13, solid: false, res: 'herb',   amt: [2, 3] },
     crates:     { name: 'Ящики снабжения',   hp: 30, radius: 16, solid: true,  res: 'crates', amt: [1, 2] },
     barrel:     { name: 'Бочка с припасами', hp: 28, radius: 13, solid: true,  res: 'barrel', amt: [1, 2] },
-    barrel_red: { name: 'Топливная бочка',   hp: 22, radius: 13, solid: true,  res: 'boom',   amt: [1, 1], explosive: true }
+    barrel_red: { name: 'Топливная бочка',   hp: 22, radius: 13, solid: true,  res: 'boom',   amt: [1, 1], explosive: true },
+    crystal_node: { name: 'Жила Кристалла Бездны', hp: 70, radius: 15, solid: true, res: 'crystal', amt: [1, 3] }
   };
   const d = defs[kind] || defs.crates;
   return {

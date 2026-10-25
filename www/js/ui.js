@@ -4,7 +4,7 @@
 import {
   RARITIES, BIOMES, CAMPFIRES, WEAPONS, WEAPON_MODS, BASE_ROOMS, ITEMS, RESOURCES, RECIPES,
   SKILLS, SKILL_TREE, BOSSES, SECRETS, QUESTS, ACHIEVEMENTS, RESCUE_MISSIONS, MISSION_TEMPLATES,
-  UPDATE_ANNOUNCEMENT
+  UPDATE_ANNOUNCEMENT, LOCATIONS, ARTIFACTS
 } from './data.js';
 import { getBiomeIdAt, dist2 } from './world.js';
 
@@ -58,6 +58,9 @@ export class UIManager {
       cdSkill1: document.getElementById('cd-skill-1'),
       cdSkill2: document.getElementById('cd-skill-2'),
       cdSkill3: document.getElementById('cd-skill-3'),
+      cdSkill4: document.getElementById('cd-skill-4'),
+      cdSkill5: document.getElementById('cd-skill-5'),
+      cdSkill6: document.getElementById('cd-skill-6'),
       modalPanel: document.getElementById('modal-panel'),
       modalBody: document.getElementById('modal-body'),
       btnCloseModal: document.getElementById('btn-close-modal'),
@@ -215,6 +218,15 @@ export class UIManager {
           this.els.dialogModal.classList.add('hidden');
           this.openModal('map');
         });
+      } else if (npc.action === 'open_forge') {
+        addBtn('⚒️ Кузница: Крафт легендарного оружия', 'gold', () => {
+          this.els.dialogModal.classList.add('hidden');
+          this.openModal('craft');
+        });
+        addBtn('⬆️ Улучшить оружие (скидка Горна −25%)', 'green', () => {
+          this.els.dialogModal.classList.add('hidden');
+          this.openModal('inventory');
+        });
       } else if (npc.action === 'open_engineer') {
         addBtn('🔧 Инженерия и Модификации оружия', 'gold', () => {
           this.els.dialogModal.classList.add('hidden');
@@ -269,7 +281,7 @@ export class UIManager {
     const upg = eng.weaponUpgrades[wDef.id] || 0;
 
     this.els.hudLevel.textContent = `Ур. ${p.level}`;
-    this.els.hudBiome.textContent = BIOMES[biomeId].name;
+    this.els.hudBiome.textContent = eng.getCurrentLocationName ? eng.getCurrentLocationName() : BIOMES[biomeId].name;
 
     this.els.barHp.style.width = `${Math.max(0, (p.hp / p.maxHp) * 100).toFixed(1)}%`;
     this.els.txtHp.textContent = `${Math.ceil(p.hp)}/${p.maxHp}`;
@@ -316,6 +328,10 @@ export class UIManager {
     this.els.cdSkill1.textContent = s1.level <= 0 ? '🔒' : s1.cd > 0 ? Math.ceil(s1.cd) : '';
     this.els.cdSkill2.textContent = s2.level <= 0 ? '🔒' : s2.cd > 0 ? Math.ceil(s2.cd) : '';
     this.els.cdSkill3.textContent = s3.level <= 0 ? '🔒' : s3.cd > 0 ? Math.ceil(s3.cd) : '';
+    const s4 = eng.skills.fire_strike, s5 = eng.skills.ice_blast, s6 = eng.skills.shadow_teleport;
+    if (this.els.cdSkill4) this.els.cdSkill4.textContent = !s4 || s4.level <= 0 ? '🔒' : s4.cd > 0 ? Math.ceil(s4.cd) : '';
+    if (this.els.cdSkill5) this.els.cdSkill5.textContent = !s5 || s5.level <= 0 ? '🔒' : s5.cd > 0 ? Math.ceil(s5.cd) : '';
+    if (this.els.cdSkill6) this.els.cdSkill6.textContent = (!s6 || (s6.level <= 0 && !eng.hasArtifact('art_abyss'))) ? '🔒' : s6.cd > 0 ? Math.ceil(s6.cd) : '';
 
     // Трекер: спецоперация важнее сюжетного квеста
     if (eng.activeContract) {
@@ -454,6 +470,18 @@ export class UIManager {
       `;
     }).join('');
 
+    const artifactsHtml = Object.values(ARTIFACTS).map(a => {
+      const owned = eng.artifacts?.includes(a.id);
+      return `
+        <div class="item-card ${owned ? 'equipped' : ''}">
+          <div class="card-head">
+            <span class="card-title">${owned ? a.icon : '🔒'} ${a.name}</span>
+            <small style="color:${owned ? '#4ade80' : '#94a3b8'}">${owned ? 'Активен' : 'Не найден'}</small>
+          </div>
+          <div class="card-desc">${a.desc}</div>
+        </div>`;
+    }).join('');
+
     const usableIds = ['medkit', 'grenade', 'food', 'potion'];
     const itemsHtml = usableIds.map((cId) => {
       const c = ITEMS[cId];
@@ -482,7 +510,9 @@ export class UIManager {
     body.innerHTML = `
       ${this.renderResourceStrip()}
       <div class="section-title">🔫 Арсенал VEXMORA (${inv.weapons.length} из ${Object.keys(WEAPONS).length} видов оружия) · Модификации — во вкладке 🏰 База</div>
-      <div class="grid-cards">${weaponsHtml}</div>
+      <div class="grid-cards">${weaponsHtml}
+      <div class="section-title">✨ Артефакты Бездны (${(eng.artifacts || []).length}/${Object.keys(ARTIFACTS).length}) — постоянные усиления героя</div>
+      <div class="grid-cards">${artifactsHtml}</div></div>
       <div class="section-title">🎒 Снаряжение и припасы</div>
       <div class="grid-cards">${itemsHtml}</div>
     `;
@@ -518,7 +548,8 @@ export class UIManager {
       { key: 'power',    name: '💪 Боевая мощь', desc: '+11% к урону всего оружия и навыков за уровень' },
       { key: 'vitality', name: '🛡️ Выживаемость', desc: '+22 к макс. здоровью и ускорение регенерации' },
       { key: 'agility',  name: '⚡ Ловкость',     desc: '+7 к скорости бега, +8 к стамине и темпу стрельбы' },
-      { key: 'luck',     name: '🍀 Удача сталкера', desc: '+3% к шансу крита и +4% к сбору монет и патронов' }
+      { key: 'luck',     name: '🍀 Удача сталкера', desc: '+3% к шансу крита и +4% к сбору монет и патронов' },
+      { key: 'magic',    name: '🔮 Магия Бездны', desc: '+9% к урону магического оружия и +7% к урону способностей за уровень' }
     ];
 
     body.innerHTML = `
@@ -956,6 +987,13 @@ export class UIManager {
         <canvas id="full-map-canvas" width="260" height="260"></canvas>
         <div class="card-desc">🔵 Вы · 🟠 Костры · 🔴 Боссы · ⬜ Здания · 🟡 Цель квеста</div>
       </div>
+      <div class="section-title" style="margin-top:12px">🌌 Локации RISE OF THE ABYSS</div>
+      <div class="grid-cards">
+        ${Object.values(LOCATIONS).map(loc => {
+          const found = eng.discoveredLocations?.includes(loc.id);
+          return `<div class="item-card ${found ? 'equipped' : ''}"><div class="card-head"><span class="card-title">${found ? '🗺️' : '❓'} ${loc.name}</span><small>${found ? 'Открыта' : 'Не разведана'}</small></div><div class="card-desc">${loc.desc}</div><div class="card-actions"><button class="action-btn gold" data-set-objective="${loc.x},${loc.y},${loc.name}">📍 Отметить цель</button></div></div>`;
+        }).join('')}
+      </div>
       <div class="section-title" style="margin-top:12px">🔥 Быстрое перемещение по лагерям</div>
       <div class="grid-cards">${campsHtml}</div>
       <div class="section-title">🆘 Точки спасения и боссы (метка цели без телепорта)</div>
@@ -989,7 +1027,10 @@ export class UIManager {
         <span class="res-pill">💥 Взрывов: ${eng.stats.explosionsTriggered || 0}</span>
         <span class="res-pill">🗝️ Секретов: ${eng.discoveredSecrets.length}/${SECRETS.length}</span>
         <span class="res-pill">☠️ Боссов: ${eng.defeatedBosses.length}/${Object.keys(BOSSES).length}</span>
-        <span class="res-pill">🆘 Спасено людей: ${eng.rescuedIds.length}/10</span>
+        <span class="res-pill">🆘 Спасено людей: ${eng.rescuedIds.length}/${RESCUE_MISSIONS.length}</span>
+        <span class="res-pill">✨ Артефактов: ${(eng.artifacts || []).length}/${Object.keys(ARTIFACTS).length}</span>
+        <span class="res-pill">💜 Элиты убито: ${eng.stats.eliteKills || 0}</span>
+        <span class="res-pill">🌌 Локаций RISE: ${(eng.discoveredLocations || []).length}/${Object.keys(LOCATIONS).length}</span>
         <span class="res-pill">🎯 Спецопераций: ${eng.stats.contractsDone || 0}</span>
         <span class="res-pill">🔧 Модификаций: ${eng.stats.modsInstalled || 0}</span>
         <span class="res-pill">🏰 Улучшений Базы: ${eng.stats.baseUpgrades || 0}</span>

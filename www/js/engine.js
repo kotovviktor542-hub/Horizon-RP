@@ -7,9 +7,9 @@
 import {
   WORLD_CONFIG, RARITIES, BIOMES, CAMPFIRES, NPCS, WEAPONS, WEAPON_MODS, BASE_ROOMS,
   ITEMS, RESOURCES, RECIPES, SKILLS, SKILL_TREE, ENEMIES, BOSSES, SECRETS, QUESTS, ACHIEVEMENTS,
-  RESCUE_MISSIONS, MISSION_TEMPLATES
+  RESCUE_MISSIONS, MISSION_TEMPLATES, LOCATIONS, ARTIFACTS
 } from './data.js';
-import { createWorld, dist2, getBiomeIdAt } from './world.js';
+import { createWorld, dist2, getBiomeIdAt, getLocationIdAt } from './world.js';
 
 const SAVE_KEY = 'horizon_rp_save_v2';
 
@@ -73,7 +73,8 @@ export class GameEngine {
         power: 1,
         vitality: 1,
         agility: 1,
-        luck: 1
+        luck: 1,
+        magic: 1
       },
 
       hp: 130,
@@ -93,6 +94,7 @@ export class GameEngine {
       dashDirY: 0,
       invulnTimer: 0,
       shieldBuffTimer: 0,
+      slowTimer: 0,
       foodRegenTimer: 0,
       comboCount: 0,
       comboTimer: 0,
@@ -149,8 +151,21 @@ export class GameEngine {
     this.skills = {
       slash_wave: { level: 1, cd: 0 },
       magic_nova: { level: 0, cd: 0 },
-      adrenaline: { level: 0, cd: 0 }
+      adrenaline: { level: 0, cd: 0 },
+      fire_strike: { level: 0, cd: 0 },
+      ice_blast: { level: 0, cd: 0 },
+      shadow_teleport: { level: 0, cd: 0 }
     };
+
+    // RISE OF THE ABYSS: локации, артефакты, кинематография, события
+    this.discoveredLocations = [];
+    this.artifacts = [];
+    this.lootedChests = [];
+    this.currentLocationId = null;
+    this.bossIntro = null;
+    this.locationBanner = null;
+    this.eventTimer = 110;
+    this.musicTheme = null;
 
     this.unlockedCamps = ['camp_forest'];
     this.discoveredSecrets = [];
@@ -172,6 +187,7 @@ export class GameEngine {
       baseUpgrades: 0,
       modsInstalled: 0,
       rescuesDone: 0,
+      eliteKills: 0,
       playTime: 0
     };
 
@@ -308,6 +324,8 @@ export class GameEngine {
       if (v) return this.getVehicleSpeed(v);
     }
     let spd = 205 + p.stats.agility * 7;
+    if (this.hasArtifact('art_moon')) spd *= 1.08;
+    if (p.slowTimer > 0) spd *= 0.62;
     if (p.sprinting && p.stamina > 4) spd *= 1.28;
     if (p.shieldBuffTimer > 0) spd *= 1.20;
     if (p.hunger <= 5) spd *= 0.86;
@@ -319,6 +337,11 @@ export class GameEngine {
     const upg = this.weaponUpgrades[weaponId] || 0;
     const p = this.player;
     let mult = (1 + upg * 0.18) * (1 + p.stats.power * 0.11 + (p.level - 1) * 0.05);
+    if (this.hasArtifact('art_sun')) mult *= 1.10;                            // Солнечная Руна: +10% урона
+    if (w.category === 'magic') {
+      mult *= 1 + ((p.stats.magic || 1) - 1) * 0.09;                          // Характеристика «Магия»
+      if (this.hasArtifact('art_abyss')) mult *= 1.12;                        // Ядро Бездны усиливает магию
+    }
     mult *= 1 + (this.baseLevels.workshop || 0) * 0.06;                       // Инженерный Цех Базы
     if (w.category === 'gun' || w.category === 'explosive') {
       mult *= 1 + this.getPerkRank('perk_hollow_point') * 0.08;               // перк «Экспансивный калибр»
@@ -331,6 +354,7 @@ export class GameEngine {
   getCritChance(weaponId = this.inventory.equippedWeapon) {
     const w = WEAPONS[weaponId] || WEAPONS.knife;
     let c = 0.07 + this.player.stats.luck * 0.03 + (w.critBonus || 0) + this.getPerkRank('perk_exec_crit') * 0.05;
+    if (this.hasArtifact('art_storm')) c += 0.06;                             // Грозовой Глаз: +6% крита
     if (this.hasMod(weaponId, 'mod_scope')) c += 0.15;                        // Лазерный Коллиматор
     return Math.min(0.72, c);
   }
@@ -366,6 +390,26 @@ export class GameEngine {
       return Math.round((def.price || 0) * disc);
     }
     return def.price || 0;
+  }
+
+  hasArtifact(artifactId) {
+    return (this.artifacts || []).includes(artifactId);
+  }
+
+  collectArtifact(artifactId) {
+    const def = ARTIFACTS[artifactId];
+    if (!def) return false;
+    if (this.artifacts.includes(artifactId)) {
+      this.pushToast(`✨ Артефакт «${def.name}» уже в коллекции`, '#94a3b8');
+      return false;
+    }
+    this.artifacts.push(artifactId);
+    this.sound.play('levelup');
+    this.spawnSpriteEffect('magic', this.player.x, this.player.y, 1.7, 14);
+    this.pushToast(`${def.icon} АРТЕФАКТ: ${def.name}! ${def.desc}`, '#f0abfc');
+    this.checkAchievements();
+    this.saveGame(true);
+    return true;
   }
 
   hasSave() {
@@ -406,11 +450,10 @@ export class GameEngine {
         baseLevels: this.baseLevels,
         rescuedIds: this.rescuedIds,
         companionActive: this.companionActive,
-        skills: {
-          slash_wave: { level: this.skills.slash_wave.level },
-          magic_nova: { level: this.skills.magic_nova.level },
-          adrenaline: { level: this.skills.adrenaline.level }
-        },
+        skills: Object.fromEntries(Object.entries(this.skills).map(([k, v]) => [k, { level: v.level }])),
+        discoveredLocations: this.discoveredLocations,
+        artifacts: this.artifacts,
+        lootedChests: this.lootedChests,
         unlockedCamps: this.unlockedCamps,
         discoveredSecrets: this.discoveredSecrets,
         lootedBuildings: this.lootedBuildings,
@@ -478,6 +521,16 @@ export class GameEngine {
           if (data.skills[k]) this.skills[k].level = data.skills[k].level || 0;
         }
       }
+      // RISE OF THE ABYSS: старые сохранения продолжают работать — новые поля получают значения по умолчанию
+      this.player.stats.magic = this.player.stats.magic ?? 1;
+      this.player.slowTimer = this.player.slowTimer || 0;
+      this.discoveredLocations = Array.isArray(data.discoveredLocations) ? data.discoveredLocations.filter(id => LOCATIONS[id]) : [];
+      this.artifacts = Array.isArray(data.artifacts) ? data.artifacts.filter(id => ARTIFACTS[id]) : [];
+      this.lootedChests = Array.isArray(data.lootedChests) ? data.lootedChests : [];
+      for (const ch of this.world.chests || []) {
+        if (this.lootedChests.includes(ch.id)) ch.looted = true;
+      }
+      if (data.stats) this.stats.eliteKills = this.stats.eliteKills || 0;
       this.unlockedCamps = data.unlockedCamps || ['camp_forest'];
       this.discoveredSecrets = data.discoveredSecrets || [];
       this.lootedBuildings = data.lootedBuildings || [];
@@ -540,6 +593,9 @@ export class GameEngine {
         xp: b.xp,
         coins: b.coins,
         rewardWeapon: b.rewardWeapon,
+        rewardArtifact: b.rewardArtifact || null,
+        intro: b.intro || b.desc || '',
+        introShown: false,
         rewardItems: b.rewardItems || [],
         actionTimer: 2.2,
         phase: 1,
@@ -568,14 +624,15 @@ export class GameEngine {
     }
   }
 
-  spawnEnemyAt(x, y, forcedKind = null, ignoreSafeZone = false) {
+  spawnEnemyAt(x, y, forcedKind = null, ignoreSafeZone = false, elite = false) {
     if (!ignoreSafeZone) {
       for (const c of CAMPFIRES) {
         if (dist2(x, y, c.x, c.y) < 250 * 250) return null;
       }
     }
     const biomeId = getBiomeIdAt(x, y);
-    const pool = BIOMES[biomeId].enemies;
+    const locId = getLocationIdAt(x, y);
+    const pool = (locId && LOCATIONS[locId]?.enemies?.length) ? LOCATIONS[locId].enemies : BIOMES[biomeId].enemies;
     const isNight = this.isNightTime();
     let kind = forcedKind || pool[Math.floor(Math.random() * pool.length)];
     if (!forcedKind && isNight && biomeId === 'forest' && Math.random() < 0.35) {
@@ -616,6 +673,10 @@ export class GameEngine {
       coins: tpl.coins,
       drops: tpl.drops || [],
       slowTimer: 0,
+      burnTimer: 0,
+      burnDps: 0,
+      slamWindup: 0,
+      elite: !!elite,
       stealthTimer: randRange(1, 3),
       isStealthed: false,
       aimTimer: 0,
@@ -635,6 +696,16 @@ export class GameEngine {
       hitFlash: 0,
       animTime: Math.random() * 5
     };
+    if (elite) {
+      e.hp = e.maxHp = Math.round(e.hp * 2.3);
+      e.damage = Math.round(e.damage * 1.35);
+      e.speed = Math.round(e.speed * 1.06);
+      e.xp = Math.round(e.xp * 3);
+      e.coins = [Math.round(e.coins[0] * 3), Math.round(e.coins[1] * 3.2)];
+      e.radius = Math.round(e.radius * 1.18);
+      e.name = `ЭЛИТА · ${e.name}`;
+      e.drops = [...e.drops, { res: 'crystal', chance: 0.55 }, { id: 'potion', chance: 0.4 }];
+    }
     this.enemies.push(e);
     return e;
   }
@@ -710,6 +781,7 @@ export class GameEngine {
     this.updateCompanion(dt);
     this.updateContract(dt);
     this.updateTelegraphs(dt);
+    this.updateRiseSystems(dt);
     this.updateEnemies(dt);
     this.updateBosses(dt);
     this.updateProjectiles(dt);
@@ -729,7 +801,9 @@ export class GameEngine {
         const dist = randRange(540, 960);
         const sx = clamp(p.x + Math.cos(ang) * dist, 150, this.world.width - 150);
         const sy = clamp(p.y + Math.sin(ang) * dist, 150, this.world.height - 150);
-        this.spawnEnemyAt(sx, sy);
+        const eliteRoll = p.level >= 5 && Math.random() < 0.055;
+        const spawned = this.spawnEnemyAt(sx, sy, null, false, eliteRoll);
+        if (eliteRoll && spawned) this.pushToast(`💜 Элитный враг поблизости: ${spawned.name}! Редкая добыча`, '#c084fc');
       }
     }
 
@@ -768,6 +842,7 @@ export class GameEngine {
     p.dashTimer = Math.max(0, p.dashTimer - dt);
     p.invulnTimer = Math.max(0, p.invulnTimer - dt);
     p.shieldBuffTimer = Math.max(0, p.shieldBuffTimer - dt);
+    p.slowTimer = Math.max(0, (p.slowTimer || 0) - dt);
 
     if (p.comboTimer > 0) {
       p.comboTimer -= dt;
@@ -1403,10 +1478,12 @@ export class GameEngine {
     const skState = this.skills[skillId];
     const skDef = SKILLS[skillId];
     if (!skState || !skDef) return false;
-    if (skState.level <= 0) {
+    const abyssUnlocked = skillId === 'shadow_teleport' && this.hasArtifact('art_abyss');
+    if (skState.level <= 0 && !abyssUnlocked) {
       this.pushToast(`🔒 Изучи «${skDef.name}» во вкладке Герой`, '#94a3b8');
       return false;
     }
+    const effLevel = Math.max(1, skState.level);
     if (skState.cd > 0) return false;
     if (p.stamina < skDef.staminaCost) {
       this.pushToast('⚡ Недостаточно энергии!', '#f59e0b');
@@ -1414,12 +1491,13 @@ export class GameEngine {
     }
 
     p.stamina -= skDef.staminaCost;
-    const cdMult = Math.max(0.65, 1 - (skState.level - 1) * 0.08);
+    let cdMult = Math.max(0.65, 1 - (effLevel - 1) * 0.08);
+    if ((skillId === 'ice_blast' || skillId === 'magic_nova') && this.hasArtifact('art_frost')) cdMult *= 0.8;
     skState.cd = skDef.baseCooldown * cdMult;
     this.sound.play('skill');
 
     const baseDmg = this.getWeaponDamage();
-    const skillMult = (skDef.baseDamageMult || 2) * (1 + (skState.level - 1) * 0.25);
+    const skillMult = (skDef.baseDamageMult || 2) * (1 + (effLevel - 1) * 0.25) * (1 + ((p.stats.magic || 1) - 1) * 0.07);
 
     if (skillId === 'slash_wave') {
       const r = skDef.radius;
@@ -1467,6 +1545,52 @@ export class GameEngine {
         }
       }
       this.camera.shake = 8;
+    } else if (skillId === 'fire_strike') {
+      // Огненный Удар: веер пламени перед героем + поджог врагов
+      const r = skDef.radius || 140;
+      const aim = p.facing;
+      this.slashes.push({ x: p.x, y: p.y, angle: aim, arc: 1.9, range: r, color: '#f97316', life: 0.22, maxLife: 0.22 });
+      this.spawnSpriteEffect('magic', p.x + Math.cos(aim) * 46, p.y - 6 + Math.sin(aim) * 46, 1.3, 16);
+      const dmg = Math.round(baseDmg * skillMult);
+      const hitCone = (t) => {
+        const d = Math.hypot(t.x - p.x, t.y - p.y);
+        if (d > r + t.radius) return false;
+        const diff = Math.abs(Math.atan2(Math.sin(Math.atan2(t.y - p.y, t.x - p.x) - aim), Math.cos(Math.atan2(t.y - p.y, t.x - p.x) - aim)));
+        return diff <= 1.05 || d < 42;
+      };
+      for (let i = this.enemies.length - 1; i >= 0; i--) {
+        const e = this.enemies[i];
+        if (hitCone(e)) { e.burnTimer = 3; e.burnDps = Math.max(e.burnDps || 0, Math.round(dmg * 0.22)); this.damageEnemy(e, dmg, false, '#fb923c'); }
+      }
+      for (const b of [...this.bossEntities]) if (hitCone(b)) this.damageBoss(b, dmg, false);
+      this.sound.play('explosion');
+      this.camera.shake = 6;
+    } else if (skillId === 'ice_blast') {
+      // Ледяной Взрыв: урон + сильное замедление всех врагов вокруг
+      const r = skDef.radius || 165;
+      const slowDur = this.hasArtifact('art_frost') ? 4.2 : 3.0;
+      this.spawnSpriteEffect('magic', p.x, p.y, 2.1, 15);
+      this.shockwaves.push({ x: p.x, y: p.y, radius: 16, maxRadius: r, color: '#7dd3fc', friendly: true, damage: 0 });
+      const dmg = Math.round(baseDmg * skillMult);
+      for (let i = this.enemies.length - 1; i >= 0; i--) {
+        const e = this.enemies[i];
+        if (dist2(p.x, p.y, e.x, e.y) <= (r + e.radius) ** 2) { e.slowTimer = Math.max(e.slowTimer || 0, slowDur); this.damageEnemy(e, dmg, false, '#7dd3fc'); }
+      }
+      for (const b of [...this.bossEntities]) {
+        if (dist2(p.x, p.y, b.x, b.y) <= (r + b.radius) ** 2) { b.stunTimer = Math.max(b.stunTimer || 0, 0.7); this.damageBoss(b, dmg, false); }
+      }
+      this.camera.shake = 7;
+    } else if (skillId === 'shadow_teleport') {
+      // Теневой Телепорт: мгновенный рывок сквозь тьму по направлению взгляда
+      const distTp = 250 + effLevel * 22;
+      const nx2 = clamp(p.x + Math.cos(p.facing) * distTp, 60, this.world.width - 60);
+      const ny2 = clamp(p.y + Math.sin(p.facing) * distTp, 60, this.world.height - 60);
+      this.spawnSpriteEffect('magic', p.x, p.y, 1.2, 14);
+      p.x = nx2; p.y = ny2;
+      p.invulnTimer = Math.max(p.invulnTimer, 0.55);
+      this.spawnSpriteEffect('magic', p.x, p.y, 1.4, 14);
+      this.spawnDust(p.x, p.y, '#a855f7', 10);
+      this.camera.shake = 3;
     } else if (skillId === 'adrenaline') {
       // Мгновенная перезарядка текущего оружия из резерва патронов
       const wid = this.inventory.equippedWeapon;
@@ -1502,7 +1626,8 @@ export class GameEngine {
         return false;
       }
       this.inventory.consumables.medkit--;
-      const healMult = (1 + (this.baseLevels.medbay || 0) * 0.10) * (1 + this.getPerkRank('perk_field_medic') * 0.15);
+      const healMult = (1 + (this.baseLevels.medbay || 0) * 0.10) * (1 + this.getPerkRank('perk_field_medic') * 0.15)
+        * (this.rescuedIds.includes('res_cursed_healer') ? 1.15 : 1);
       const heal = Math.round(p.maxHp * 0.55 * healMult);
       p.hp = Math.min(p.maxHp, p.hp + heal);
       this.sound.play('heal');
@@ -1620,6 +1745,18 @@ export class GameEngine {
       if (e.hitFlash > 0) e.hitFlash = Math.max(0, e.hitFlash - dt);
       if (e.slowTimer > 0) e.slowTimer = Math.max(0, e.slowTimer - dt);
       const slowMult = e.slowTimer > 0 ? 0.65 : 1;
+
+      // RISE: горение от огненного оружия и Огненного Удара
+      if (e.burnTimer > 0) {
+        e.burnTimer = Math.max(0, e.burnTimer - dt);
+        e.hp -= (e.burnDps || 8) * dt;
+        if (Math.random() < dt * 6) this.spawnSpriteEffect('magic', e.x, e.y - 12, 0.55, 16);
+        if (e.hp <= 0) {
+          this.enemies.splice(i, 1);
+          this.onEnemyKilled(e);
+          continue;
+        }
+      }
 
       if (e.flying) e.z = 26;
       else if (e.z > 0 || e.vz !== 0) {
@@ -1848,6 +1985,48 @@ export class GameEngine {
               e.vy = ny * (e.behavior === 'stealth_stalker' ? 390 : 345);
             } else { e.vx += (nx * spd - e.vx) * Math.min(1, dt * 6); e.vy += (ny * spd - e.vy) * Math.min(1, dt * 6); }
             break;
+          case 'mage_shooter': { // Маг Бездны: веер из 3 сфер
+            moveTo(e.attackRange * 0.8);
+            if (e.attackCd <= 0 && d <= e.attackRange) {
+              e.attackCd = 2.3;
+              const baseA = Math.atan2(ty - e.y, tx - e.x);
+              for (let k = -1; k <= 1; k++) {
+                const ang = baseA + k * 0.26;
+                this.projectiles.push({
+                  fromPlayer: false, kind: 'magic',
+                  x: e.x + Math.cos(ang) * 16, y: e.y - 6 + Math.sin(ang) * 16,
+                  vx: Math.cos(ang) * e.projSpeed, vy: Math.sin(ang) * e.projSpeed,
+                  radius: 8, damage: Math.round(e.damage * 0.8), splashRadius: 40,
+                  color: '#c084fc', life: (e.attackRange + 80) / e.projSpeed
+                });
+              }
+              this.spawnSpriteEffect('magic', e.x, e.y - 8, 0.9, 16);
+            }
+            break;
+          }
+          case 'frost_shooter': { // Ледяной Ревенант: замедляет героя
+            moveTo(e.attackRange * 0.82);
+            if (e.attackCd <= 0 && d <= e.attackRange) {
+              e.attackCd = 1.9;
+              this.projectiles.push({
+                fromPlayer: false, kind: 'magic', slowPlayer: true,
+                x: e.x + nx * 16, y: e.y - 6 + ny * 16,
+                vx: nx * e.projSpeed, vy: ny * e.projSpeed,
+                radius: 7, damage: e.damage, color: '#7dd3fc', life: (e.attackRange + 80) / e.projSpeed
+              });
+            }
+            break;
+          }
+          case 'golem': { // Каменный Голем: честный телеграф удара по земле
+            e.vx += (nx * spd - e.vx) * Math.min(1, dt * 6);
+            e.vy += (ny * spd - e.vy) * Math.min(1, dt * 6);
+            if (e.specialTimer <= 0 && d < 210) {
+              e.specialTimer = 4.4;
+              this.spawnTelegraph(p.x, p.y, 92, 0.8, Math.round(e.damage * 1.4));
+              this.pushToast('⚠️ Голем замахивается — выйди из красной зоны!', '#f59e0b');
+            }
+            break;
+          }
           default: // melee и прочие
             e.vx += (nx * spd - e.vx) * Math.min(1, dt * 6);
             e.vy += (ny * spd - e.vy) * Math.min(1, dt * 6);
@@ -1939,6 +2118,13 @@ export class GameEngine {
       if (b.stunTimer > 0) { b.stunTimer -= dt; continue; }
 
       const dHome = Math.hypot(p.x - b.homeX, p.y - b.homeY);
+      // RISE: короткое кинематографичное интро при первом входе на арену босса
+      if (!b.introShown && !p.dead && dHome < b.arenaRadius) {
+        b.introShown = true;
+        this.bossIntro = { name: b.name, text: b.intro, until: performance.now() / 1000 + 3.4 };
+        this.sound.play('skill');
+        this.pushToast(`💀 ${b.name} пробудился!`, '#f43f5e');
+      }
       if (p.dead || dHome > b.arenaRadius + 260) {
         b.x += (b.homeX - b.x) * Math.min(1, dt * 2);
         b.y += (b.homeY - b.y) * Math.min(1, dt * 2);
@@ -2100,6 +2286,40 @@ export class GameEngine {
         if (b.phase >= 2) summon(b.phase >= 3 ? 'heavy_trooper' : 'soldier', 2);
         else { b.burstLeft = 6; b.burstTimer = 0; }
         break;
+      case 'boss_rune_golem': // РУННЫЙ ГОЛЕМ: рунный удар по земле (телеграф) + веер осколков
+        this.spawnTelegraph(p.x, p.y, 104, 0.9, Math.round(b.damage * 1.25));
+        fan(b.phase >= 2 ? 7 : 5, 1.2, 360, 0.9, '#fbbf24', 'bullet');
+        if (b.phase >= 3) ring(12, 330, '#f59e0b');
+        break;
+      case 'boss_necromancer': // НЕКРОМАНТ ЗАБЫТЫХ: призыв скелетов + веер тьмы
+        summon(b.phase >= 2 ? 'skeleton_warrior' : 'zombie', b.phase >= 3 ? 3 : 2);
+        fan(b.phase >= 2 ? 7 : 5, 1.25, 380, 0.95, '#a855f7');
+        if (b.phase >= 2) b.shieldTimer = 2.2;
+        break;
+      case 'boss_cursed_queen': // ЭЛЬВИРА: призыв призраков, ледяные веера и замедление
+        if (b.phase >= 2) summon('cursed_wraith', 2);
+        fan(b.phase >= 2 ? 9 : 6, 1.5, 360, 0.9, '#4ade80');
+        if (b.phase >= 3) { ring(14, 340, '#22c55e'); p.slowTimer = Math.max(p.slowTimer || 0, 1.2); }
+        break;
+      case 'boss_abyss_warlord': // КЗАРГОТ: рывки, веера Бездны и элитный эскорт
+        b.dashActive = 0.4; b.dashVx = nx * 470; b.dashVy = ny * 470;
+        fan(b.phase >= 2 ? 7 : 5, 1.1, 430, 1.0, '#e879f9', 'bullet');
+        if (b.phase >= 2) summon(b.phase >= 3 ? 'void_cultist' : 'abyss_mage', 2);
+        if (b.phase >= 3) this.spawnTelegraph(p.x, p.y, 96, 0.8, Math.round(b.damage * 1.3));
+        break;
+      case 'boss_abyss_heart': // СЕРДЦЕ БЕЗДНЫ (секрет): кольца хаоса, телепорты, сверхновая
+        ring(b.phase === 1 ? 14 : b.phase === 2 ? 18 : 24, 380 + b.phase * 18, '#f0abfc');
+        if (b.phase >= 2) {
+          b.x = clamp(p.x - nx * 120 + randRange(-60, 60), 70, this.world.width - 70);
+          b.y = clamp(p.y - ny * 120 + randRange(-60, 60), 70, this.world.height - 70);
+          this.spawnSpriteEffect('magic', b.x, b.y, 1.6, 14);
+          fan(7, 1.4, 430, 1.0, '#e879f9');
+        }
+        if (b.phase >= 3) {
+          this.shockwaves.push({ x: b.x, y: b.y, radius: 26, maxRadius: 300, color: '#f0abfc', friendly: false, damage: b.damage, hitPlayer: false });
+          summon('void_cultist', 2);
+        }
+        break;
       default: // АРХОНТ VEXMORA: спирали, прицельные лучи, порталы и сверхновая по фазам
         if (b.phase === 1) { ring(12, 365, '#ef4444'); b.aiming = true; b.aimTimer = 1.05; }
         else if (b.phase === 2) {
@@ -2124,6 +2344,16 @@ export class GameEngine {
       if (this.hasMod(opts.weaponId, 'mod_cryo')) e.slowTimer = Math.max(e.slowTimer || 0, 2.5);
       if (this.hasMod(opts.weaponId, 'mod_vamp') && !this.player.dead) {
         this.player.hp = Math.min(this.player.maxHp, this.player.hp + Math.max(1, Math.round(dmg * 0.06)));
+      }
+    }
+    if (opts.weaponId) {
+      const wDef = WEAPONS[opts.weaponId];
+      if (wDef?.effect === 'burn') { e.burnTimer = 3; e.burnDps = Math.max(e.burnDps || 0, Math.round(dmg * 0.20)); }
+      if (wDef?.effect === 'abyss') e.slowTimer = Math.max(e.slowTimer || 0, 1.6);
+      if (wDef?.effect === 'fire') { e.burnTimer = Math.max(e.burnTimer || 0, 2); e.burnDps = Math.max(e.burnDps || 0, Math.round(dmg * 0.15)); }
+      if (!this.player.dead && (wDef?.effect === 'lifesteal' || this.hasArtifact('art_blood'))) {
+        const ls = wDef?.effect === 'lifesteal' ? 0.05 : 0.03;
+        this.player.hp = Math.min(this.player.maxHp, this.player.hp + Math.max(1, Math.round(dmg * ls)));
       }
     }
     if (e.isStealthed) { e.isStealthed = false; e.stealthTimer = 2.5; }
@@ -2175,6 +2405,10 @@ export class GameEngine {
       this.sound.play('levelup');
     }
     this.stats.totalKills++;
+    if (e.elite) {
+      this.stats.eliteKills = (this.stats.eliteKills || 0) + 1;
+      this.pushToast(`💜 Элита повержена: ${e.name}!`, '#c084fc');
+    }
     this.stats.biomeKills[e.biome] = (this.stats.biomeKills[e.biome] || 0) + 1;
     this.advanceQuest('kills', 1);
     this.advanceQuest('biome_kills', 1, { biome: e.biome });
@@ -2223,6 +2457,7 @@ export class GameEngine {
       this.inventory.coins += b.coins;
       this.gainXp(b.xp);
       this.grantWeapon(b.rewardWeapon);
+      if (b.rewardArtifact) this.collectArtifact(b.rewardArtifact);
       for (const it of b.rewardItems) {
         this.grantItem(it.id, it.count);
       }
@@ -2406,6 +2641,7 @@ export class GameEngine {
             this.triggerEnemyExplosion(pr.x, pr.y, pr.splashRadius, pr.damage);
           } else {
             this.damagePlayer(pr.damage);
+            if (pr.slowPlayer) { p.slowTimer = 1.7; this.addFloatingText(p.x, p.y - 30, '❄️ ЗАМЕДЛЕНИЕ!', '#7dd3fc'); }
           }
           this.projectiles.splice(i, 1);
         } else if (this.companion && this.companion.hp > 0 && dist2(pr.x, pr.y, this.companion.x, this.companion.y) <= (pr.radius + 13) ** 2) {
@@ -2523,8 +2759,81 @@ export class GameEngine {
   }
 
   // ── Интерактивные объекты: костры, NPC, транспорт, двери зданий и бункеры ──
+  // RISE OF THE ABYSS: ловушки локаций, случайные события, темы музыки
+  updateRiseSystems(dt) {
+    const p = this.player;
+    if (p.dead) return;
+
+    // Ловушки: шипы / огонь / яд (честно видны на земле, урон с перезарядкой)
+    for (const trap of this.world.traps || []) {
+      trap.hitCd = Math.max(0, (trap.hitCd || 0) - dt);
+      if (trap.hitCd <= 0 && p.z < 10 && dist2(p.x, p.y, trap.x, trap.y) < (trap.radius + p.radius) ** 2) {
+        trap.hitCd = 0.9;
+        this.damagePlayer(trap.damage);
+        if (trap.kind === 'trap_poison') { p.slowTimer = Math.max(p.slowTimer || 0, 1.6); this.addFloatingText(p.x, p.y - 30, '☠️ ЯД!', '#a3e635'); }
+        else if (trap.kind === 'trap_fire') this.addFloatingText(p.x, p.y - 30, '🔥 ОГОНЬ!', '#fb923c');
+        else this.addFloatingText(p.x, p.y - 30, '🗡️ ШИПЫ!', '#e2e8f0');
+      }
+    }
+
+    // Случайные события мира: засады, элита, дары странников
+    this.eventTimer -= dt;
+    if (this.eventTimer <= 0) {
+      this.eventTimer = randRange(105, 170);
+      const roll = Math.random();
+      const locId = getLocationIdAt(p.x, p.y);
+      if (roll < 0.42) {
+        const pool = locId ? LOCATIONS[locId].enemies : null;
+        let spawned = 0;
+        for (let k = 0; k < 3; k++) {
+          const ang = Math.random() * Math.PI * 2;
+          const e = this.spawnEnemyAt(p.x + Math.cos(ang) * 190, p.y + Math.sin(ang) * 190, pool ? pool[k % pool.length] : null, true);
+          if (e) spawned++;
+        }
+        if (spawned) this.pushToast('⚔️ ЗАСАДА! Твари Бездны окружили героя!', '#f43f5e');
+      } else if (roll < 0.72 && p.level >= 4) {
+        const e = this.spawnEnemyAt(p.x + randRange(-260, 260), p.y + randRange(-260, 260), null, true, true);
+        if (e) this.pushToast(`💜 СОБЫТИЕ: элитный враг «${e.name}» вышел на охоту!`, '#c084fc');
+      } else {
+        this.drops.push({ x: p.x + 40, y: p.y, kind: 'item', itemId: 'medkit', amount: 1, life: 60 });
+        this.drops.push({ x: p.x - 40, y: p.y, kind: 'ammo', amount: 24, life: 60 });
+        this.pushToast('🎁 Странник оставил припасы рядом с вами!', '#4ade80');
+      }
+    }
+  }
+
+  getCurrentLocationName() {
+    const locId = getLocationIdAt(this.player.x, this.player.y);
+    if (locId) return LOCATIONS[locId].name;
+    const b = BIOMES[getBiomeIdAt(this.player.x, this.player.y)];
+    return b ? b.name : 'Дикие земли';
+  }
+
   checkWorldInteractions() {
     const p = this.player;
+
+    // RISE: открытие особых локаций + баннер + смена музыкальной темы
+    const locId = getLocationIdAt(p.x, p.y);
+    if (locId !== this.currentLocationId) {
+      this.currentLocationId = locId;
+      if (locId && !this.discoveredLocations.includes(locId)) {
+        this.discoveredLocations.push(locId);
+        const loc = LOCATIONS[locId];
+        this.locationBanner = { name: loc.name, desc: loc.desc, until: performance.now() / 1000 + 4.2 };
+        this.sound.play('levelup');
+        this.pushToast(`🗺️ Открыта локация: ${loc.name}!`, '#fde047');
+        this.gainXp(60);
+        this.checkAchievements();
+        this.saveGame(true);
+      }
+    }
+    const bossNear = this.bossEntities.some(b => dist2(p.x, p.y, b.x, b.y) < 560 * 560);
+    const theme = bossNear ? 'boss' : (locId ? LOCATIONS[locId].music : 'field');
+    if (theme !== this.musicTheme) {
+      this.musicTheme = theme;
+      this.sound.setMusicTheme?.(theme);
+    }
+
     for (const c of CAMPFIRES) {
       if (!this.unlockedCamps.includes(c.id) && dist2(p.x, p.y, c.x, c.y) < 120 * 120) {
         this.unlockedCamps.push(c.id);
@@ -2572,6 +2881,13 @@ export class GameEngine {
     for (const cache of this.world.modCaches) {
       if (!cache.looted && dist2(p.x, p.y, cache.x, cache.y) < 88 * 88) {
         return { type: 'mod_cache', target: cache, label: `📦 Вскрыть спецконтейнер (модуль + оружие)` };
+      }
+    }
+
+    // RISE: сундуки локаций (проклятые — с засадой и двойной добычей!)
+    for (const chest of this.world.chests || []) {
+      if (!chest.looted && dist2(p.x, p.y, chest.x, chest.y) < 84 * 84) {
+        return { type: 'chest', target: chest, label: chest.cursed ? '💀 Открыть ПРОКЛЯТЫЙ сундук (двойная добыча!)' : '🧰 Открыть сундук' };
       }
     }
 
@@ -2732,6 +3048,31 @@ export class GameEngine {
       return inter;
     }
 
+    if (inter.type === 'chest') {
+      const chest = inter.target;
+      chest.looted = true;
+      if (!this.lootedChests.includes(chest.id)) this.lootedChests.push(chest.id);
+      const mult = chest.cursed ? 2 : 1;
+      const coins = randInt(60, 130) * mult;
+      const ammo = randInt(16, 34) * mult;
+      this.inventory.coins += coins;
+      this.grantItem('ammo', ammo);
+      if (Math.random() < 0.75) this.grantItem('medkit', 1);
+      if (Math.random() < 0.4) this.inventory.resources.crystal = (this.inventory.resources.crystal || 0) + 1;
+      this.sound.play('unlock');
+      this.spawnSpriteEffect('magic', chest.x, chest.y, 1.3, 14);
+      if (chest.cursed) {
+        this.pushToast(`💀 ПРОКЛЯТЫЙ СУНДУК: +${coins}🪙, +${ammo} патронов... но это ЗАСАДА!`, '#c084fc');
+        for (let k = 0; k < 3; k++) {
+          this.spawnEnemyAt(chest.x + randRange(-120, 120), chest.y + randRange(-120, 120), null, true);
+        }
+      } else {
+        this.pushToast(`🧰 Сундук: +${coins}🪙 и +${ammo} патронов!`, '#4ade80');
+      }
+      this.saveGame(true);
+      return inter;
+    }
+
     if (inter.type === 'open_base') {
       this.sound.play('ui');
       return { type: 'open_base', target: inter.target };
@@ -2796,6 +3137,7 @@ export class GameEngine {
       bld.looted = true;
       this.inventory.coins += sec.coins;
       this.grantWeapon(sec.rewardWeapon);
+      if (sec.rewardArtifact) this.collectArtifact(sec.rewardArtifact);
       if (sec.rewardMod && !this.unlockedMods.includes(sec.rewardMod)) {
         this.unlockedMods.push(sec.rewardMod);
         this.pushToast(`🔧 Найден модуль «${WEAPON_MODS[sec.rewardMod]?.name}»! Установи у Инженера (вкладка 🏰 База)`, '#c084fc');
@@ -3441,7 +3783,8 @@ export class GameEngine {
     if (!this.inventory.weapons.includes(weaponId)) return false;
     const cur = this.weaponUpgrades[weaponId] || 0;
     if (cur >= 10) return false;
-    const costCoins = 45 + cur * 40;
+    const smithDisc = this.rescuedIds.includes('res_abyss_smith') ? 0.75 : 1;
+    const costCoins = Math.round((45 + cur * 40) * smithDisc);
     const costScrap = 1 + Math.floor(cur / 2);
     if (this.inventory.coins < costCoins || (this.inventory.resources.scrap || 0) < costScrap) {
       this.pushToast('Нужно больше монет и металлолома (⚙️)!', '#f59e0b');
@@ -3463,7 +3806,8 @@ export class GameEngine {
       this.pushToast('Это оружие уже собрано!', '#94a3b8');
       return false;
     }
-    if (this.inventory.coins < rec.costCoins) {
+    const craftCost = Math.round(rec.costCoins * (this.rescuedIds.includes('res_abyss_smith') ? 0.75 : 1));
+    if (this.inventory.coins < craftCost) {
       this.pushToast('Недостаточно монет!', '#ef4444');
       return false;
     }
@@ -3474,7 +3818,7 @@ export class GameEngine {
       }
     }
 
-    this.inventory.coins -= rec.costCoins;
+    this.inventory.coins -= craftCost;
     for (const [resId, need] of Object.entries(rec.ingredients)) {
       this.inventory.resources[resId] -= need;
     }

@@ -162,6 +162,9 @@ export class InputController {
     this.bindTapButton('btn-skill-1', () => this.cb.onSkill?.('slash_wave'));
     this.bindTapButton('btn-skill-2', () => this.cb.onSkill?.('magic_nova'));
     this.bindTapButton('btn-skill-3', () => this.cb.onSkill?.('adrenaline'));
+    this.bindTapButton('btn-skill-4', () => this.cb.onSkill?.('fire_strike'));
+    this.bindTapButton('btn-skill-5', () => this.cb.onSkill?.('ice_blast'));
+    this.bindTapButton('btn-skill-6', () => this.cb.onSkill?.('shadow_teleport'));
   }
 
   bindKeyboard() {
@@ -183,6 +186,9 @@ export class InputController {
       else if (k === '1') this.cb.onSkill?.('slash_wave');
       else if (k === '2') this.cb.onSkill?.('magic_nova');
       else if (k === '3') this.cb.onSkill?.('adrenaline');
+      else if (k === '4') this.cb.onSkill?.('fire_strike');
+      else if (k === '5') this.cb.onSkill?.('ice_blast');
+      else if (k === '6') this.cb.onSkill?.('shadow_teleport');
       else if (k === 'i') this.cb.onOpenTab?.('inventory');
       else if (k === 'm') this.cb.onOpenTab?.('map');
       else if (e.key === 'Escape') this.cb.onEscape?.();

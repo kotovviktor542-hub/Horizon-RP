@@ -15,7 +15,8 @@ globalThis.window = { innerWidth: 844, innerHeight: 390, devicePixelRatio: 2 };
 
 const { GameEngine } = await import('../www/js/engine.js');
 const data = await import('../www/js/data.js');
-const { WEAPONS, WEAPON_MODS, BASE_ROOMS, ITEMS, SKILLS, SKILL_TREE, ENEMIES, BOSSES, QUESTS, SECRETS, NPCS, ACHIEVEMENTS, BIOMES, RESCUE_MISSIONS, UPDATE_ANNOUNCEMENT, GAME_TITLE } = data;
+const { WEAPONS, WEAPON_MODS, BASE_ROOMS, ITEMS, SKILLS, SKILL_TREE, ENEMIES, BOSSES, QUESTS, SECRETS, NPCS, ACHIEVEMENTS, BIOMES, RESCUE_MISSIONS, UPDATE_ANNOUNCEMENT, GAME_TITLE, LOCATIONS, ARTIFACTS } = data;
+const { getLocationIdAt } = await import('../www/js/world.js');
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(__dirname, '..');
@@ -33,9 +34,9 @@ function killAll(eng, list) {
   for (const e of [...list]) eng.damageEnemy(e, 999999);
 }
 
-console.log('=== Проверка VEXMORA — БОЛЬШОЕ ОБНОВЛЕНИЕ ИГРЫ (v2.0) ===');
+console.log('=== Проверка ОБНОВЛЕНИЕ VEXMORA — UPDATE 2.0: RISE OF THE ABYSS (v2.1) ===');
 assert.equal(GAME_TITLE, 'VEXMORA');
-assert.ok(UPDATE_ANNOUNCEMENT.title.includes('VEXMORA — БОЛЬШОЕ ОБНОВЛЕНИЕ ИГРЫ'));
+assert.ok(UPDATE_ANNOUNCEMENT.title.includes('ОБНОВЛЕНИЕ VEXMORA — UPDATE 2.0: RISE OF THE ABYSS'));
 
 test('1. Все прозрачные пиксель-арт PNG и спрайт-листы существуют и валидны (108+ файлов)', () => {
   const spritesJs = fs.readFileSync(path.join(rootDir, 'www/js/sprites.js'), 'utf8');
@@ -68,14 +69,14 @@ test('1. Все прозрачные пиксель-арт PNG и спрайт-�
   assert.ok(totalFiles.length >= 100, `Всего спрайтов должно быть 100+, найдено ${totalFiles.length}`);
 });
 
-test('2. Мир: 4 биома, 9 зданий, 6 транспортов, 7 NPC базы, 10 боссов, 10 спасений, 3 спецконтейнера', () => {
+test('2. Мир: 4 биома, 9 зданий, 6 транспортов, 8 NPC базы, 15 боссов, 13 спасений, 3 спецконтейнера', () => {
   const eng = new GameEngine(noopSound);
   assert.equal(Object.keys(BIOMES).length, 4);
-  assert.equal(NPCS.length, 7);
-  assert.equal(eng.bossEntities.length, 10);
-  assert.equal(Object.keys(BOSSES).length, 10);
-  assert.equal(eng.rescueSites.length, 10);
-  assert.equal(RESCUE_MISSIONS.length, 10);
+  assert.equal(NPCS.length, 8);
+  assert.equal(eng.bossEntities.length, 15);
+  assert.equal(Object.keys(BOSSES).length, 15);
+  assert.equal(eng.rescueSites.length, 13);
+  assert.equal(RESCUE_MISSIONS.length, 13);
   assert.equal(eng.world.modCaches.length, 3);
 
   const bldKinds = new Set(eng.world.buildings.map(b => b.kind));
@@ -88,14 +89,14 @@ test('2. Мир: 4 биома, 9 зданий, 6 транспортов, 7 NPC �
   }
   // У каждого босса уникальный спрайт, арена и награда-оружие
   const bossSprites = new Set(Object.values(BOSSES).map(b => b.sprite));
-  assert.equal(bossSprites.size, 10);
+  assert.equal(bossSprites.size, 15);
   for (const b of Object.values(BOSSES)) assert.ok(WEAPONS[b.rewardWeapon], `Награда босса ${b.id}`);
 });
 
-test('3. Герой: 4 направления, бег, прыжок + все 24 оружия стреляют, магазины и перезарядка работают', () => {
-  assert.equal(Object.keys(WEAPONS).length, 24);
+test('3. Герой: 4 направления, бег, прыжок + все 30 оружий стреляют, магазины и перезарядка работают', () => {
+  assert.equal(Object.keys(WEAPONS).length, 30);
   assert.equal(Object.keys(ITEMS).length, 8);
-  assert.equal(Object.keys(ENEMIES).length, 16);
+  assert.equal(Object.keys(ENEMIES).length, 26);
 
   const eng = new GameEngine(noopSound);
   for (const [mx, my, expectedDir] of [[1, 0, 'right'], [-1, 0, 'left'], [0, -1, 'up'], [0, 1, 'down']]) {
@@ -288,7 +289,7 @@ test('8. Спасение защитой и сопровождением, нап
   assert.equal(eng.getPerkRank('perk_kevlar'), 1);
 });
 
-test('9. 10 боссов: фазы, телеграфы/щиты/телепорты, награды, коллекция и открытие территорий', () => {
+test('9. 15 боссов: фазы, телеграфы/щиты/телепорты, награды, коллекция и открытие территорий', () => {
   const eng = new GameEngine(noopSound);
   eng.player.invulnTimer = 999;
   for (const bossId of Object.keys(BOSSES)) {
@@ -366,4 +367,188 @@ test('10. Секреты с модулями, гейтинг магазина, �
   for (const ach of ACHIEVEMENTS) assert.equal(typeof ach.check, 'function');
 });
 
-console.log(`\nИТОГ: ${passed}/10 комплексных проверок VEXMORA 2.0 успешно пройдено!`);
+test('11. RISE: 3 локации (Руины, Лес Проклятых, Крепость Бездны), ловушки, сундуки, кристаллы и открытие локаций', () => {
+  const eng = new GameEngine(noopSound);
+  assert.equal(Object.keys(LOCATIONS).length, 3);
+  for (const loc of Object.values(LOCATIONS)) {
+    assert.equal(getLocationIdAt(loc.x, loc.y), loc.id, `Центр локации ${loc.id}`);
+    assert.ok(loc.enemies.length >= 4 && loc.enemies.every(k => ENEMIES[k]), `Пул врагов ${loc.id}`);
+  }
+  assert.equal(getLocationIdAt(3160, 3180), null, 'База не входит в особые локации');
+  assert.ok((eng.world.traps || []).length >= 12, 'Ловушки размещены в мире');
+  assert.ok((eng.world.chests || []).length >= 8, 'Сундуки размещены в мире');
+  assert.ok(eng.world.nodes.some(n => n.kind === 'crystal_node'), 'Жилы Кристалла Бездны существуют');
+  assert.ok(eng.world.chests.some(c => c.cursed), 'Есть проклятые сундуки');
+
+  // Враги локации спавнятся из её собственного пула
+  const e = eng.spawnEnemyAt(720, 760, null, true);
+  assert.ok(e && LOCATIONS.forgotten_ruins.enemies.includes(e.kind), 'Пул врагов Руин работает');
+
+  // Открытие локации: баннер + запись в прогресс + название для HUD
+  eng.player.x = 4920; eng.player.y = 5680;
+  eng.checkWorldInteractions();
+  assert.ok(eng.discoveredLocations.includes('cursed_forest'), 'Лес Проклятых открыт');
+  assert.ok(eng.locationBanner && eng.locationBanner.name.includes('Лес Проклятых'), 'Баннер локации показан');
+  assert.ok(eng.getCurrentLocationName().includes('Лес Проклятых'), 'HUD показывает локацию');
+
+  // Ловушка наносит урон стоящему на ней герою
+  const trap = eng.world.traps[0];
+  eng.player.x = trap.x; eng.player.y = trap.y; eng.player.z = 0; eng.player.invulnTimer = 0;
+  const hpBefore = eng.player.hp;
+  eng.updateRiseSystems(0.05);
+  assert.ok(eng.player.hp < hpBefore, 'Ловушка наносит урон');
+
+  // Обычный сундук: взаимодействие выдаёт добычу и помечает вскрытым
+  const chest = eng.world.chests.find(c => !c.cursed);
+  eng.player.x = chest.x; eng.player.y = chest.y;
+  const inter = eng.getNearbyInteractable();
+  assert.equal(inter?.type, 'chest', 'Сундук доступен для взаимодействия');
+  const coinsBefore = eng.inventory.coins;
+  eng.interact();
+  assert.ok(chest.looted && eng.lootedChests.includes(chest.id), 'Сундук вскрыт и сохранён');
+  assert.ok(eng.inventory.coins > coinsBefore, 'Сундук дал монеты');
+
+  // Проклятый сундук: двойная добыча + засада
+  const cursed = eng.world.chests.find(c => c.cursed);
+  eng.player.x = cursed.x; eng.player.y = cursed.y;
+  const enemiesBefore = eng.enemies.length;
+  eng.interact();
+  assert.ok(cursed.looted && eng.enemies.length > enemiesBefore, 'Проклятый сундук устроил засаду');
+});
+
+test('12. RISE: 10 новых врагов с особым ИИ, элитные варианты, горение и замедление от оружия', () => {
+  const eng = new GameEngine(noopSound);
+  eng.player.x = 1500; eng.player.y = 1500; eng.player.invulnTimer = 999;
+  const newKinds = ['skeleton_warrior', 'dark_archer', 'abyss_mage', 'stone_golem', 'cursed_wraith', 'thorn_hunter', 'plague_bearer', 'frost_revenant', 'bone_hound', 'void_cultist'];
+  for (const kind of newKinds) {
+    const e = eng.spawnEnemyAt(1500 + Math.random() * 200, 1500 + Math.random() * 200, kind, true);
+    assert.ok(e, `Враг ${kind} спавнится`);
+    assert.equal(e.sprite, ENEMIES[kind].sprite, `Спрайт ${kind}`);
+  }
+  for (let i = 0; i < 30; i++) eng.update(0.05, { moveX: 0, moveY: 0 });
+  assert.ok(eng.enemies.length > 0, 'ИИ новых врагов работает без ошибок');
+
+  // Маг Бездны стреляет веером сфер
+  const mageEng = new GameEngine(noopSound);
+  mageEng.player.x = 1600; mageEng.player.y = 1500; mageEng.player.invulnTimer = 999;
+  const mage = mageEng.spawnEnemyAt(1400, 1500, 'abyss_mage', true);
+  mage.attackCd = 0;
+  for (let i = 0; i < 12 && mageEng.projectiles.length < 3; i++) mageEng.update(0.05, { moveX: 0, moveY: 0 });
+  assert.ok(mageEng.projectiles.length >= 3, 'Маг Бездны выпустил веер из 3 сфер');
+
+  // Элитный вариант: усиленные статы, имя и статистика элитных убийств
+  const elite = eng.spawnEnemyAt(1700, 1500, 'skeleton_warrior', true, true);
+  assert.ok(elite.elite && elite.maxHp > ENEMIES.skeleton_warrior.hp * 2, 'Элита усилена');
+  eng.damageEnemy(elite, 999999);
+  assert.ok((eng.stats.eliteKills || 0) >= 1, 'Элитное убийство засчитано');
+
+  // Легендарное оружие: Шипастый Лук поджигает, Клинок Векса лечит
+  const victim = eng.spawnEnemyAt(1750, 1500, 'zombie', true);
+  eng.damageEnemy(victim, 20, false, null, { weaponId: 'thorn_bow' });
+  assert.ok(victim.burnTimer > 0, 'Шипастый Лук поджигает цель');
+  eng.player.hp = Math.max(10, eng.player.maxHp - 60);
+  const hpBefore = eng.player.hp;
+  eng.damageEnemy(victim, 30, false, null, { weaponId: 'vex_blade' });
+  assert.ok(eng.player.hp > hpBefore, 'Клинок Векса вытягивает жизнь');
+});
+
+test('13. RISE: способности Огонь/Лёд/Телепорт, характеристика Магия и 6 артефактов', () => {
+  const eng = new GameEngine(noopSound);
+  eng.player.x = 2000; eng.player.y = 2000; eng.player.stamina = eng.player.maxStamina;
+  eng.skills.fire_strike.level = 1; eng.skills.ice_blast.level = 1; eng.skills.shadow_teleport.level = 1;
+  const foe = eng.spawnEnemyAt(2060, 2000, 'skeleton_warrior', true);
+  assert.equal(eng.useSkill('fire_strike'), true, 'Огненный Удар срабатывает');
+  assert.ok(foe.burnTimer > 0, 'Огненный Удар поджигает');
+  eng.player.stamina = eng.player.maxStamina; eng.skills.ice_blast.cd = 0;
+  assert.equal(eng.useSkill('ice_blast'), true, 'Ледяной Взрыв срабатывает');
+  assert.ok(foe.slowTimer > 0, 'Ледяной Взрыв замедляет');
+  const px = eng.player.x;
+  eng.player.stamina = eng.player.maxStamina; eng.skills.shadow_teleport.cd = 0;
+  eng.player.facing = 0;
+  assert.equal(eng.useSkill('shadow_teleport'), true, 'Теневой Телепорт срабатывает');
+  assert.ok(eng.player.x > px + 150, 'Телепорт перемещает героя вперёд');
+
+  // Магия усиливает магическое оружие
+  eng.grantWeapon('abyss_staff');
+  const dmgLow = eng.getWeaponDamage('abyss_staff');
+  eng.player.stats.magic = 6;
+  assert.ok(eng.getWeaponDamage('abyss_staff') > dmgLow, 'Характеристика Магия усиливает посохи');
+
+  // Артефакты: сбор всех 6, идемпотентность, Ядро Бездны открывает Телепорт без прокачки
+  const eng2 = new GameEngine(noopSound);
+  assert.equal(Object.keys(ARTIFACTS).length, 6);
+  for (const id of Object.keys(ARTIFACTS)) assert.equal(eng2.collectArtifact(id), true, `Артефакт ${id}`);
+  assert.equal(eng2.collectArtifact('art_sun'), false, 'Дубликат артефакта не выдаётся');
+  assert.equal(eng2.artifacts.length, 6);
+  eng2.skills.shadow_teleport.level = 0;
+  eng2.player.stamina = eng2.player.maxStamina;
+  assert.equal(eng2.useSkill('shadow_teleport'), true, 'Ядро Бездны открывает Теневой Телепорт');
+});
+
+test('14. RISE: интро и награды новых боссов, Кузнец Горн, крафт за Кристаллы и совместимость старых сохранений', () => {
+  const eng = new GameEngine(noopSound);
+  eng.player.invulnTimer = 999;
+  const newBosses = ['boss_rune_golem', 'boss_necromancer', 'boss_cursed_queen', 'boss_abyss_warlord', 'boss_abyss_heart'];
+  for (const id of newBosses) {
+    const b = eng.bossEntities.find(x => x.bossId === id);
+    assert.ok(b, `Босс ${id} в мире`);
+    assert.ok(b.intro && b.intro.length > 10, `У ${id} есть атмосферное интро`);
+    assert.ok(WEAPONS[b.rewardWeapon], `Награда ${id} существует`);
+  }
+  // Интро при входе на арену
+  const golem = eng.bossEntities.find(x => x.bossId === 'boss_rune_golem');
+  eng.player.x = golem.x + 100; eng.player.y = golem.y;
+  eng.updateBosses(0.05);
+  assert.ok(eng.bossIntro && eng.bossIntro.name.includes('Рунный Голем'), 'Интро босса показано');
+  // Убийство босса: оружие + артефакт Солнечной Руны
+  golem.hp = 5;
+  eng.damageBoss(golem, 50);
+  assert.ok(eng.defeatedBosses.includes('boss_rune_golem'));
+  assert.ok(eng.inventory.weapons.includes(BOSSES.boss_rune_golem.rewardWeapon), 'Оружие босса получено');
+  assert.ok(eng.artifacts.includes('art_sun'), 'Артефакт босса получен');
+
+  // Секретное СЕРДЦЕ БЕЗДНЫ помечено как секретный босс
+  assert.equal(BOSSES.boss_abyss_heart.secret, true);
+
+  // Кузнец Горн: сайт спасения есть, NPC закрыт до спасения, скидка 25% работает
+  assert.ok(eng.rescueSites.some(s => s.id === 'res_abyss_smith'), 'Спасение Кузнеца существует');
+  const smith = NPCS.find(n => n.id === 'smith');
+  assert.equal(eng.isNpcUnlocked(smith), false, 'Кузнец закрыт до спасения');
+  eng.rescuedIds.push('res_abyss_smith');
+  assert.equal(eng.isNpcUnlocked(smith), true, 'Кузнец открыт после спасения');
+  eng.grantWeapon('war_axe');
+  eng.inventory.coins = 10000; eng.inventory.resources.scrap = 50;
+  const coinsBefore = eng.inventory.coins;
+  const upgBefore = eng.weaponUpgrades.war_axe || 0;
+  assert.equal(eng.upgradeWeapon('war_axe'), true);
+  assert.equal(coinsBefore - eng.inventory.coins, Math.round((45 + upgBefore * 40) * 0.75), 'Скидка Кузнеца −25% применена');
+
+  // Крафт легендарного оружия за Кристаллы Бездны
+  eng.inventory.resources.crystal = 6; eng.inventory.resources.scrap = 30; eng.inventory.resources.stone = 30; eng.inventory.resources.herb = 30; eng.inventory.coins = 10000;
+  assert.equal(eng.craftRecipe('rc_staff'), true, 'Посох Бездны крафтится за кристаллы');
+  assert.ok(eng.inventory.weapons.includes('abyss_staff'));
+
+  // Старое сохранение (без полей RISE) загружается с значениями по умолчанию
+  assert.equal(eng.saveGame(true), true);
+  const raw = JSON.parse(storageMap.get('horizon_rp_save_v2'));
+  delete raw.artifacts; delete raw.discoveredLocations; delete raw.lootedChests;
+  delete raw.player.stats.magic;
+  for (const k of ['fire_strike', 'ice_blast', 'shadow_teleport']) delete raw.skills[k];
+  storageMap.set('horizon_rp_save_v2', JSON.stringify(raw));
+  const engOld = new GameEngine(noopSound);
+  assert.equal(engOld.loadGame(), true, 'Старое сохранение загружается');
+  assert.deepEqual(engOld.artifacts, []);
+  assert.deepEqual(engOld.discoveredLocations, []);
+  assert.equal(engOld.player.stats.magic, 1, 'Магия по умолчанию = 1');
+  assert.equal(engOld.skills.fire_strike.level, 0);
+  // Новое сохранение: RISE-прогресс переживает перезагрузку
+  eng.collectArtifact('art_moon');
+  eng.discoveredLocations.push('abyss_fortress');
+  assert.equal(eng.saveGame(true), true);
+  const eng3 = new GameEngine(noopSound);
+  assert.equal(eng3.loadGame(), true);
+  assert.ok(eng3.artifacts.includes('art_moon'), 'Артефакты сохраняются');
+  assert.ok(eng3.discoveredLocations.includes('abyss_fortress'), 'Локации сохраняются');
+});
+
+console.log(`\nИТОГ: ${passed}/14 комплексных проверок VEXMORA — RISE OF THE ABYSS успешно пройдено!`);

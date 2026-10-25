@@ -2,7 +2,7 @@
 // Отрисовывает каждую модель из независимого прозрачного PNG / спрайт-листа в assets/sprites/**
 
 import { BIOMES, CAMPFIRES, NPCS, WEAPONS, ITEMS, RESOURCES, BOSSES, SECRETS, WEAPON_MODS } from './data.js';
-import { getBiomeIdAt, dist2 } from './world.js';
+import { getBiomeIdAt, getLocationAt, dist2 } from './world.js';
 
 const ASSET_MANIFEST = {
   // Текстуры тайлов локаций
@@ -11,6 +11,10 @@ const ASSET_MANIFEST = {
   tile_sand:    'assets/sprites/tiles/sand.png',
   tile_snow:    'assets/sprites/tiles/snow.png',
   tile_water:   'assets/sprites/tiles/water.png',
+  // RISE OF THE ABYSS: тайлы трёх новых локаций
+  tile_ruins:   'assets/sprites/tiles/ruins.png',
+  tile_cursed:  'assets/sprites/tiles/cursed.png',
+  tile_abyss:   'assets/sprites/tiles/abyss.png',
 
   // Спрайт-листы персонажей, врагов, босса и NPC
   hero_sheet:    'assets/sprites/characters/hero_sheet.png',
@@ -27,6 +31,7 @@ const ASSET_MANIFEST = {
   npc_mechanic:  'assets/sprites/characters/npc_mechanic.png',
   npc_fighter:   'assets/sprites/characters/npc_fighter.png',
   npc_prisoner:  'assets/sprites/characters/npc_prisoner.png',
+  npc_smith:     'assets/sprites/characters/npc_smith.png',
 
   // VEXMORA 2.0: 12 новых типов врагов (6-кадровые спрайт-листы)
   runner_sheet:         'assets/sprites/characters/runner_sheet.png',
@@ -42,6 +47,18 @@ const ASSET_MANIFEST = {
   miniboss_warden_sheet:   'assets/sprites/characters/miniboss_warden_sheet.png',
   miniboss_punisher_sheet: 'assets/sprites/characters/miniboss_punisher_sheet.png',
 
+  // RISE OF THE ABYSS: 10 новых врагов (6-кадровые спрайт-листы)
+  skeleton_warrior_sheet: 'assets/sprites/characters/skeleton_warrior_sheet.png',
+  dark_archer_sheet:      'assets/sprites/characters/dark_archer_sheet.png',
+  abyss_mage_sheet:       'assets/sprites/characters/abyss_mage_sheet.png',
+  stone_golem_sheet:      'assets/sprites/characters/stone_golem_sheet.png',
+  cursed_wraith_sheet:    'assets/sprites/characters/cursed_wraith_sheet.png',
+  thorn_hunter_sheet:     'assets/sprites/characters/thorn_hunter_sheet.png',
+  plague_bearer_sheet:    'assets/sprites/characters/plague_bearer_sheet.png',
+  frost_revenant_sheet:   'assets/sprites/characters/frost_revenant_sheet.png',
+  bone_hound_sheet:       'assets/sprites/characters/bone_hound_sheet.png',
+  void_cultist_sheet:     'assets/sprites/characters/void_cultist_sheet.png',
+
   // VEXMORA 2.0: 10 уникальных боссов (64x64 x 6 кадров)
   boss_mutant_king:    'assets/sprites/bosses/boss_mutant_king.png',
   boss_commander:      'assets/sprites/bosses/boss_commander.png',
@@ -53,6 +70,13 @@ const ASSET_MANIFEST = {
   boss_war_robot:      'assets/sprites/bosses/boss_war_robot.png',
   boss_general:        'assets/sprites/bosses/boss_general.png',
   boss_vexmora:        'assets/sprites/bosses/boss_vexmora.png',
+
+  // RISE OF THE ABYSS: 5 новых боссов (64x64 x 6 кадров)
+  boss_rune_golem:   'assets/sprites/bosses/boss_rune_golem.png',
+  boss_necromancer:  'assets/sprites/bosses/boss_necromancer.png',
+  boss_cursed_queen: 'assets/sprites/bosses/boss_cursed_queen.png',
+  boss_abyss_warlord:'assets/sprites/bosses/boss_abyss_warlord.png',
+  boss_abyss_heart:  'assets/sprites/bosses/boss_abyss_heart.png',
 
   // Все 8 видов оружия
   wpn_pistol:      'assets/sprites/weapons/pistol.png',
@@ -81,6 +105,14 @@ const ASSET_MANIFEST = {
   wpn_grenade_launcher: 'assets/sprites/weapons/grenade_launcher.png',
   wpn_rocket_launcher:  'assets/sprites/weapons/rocket_launcher.png',
   wpn_tesla_cannon:     'assets/sprites/weapons/tesla_cannon.png',
+
+  // RISE OF THE ABYSS: 6 новых видов оружия (итого арсенал 30)
+  wpn_shadow_dagger: 'assets/sprites/weapons/shadow_dagger.png',
+  wpn_war_axe:       'assets/sprites/weapons/war_axe.png',
+  wpn_abyss_staff:   'assets/sprites/weapons/abyss_staff.png',
+  wpn_thorn_bow:     'assets/sprites/weapons/thorn_bow.png',
+  wpn_vex_blade:     'assets/sprites/weapons/vex_blade.png',
+  wpn_phoenix_rifle: 'assets/sprites/weapons/phoenix_rifle.png',
 
   // Все 8 предметов
   itm_medkit:   'assets/sprites/items/medkit.png',
@@ -115,6 +147,14 @@ const ASSET_MANIFEST = {
   prp_cage_open:  'assets/sprites/props/cage_open.png',
   prp_alarm_terminal: 'assets/sprites/props/alarm_terminal.png',
   prp_mod_crate:  'assets/sprites/props/mod_crate.png',
+  // RISE OF THE ABYSS: сундуки, ловушки, кристаллы и руины
+  prp_chest:        'assets/sprites/props/chest.png',
+  prp_cursed_chest: 'assets/sprites/props/cursed_chest.png',
+  prp_trap_spikes:  'assets/sprites/props/trap_spikes.png',
+  prp_trap_fire:    'assets/sprites/props/trap_fire.png',
+  prp_trap_poison:  'assets/sprites/props/trap_poison.png',
+  prp_crystal_node: 'assets/sprites/props/crystal_node.png',
+  prp_ruins_pillar: 'assets/sprites/props/ruins_pillar.png',
 
   // Все 9 зданий
   bld_house:      'assets/sprites/buildings/house.png',
@@ -251,6 +291,16 @@ export class Renderer {
       if (nd.x < camX - pad || nd.x > camX + w + pad || nd.y < camY - pad || nd.y > camY + h + pad) continue;
       drawables.push({ kind: 'node', y: nd.y, obj: nd });
     }
+    // RISE: ловушки и сундуки новых локаций
+    for (const t of (engine.world.traps || [])) {
+      if (t.x < camX - pad || t.x > camX + w + pad || t.y < camY - pad || t.y > camY + h + pad) continue;
+      drawables.push({ kind: 'trap', y: t.y - 20, obj: t });
+    }
+    for (const c of (engine.world.chests || [])) {
+      if (c.looted) continue;
+      if (c.x < camX - pad || c.x > camX + w + pad || c.y < camY - pad || c.y > camY + h + pad) continue;
+      drawables.push({ kind: 'chest', y: c.y, obj: c });
+    }
 
     for (const c of CAMPFIRES) {
       if (c.x < camX - pad || c.x > camX + w + pad || c.y < camY - pad || c.y > camY + h + pad) continue;
@@ -306,6 +356,8 @@ export class Renderer {
         case 'vehicle':  this.drawVehicle(ctx, item.obj, engine, camX, camY); break;
         case 'prop':     this.drawProp(ctx, item.obj, camX, camY); break;
         case 'node':     this.drawNode(ctx, item.obj, camX, camY); break;
+        case 'trap':     this.drawTrap(ctx, item.obj, engine, camX, camY); break;
+        case 'chest':    this.drawChest(ctx, item.obj, engine, camX, camY); break;
         case 'campfire': this.drawCampfire(ctx, item.obj, engine, camX, camY); break;
         case 'npc':      this.drawNpc(ctx, item.obj, engine, camX, camY); break;
         case 'rescue':   this.drawRescueSite(ctx, item.obj, engine, camX, camY); break;
@@ -332,6 +384,12 @@ export class Renderer {
     // 6. Стрелка-компас к активному квесту
     this.drawQuestPointer(ctx, engine, w, h);
 
+    // 6b. RISE: телеграфные круги боссов (честное предупреждение перед атакой)
+    this.drawBossTelegraphCircles(ctx, engine, camX, camY);
+
+    // 7. RISE: кинематографичное интро босса / баннер новой локации
+    this.drawCinematicOverlay(ctx, engine, w, h);
+
     ctx.restore();
 
     this.minimapTick++;
@@ -350,9 +408,10 @@ export class Renderer {
     ctx.translate(-camX, -camY);
     for (let gy = startY; gy < camY + h + patch; gy += patch) {
       for (let gx = startX; gx < camX + w + patch; gx += patch) {
+        const locAt = getLocationAt(gx + patch * 0.5, gy + patch * 0.5);
         const biomeId = getBiomeIdAt(gx + patch * 0.5, gy + patch * 0.5);
         const biome = BIOMES[biomeId];
-        const patKey = `tile_${biome.tile}`;
+        const patKey = locAt ? `tile_${locAt.tile}` : `tile_${biome.tile}`;
         if (this.patterns[patKey]) {
           ctx.fillStyle = this.patterns[patKey];
         } else {
@@ -1205,6 +1264,121 @@ export class Renderer {
   }
 
   // ── Мини-карта и Полноэкранная Карта Зоны ────────────────────────────
+  // ── RISE OF THE ABYSS: ловушки, сундуки, телеграфы, кинематография ────
+  drawTrap(ctx, trap, engine, camX, camY) {
+    const key = `prp_${trap.kind}`;
+    const sx = Math.round(trap.x - camX);
+    const sy = Math.round(trap.y - camY);
+    if (this.imgReady(key)) {
+      const img = this.images[key];
+      const flicker = trap.kind === 'trap_fire' ? 1 + 0.08 * Math.sin(engine.elapsed * 12 + trap.x) : 1;
+      ctx.save();
+      ctx.translate(sx, sy);
+      ctx.scale(flicker, flicker);
+      ctx.drawImage(img, -28, -28, 56, 56);
+      ctx.restore();
+    } else {
+      ctx.fillStyle = trap.kind === 'trap_fire' ? '#f97316' : trap.kind === 'trap_poison' ? '#84cc16' : '#9ca3af';
+      ctx.fillRect(sx - 24, sy - 8, 48, 16);
+    }
+  }
+
+  drawChest(ctx, chest, engine, camX, camY) {
+    const sx = Math.round(chest.x - camX);
+    const sy = Math.round(chest.y - camY);
+    ctx.fillStyle = 'rgba(0,0,0,0.35)';
+    ctx.beginPath();
+    ctx.ellipse(sx, sy + 14, 22, 7, 0, 0, Math.PI * 2);
+    ctx.fill();
+    const key = chest.cursed ? 'prp_cursed_chest' : 'prp_chest';
+    if (this.imgReady(key)) {
+      const img = this.images[key];
+      ctx.drawImage(img, sx - 23, sy - 30, 46, 40);
+    } else {
+      ctx.fillStyle = chest.cursed ? '#7c3aed' : '#b45309';
+      ctx.fillRect(sx - 18, sy - 24, 36, 26);
+    }
+    ctx.save();
+    ctx.font = 'bold 15px Arial';
+    ctx.textAlign = 'center';
+    if (chest.cursed) {
+      ctx.shadowColor = '#a855f7';
+      ctx.shadowBlur = 8 + 4 * Math.sin(engine.elapsed * 5);
+      ctx.fillText('💀', sx, sy - 38);
+    } else if (Math.sin(engine.elapsed * 3 + chest.x) > 0.75) {
+      ctx.fillText('✨', sx, sy - 36);
+    }
+    ctx.restore();
+  }
+
+  drawBossTelegraphCircles(ctx, engine, camX, camY) {
+    const now = engine.elapsed;
+    for (const b of engine.bossEntities) {
+      if (b.telegraphCircle && now < b.telegraphCircle.until) {
+        const tc = b.telegraphCircle;
+        const blink = 0.35 + 0.3 * Math.sin(now * 18);
+        ctx.beginPath();
+        ctx.arc(Math.round(tc.x - camX), Math.round(tc.y - camY), tc.r, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(239, 68, 68, ${blink * 0.35})`;
+        ctx.fill();
+        ctx.strokeStyle = `rgba(239, 68, 68, ${Math.min(1, blink + 0.25)})`;
+        ctx.lineWidth = 3;
+        ctx.stroke();
+      }
+      if (b.slamTarget) {
+        const blink = 0.4 + 0.3 * Math.sin(now * 20);
+        ctx.beginPath();
+        ctx.arc(Math.round(b.slamTarget.x - camX), Math.round(b.slamTarget.y - camY), 60, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(245, 158, 11, ${blink * 0.3})`;
+        ctx.fill();
+        ctx.strokeStyle = `rgba(245, 158, 11, ${Math.min(1, blink + 0.2)})`;
+        ctx.lineWidth = 3;
+        ctx.stroke();
+      }
+    }
+  }
+
+  // Кинематографичное интро босса (леттербокс + имя + атмосферная фраза) и баннер локации
+  drawCinematicOverlay(ctx, engine, w, h) {
+    const now = performance.now() / 1000;
+    if (engine.bossIntro && now < engine.bossIntro.until) {
+      const bi = engine.bossIntro;
+      const remain = bi.until - now;
+      const alpha = Math.max(0, Math.min(1, remain / 0.6));
+      ctx.save();
+      ctx.fillStyle = 'rgba(2, 6, 23, 0.88)';
+      ctx.fillRect(0, 0, w, Math.round(h * 0.16));
+      ctx.fillRect(0, Math.round(h * 0.84), w, Math.round(h * 0.16));
+      ctx.globalAlpha = alpha;
+      ctx.textAlign = 'center';
+      ctx.shadowBlur = 18;
+      ctx.shadowColor = '#dc2626';
+      ctx.fillStyle = '#fca5a5';
+      ctx.font = `bold ${Math.max(22, Math.round(w * 0.038))}px "Segoe UI", Arial, sans-serif`;
+      ctx.fillText(`💀 ${bi.name}`, w / 2, h * 0.5 - 12);
+      ctx.shadowBlur = 0;
+      ctx.fillStyle = '#e2e8f0';
+      ctx.font = `italic ${Math.max(13, Math.round(w * 0.02))}px "Segoe UI", Arial, sans-serif`;
+      ctx.fillText(`«${bi.text}»`, w / 2, h * 0.5 + 22);
+      ctx.restore();
+    } else if (engine.locationBanner && now < engine.locationBanner.until) {
+      const lb = engine.locationBanner;
+      const alpha = Math.max(0, Math.min(1, (lb.until - now) / 0.8));
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      ctx.textAlign = 'center';
+      ctx.shadowColor = '#000';
+      ctx.shadowBlur = 10;
+      ctx.fillStyle = '#fde68a';
+      ctx.font = `bold ${Math.max(20, Math.round(w * 0.032))}px "Segoe UI", Arial, sans-serif`;
+      ctx.fillText(`🗺️ ${lb.name}`, w / 2, Math.round(h * 0.22));
+      ctx.fillStyle = '#e2e8f0';
+      ctx.font = `${Math.max(12, Math.round(w * 0.018))}px "Segoe UI", Arial, sans-serif`;
+      ctx.fillText(lb.desc, w / 2, Math.round(h * 0.22) + 26);
+      ctx.restore();
+    }
+  }
+
   renderMinimap(engine) {
     const ctx = this.mmCtx;
     const mw = this.minimapCanvas.width;

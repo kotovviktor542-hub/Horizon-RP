@@ -1,11 +1,45 @@
 // Синтезатор звуковых эффектов WebAudio API без внешних тяжёлых аудиофайлов
 // Мгновенный отклик на Android и 0 КБ нагрузки на память
 
+// RISE OF THE ABYSS: процедурные музыкальные темы (WebAudio, без аудиофайлов)
+// Каждая локация звучит по-своему: минорные ладовые секвенции, босс — тревожный пульс
+const MUSIC_THEMES = {
+  field:  { bpm: 9.5, bass: [110.0, 110.0, 98.0, 87.3],  arp: [220.0, 261.6, 329.6, 261.6, 220.0, 196.0], type: 'triangle' },
+  ruins:  { bpm: 8.0, bass: [98.0, 98.0, 73.4, 82.4],    arp: [196.0, 246.9, 293.7, 246.9, 220.0, 196.0], type: 'triangle' },
+  cursed: { bpm: 7.2, bass: [87.3, 87.3, 65.4, 73.4],    arp: [174.6, 220.0, 261.6, 220.0, 207.7, 174.6], type: 'sine' },
+  abyss:  { bpm: 8.6, bass: [65.4, 65.4, 61.7, 58.3],    arp: [130.8, 155.6, 196.0, 155.6, 233.1, 196.0], type: 'sawtooth' },
+  boss:   { bpm: 12.5, bass: [73.4, 73.4, 69.3, 82.4],  arp: [146.8, 146.8, 220.0, 207.7, 146.8, 293.7], type: 'square' }
+};
+
 export class SoundEngine {
   constructor() {
     this.ctx = null;
     this.enabled = true;
     this.volume = 0.55;
+    this.musicEnabled = true;
+    this.musicTheme = null;
+    this.musicTimer = null;
+    this.musicStep = 0;
+  }
+
+  // Переключение музыкальной темы (вызывается движком при смене локации/арены босса)
+  setMusicTheme(theme) {
+    if (!MUSIC_THEMES[theme]) theme = 'field';
+    if (theme === this.musicTheme) return;
+    this.musicTheme = theme;
+    if (this.musicTimer) { clearInterval(this.musicTimer); this.musicTimer = null; }
+    if (!this.musicEnabled) return;
+    const th = MUSIC_THEMES[theme];
+    const stepMs = Math.round(60000 / (th.bpm * 4));
+    this.musicStep = 0;
+    this.musicTimer = setInterval(() => {
+      if (!this.enabled || !this.musicEnabled || !this.ctx || this.ctx.state !== 'running') return;
+      const i = this.musicStep++;
+      const bassNote = th.bass[Math.floor(i / 4) % th.bass.length];
+      if (i % 4 === 0) this.tone(bassNote, bassNote, 0.5, 'sine', 0.11);
+      const arpNote = th.arp[i % th.arp.length];
+      if (i % 2 === 0) this.tone(arpNote, arpNote, 0.22, th.type, theme === 'boss' ? 0.075 : 0.05);
+    }, stepMs);
   }
 
   unlock() {

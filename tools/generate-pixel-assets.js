@@ -1368,6 +1368,199 @@ function generateVexmoraExpansion() {
   modBox.save('props/mod_crate.png');
 }
 
+// 12. RISE OF THE ABYSS: 10 новых врагов, 5 боссов Бездны, 6 видов оружия, сундуки, ловушки, кристаллы и тайлы локаций
+function generateAbyssExpansion() {
+  const humanoid = (file, cfg) => {
+    const fw = cfg.size || 32, fh = cfg.size || 32;
+    const pc = new PixelCanvas(fw * 6, fh);
+    const mid = Math.floor(fw / 2);
+    for (let f = 0; f < 6; f++) {
+      const ox = f * fw, step = f % 4, isAtk = f >= 4;
+      const bob = step % 2 === 1 ? -1 : 0;
+      const cx = ox + mid, by = fh - 4 + bob;
+      pc.ellipse(ox + mid, fh - 3, 7, 2, '#00000055');
+      const lOff = step === 1 ? -2 : 0, rOff = step === 3 ? -2 : 0;
+      pc.rect(cx - 5, by - 7 + lOff, 4, 6, cfg.pants);
+      pc.rect(cx + 1, by - 7 + rOff, 4, 6, cfg.pants);
+      pc.rect(cx - 6, by - 17, 12, 10, cfg.torso);
+      if (cfg.vest) pc.rect(cx - 5, by - 16, 10, 7, cfg.vest);
+      const armX = isAtk ? 4 : 1;
+      pc.rect(cx - 8, by - 16, 3, 7, cfg.torso);
+      pc.rect(cx + 5, by - 16, 3 + armX, 4, cfg.gun || cfg.torso);
+      pc.circle(cx, by - 21, 5, cfg.skin || '#eac096');
+      if (cfg.helmet) pc.rect(cx - 6, by - 27, 12, 5, cfg.helmet);
+      if (cfg.visor) pc.rect(cx - 4, by - 22, 8, 2, cfg.visor);
+      else { pc.pset(cx - 2, by - 22, cfg.eye || '#ef4444'); pc.pset(cx + 2, by - 22, cfg.eye || '#ef4444'); }
+      pc.outlineRegion(ox, 0, fw, fh, PAL.outline);
+    }
+    pc.save(`characters/${file}`);
+  };
+
+  humanoid('skeleton_warrior_sheet.png', { torso: '#9aa5b1', vest: '#6b7280', pants: '#4b5563', skin: '#e5e7eb', eye: '#22d3ee', helmet: '#374151' });
+  humanoid('dark_archer_sheet.png',      { torso: '#312e81', vest: '#1e1b4b', pants: '#111827', skin: '#c4b5fd', eye: '#a78bfa', helmet: '#1e1b4b', gun: '#a16207' });
+  humanoid('abyss_mage_sheet.png',       { torso: '#4c1d95', vest: '#7c3aed', pants: '#1e1b4b', skin: '#ddd6fe', eye: '#22d3ee', helmet: '#581c87', gun: '#22d3ee' });
+  humanoid('cursed_wraith_sheet.png',    { torso: '#14532d', vest: '#166534', pants: '#052e16', skin: '#bbf7d0', eye: '#4ade80', helmet: '#052e16', gun: '#22c55e' });
+  humanoid('thorn_hunter_sheet.png',     { torso: '#713f12', vest: '#a16207', pants: '#422006', skin: '#fde68a', eye: '#f97316', helmet: '#713f12', gun: '#84cc16' });
+  humanoid('plague_bearer_sheet.png',    { torso: '#3f3f06', vest: '#65a30d', pants: '#27272a', skin: '#a3e635', eye: '#fef08a', helmet: '#365314', gun: '#65a30d' });
+  humanoid('frost_revenant_sheet.png',   { torso: '#0e7490', vest: '#155e75', pants: '#082f49', skin: '#e0f2fe', eye: '#38bdf8', helmet: '#164e63', gun: '#7dd3fc' });
+  humanoid('void_cultist_sheet.png',     { torso: '#831843', vest: '#9d174d', pants: '#1f2937', skin: '#fbcfe8', eye: '#f43f5e', helmet: '#500724', gun: '#f43f5e' });
+
+  // Каменный Голем (40x32)
+  humanoid('stone_golem_sheet.png', { size: 40, torso: '#78716c', vest: '#57534e', pants: '#44403c', skin: '#a8a29e', eye: '#fbbf24', helmet: '#57534e' });
+
+  // Костяная Гончая Бездны (36x32)
+  const bh = new PixelCanvas(36 * 6, 32);
+  for (let f = 0; f < 6; f++) {
+    const ox = f * 36, step = f % 4, isAtk = f >= 4;
+    const by = 27 - (step % 2);
+    bh.ellipse(ox + 18, 29, 9, 2.5, '#00000055');
+    bh.ellipse(ox + 16, by - 9, 9, 6, '#d6d3cd');
+    bh.rect(ox + 10, by - 16, 14, 4, '#e7e5df'); // костяной хребет
+    bh.rect(ox + 22, by - 12, isAtk ? 9 : 6, 5, '#e7e5df');
+    bh.pset(ox + 25, by - 11, '#22d3ee');
+    bh.rect(ox + 10, by - 4, 3, 4, '#a8a29e');
+    bh.rect(ox + 20, by - 4, 3, 4, '#a8a29e');
+    bh.outlineRegion(ox, 0, 36, 32, PAL.outline);
+  }
+  bh.save('characters/bone_hound_sheet.png');
+
+  // 5 Боссов Бездны (64x64 x 6)
+  const abyssBosses = [
+    { file: 'boss_rune_golem.png',    body: '#78716c', plate: '#a8a29e', core: '#fbbf24', eye: '#fde047', style: 'golem' },
+    { file: 'boss_necromancer.png',   body: '#1e1b4b', plate: '#4c1d95', core: '#4ade80', eye: '#4ade80', style: 'necro' },
+    { file: 'boss_cursed_queen.png',  body: '#14532d', plate: '#16a34a', core: '#bbf7d0', eye: '#f43f5e', style: 'queen' },
+    { file: 'boss_abyss_warlord.png', body: '#450a0a', plate: '#991b1b', core: '#fb923c', eye: '#fca5a5', style: 'warlord' },
+    { file: 'boss_abyss_heart.png',   body: '#500724', plate: '#9d174d', core: '#22d3ee', eye: '#ffffff', style: 'heart' }
+  ];
+  for (const bs of abyssBosses) {
+    const bw = 64, bh2 = 64;
+    const bc = new PixelCanvas(bw * 6, bh2);
+    for (let f = 0; f < 6; f++) {
+      const ox = f * bw, step = f % 4, isAtk = f >= 4;
+      const bob = step % 2 === 1 ? -2 : 0;
+      const cx = ox + 32, by = 58 + bob;
+      bc.ellipse(ox + 32, 59, 19, 5, '#00000072');
+      const lOff = step === 1 ? -3 : 0, rOff = step === 3 ? -3 : 0;
+      bc.brickRect(cx - 13, by - 16 + lOff, 10, 15, bs.body, '#111827', bs.plate);
+      bc.brickRect(cx + 3, by - 16 + rOff, 10, 15, bs.body, '#111827', bs.plate);
+      bc.ellipse(cx, by - 29, 16, 14, bs.body);
+      bc.brickRect(cx - 12, by - 39, 24, 18, bs.plate, bs.body, '#ffffff44');
+      // Ядро/сердце босса пульсирует по кадрам
+      bc.circle(cx, by - 30, 4 + (f % 3), bs.core);
+      bc.circle(cx, by - 30, 2, '#ffffff');
+      bc.circle(cx - 17, by - 37, 7, bs.body);
+      bc.circle(cx + 17, by - 37, 7, bs.body);
+      if (bs.style === 'necro') {
+        bc.line(cx - 7, by - 53, cx - 9, by - 61, '#4ade80', 2);
+        bc.line(cx + 7, by - 53, cx + 9, by - 61, '#4ade80', 2);
+        bc.rect(cx + 14, by - 52, 4, 20, '#7c3aed'); // посох некроманта
+      } else if (bs.style === 'queen') {
+        bc.line(cx - 10, by - 52, cx - 14, by - 60, '#4ade80', 2);
+        bc.line(cx, by - 54, cx, by - 62, '#4ade80', 2);
+        bc.line(cx + 10, by - 52, cx + 14, by - 60, '#4ade80', 2);
+      } else if (bs.style === 'golem') {
+        bc.rect(cx - 20, by - 55, 8, 10, '#a8a29e');
+        bc.rect(cx + 12, by - 55, 8, 10, '#a8a29e');
+        bc.pset(cx - 16, by - 51, bs.core); bc.pset(cx + 16, by - 51, bs.core);
+      } else if (bs.style === 'heart') {
+        bc.line(cx - 8, by - 38, cx - 26, by - 54 + (f % 2) * 3, bs.core, 3);
+        bc.line(cx + 8, by - 38, cx + 26, by - 54 + (f % 2) * 3, bs.core, 3);
+      } else if (bs.style === 'warlord') {
+        bc.rect(cx + 16, by - 48, 5, 22, '#cbd5e1'); // огромный клинок
+        bc.line(cx - 20, by - 44, cx - 26, by - 52, '#fb923c', 3);
+      }
+      const slamY = isAtk ? -8 : 0;
+      bc.rect(cx - 25, by - 35 + slamY, 8, 17, bs.body);
+      bc.rect(cx + 17, by - 35 + slamY, 8, 17, bs.body);
+      bc.circle(cx, by - 45, 9, bs.body);
+      bc.rect(cx - 6, by - 47, 4, 2, bs.eye);
+      bc.rect(cx + 2, by - 47, 4, 2, bs.eye);
+      bc.outlineRegion(ox, 0, bw, bh2, PAL.outline);
+    }
+    bc.save(`bosses/${bs.file}`);
+  }
+
+  // 6 новых видов оружия (мечи, кинжалы, топоры, посохи, дальнобойное, легендарное)
+  const abyssWeapons = [
+    ['shadow_dagger.png', '#c084fc', '#1e1b4b', 'blade'],
+    ['war_axe.png',       '#f59e0b', '#78350f', 'axe'],
+    ['abyss_staff.png',   '#22d3ee', '#4c1d95', 'staff'],
+    ['thorn_bow.png',     '#4ade80', '#713f12', 'bow2'],
+    ['vex_blade.png',     '#22d3ee', '#500724', 'blade'],
+    ['phoenix_rifle.png', '#fb923c', '#7f1d1d', 'rifle2']
+  ];
+  for (const [file, colA, colB, type] of abyssWeapons) {
+    const wc = new PixelCanvas(32, 16);
+    if (type === 'blade') { wc.line(4, 13, 9, 9, colB, 3); wc.line(9, 9, 28, 2, colA, 2); wc.line(10, 8, 27, 2, '#ffffff', 1); }
+    else if (type === 'axe') { wc.line(5, 14, 22, 4, colB, 3); wc.rect(19, 1, 9, 8, colA); wc.rect(23, 3, 5, 4, '#e5e7eb'); }
+    else if (type === 'staff') { wc.line(6, 14, 22, 3, colB, 3); wc.circle(24, 4, 4, colA); wc.circle(24, 4, 2, '#ffffff'); }
+    else if (type === 'bow2') { wc.line(8, 1, 8, 15, colA, 2); wc.line(8, 1, 20, 8, colB, 1); wc.line(8, 15, 20, 8, colB, 1); wc.line(8, 8, 27, 8, '#fef08a', 2); }
+    else { wc.rect(2, 7, 7, 5, colB); wc.rect(9, 5, 14, 5, colA); wc.rect(22, 6, 8, 2, colA); wc.circle(24, 4, 2.5, colA); wc.rect(14, 10, 4, 5, colB); }
+    wc.outlineRegion(0, 0, 32, 16, PAL.outline);
+    wc.save(`weapons/${file}`);
+  }
+
+  // Тайлы трёх новых локаций
+  const mkTile = (base, a1, a2, name) => {
+    const t = new PixelCanvas(32, 32);
+    t.rect(0, 0, 32, 32, base);
+    for (let i = 0; i < 40; i++) { const x = (i * 17 + 4) % 30, y = (i * 13 + 3) % 30; t.rect(x, y, 2, 1, i % 2 ? a1 : a2); }
+    t.save(`tiles/${name}`);
+  };
+  mkTile('#6d675e', '#574f45', '#8a8172', 'ruins.png');
+  mkTile('#1d3a24', '#14291a', '#2c5233', 'cursed.png');
+  mkTile('#241a2e', '#181021', '#37284a', 'abyss.png');
+
+  // Сундуки, ловушки, кристалл, руинная колонна, кузнец
+  const chest = new PixelCanvas(34, 30);
+  chest.brickRect(3, 9, 28, 17, '#8a5a2b', '#5e3d1c', '#c99044');
+  chest.rect(3, 9, 28, 5, '#a9743a'); chest.rect(15, 15, 5, 6, '#facc15');
+  chest.outlineRegion(0, 0, 34, 30, PAL.outline); chest.save('props/chest.png');
+
+  const cchest = new PixelCanvas(34, 30);
+  cchest.brickRect(3, 9, 28, 17, '#3b0764', '#22063d', '#7e22ce');
+  cchest.rect(3, 9, 28, 5, '#581c87'); cchest.rect(15, 15, 5, 6, '#e879f9'); cchest.circle(17, 6, 3, '#e879f9');
+  cchest.outlineRegion(0, 0, 34, 30, PAL.outline); cchest.save('props/cursed_chest.png');
+
+  const spikes = new PixelCanvas(32, 24);
+  spikes.rect(2, 17, 28, 5, '#44403c');
+  for (let x = 4; x < 30; x += 6) { spikes.line(x + 2, 17, x + 2, 5, '#cbd5e1', 2); }
+  spikes.outlineRegion(0, 0, 32, 24, PAL.outline); spikes.save('props/trap_spikes.png');
+
+  const tfire = new PixelCanvas(32, 24);
+  tfire.rect(2, 17, 28, 5, '#450a0a');
+  tfire.circle(10, 13, 5, '#dc2626'); tfire.circle(18, 11, 6, '#f97316'); tfire.circle(24, 13, 4, '#facc15');
+  tfire.outlineRegion(0, 0, 32, 24, PAL.outline); tfire.save('props/trap_fire.png');
+
+  const tpois = new PixelCanvas(32, 24);
+  tpois.ellipse(16, 14, 13, 6, '#365314'); tpois.circle(11, 11, 3, '#65a30d'); tpois.circle(20, 9, 2.5, '#a3e635');
+  tpois.outlineRegion(0, 0, 32, 24, PAL.outline); tpois.save('props/trap_poison.png');
+
+  const crys = new PixelCanvas(32, 36);
+  crys.line(16, 33, 9, 13, '#164e63', 5); crys.line(16, 33, 16, 6, '#0e7490', 6); crys.line(16, 33, 24, 12, '#155e75', 5);
+  crys.line(16, 28, 16, 9, '#22d3ee', 2); crys.pset(16, 8, '#ffffff');
+  crys.outlineRegion(0, 0, 32, 36, PAL.outline); crys.save('props/crystal_node.png');
+
+  const pillar = new PixelCanvas(30, 46);
+  pillar.brickRect(8, 8, 14, 34, '#8a8172', '#6d675e', '#a49a87');
+  pillar.rect(5, 4, 20, 6, '#78716c'); pillar.rect(5, 40, 20, 5, '#78716c');
+  pillar.outlineRegion(0, 0, 30, 46, PAL.outline); pillar.save('props/ruins_pillar.png');
+
+  const smith = new PixelCanvas(64, 32);
+  for (let f = 0; f < 2; f++) {
+    const ox = f * 32, bob = f === 1 ? -1 : 0, cx = ox + 16, by = 28 + bob;
+    smith.ellipse(ox + 16, 29, 6, 2, '#00000055');
+    smith.rect(cx - 4, by - 6, 3, 5, '#292524'); smith.rect(cx + 1, by - 6, 3, 5, '#292524');
+    smith.rect(cx - 5, by - 15, 10, 9, '#7c2d12'); smith.rect(cx - 2, by - 14, 4, 7, '#f97316');
+    smith.rect(cx + 4, by - 13, 5, 3, '#94a3b8'); // молот кузнеца
+    smith.circle(cx, by - 20, 4.5, PAL.skin);
+    smith.pset(cx - 2, by - 20, PAL.outline); smith.pset(cx + 2, by - 20, PAL.outline);
+    smith.rect(cx - 5, by - 25, 10, 3, '#44403c');
+    smith.outlineRegion(ox, 0, 32, 32, PAL.outline);
+  }
+  smith.save('characters/npc_smith.png');
+}
+
 generateHeroSheet();
 generateEnemySheets();
 generateNpcs();
@@ -1379,5 +1572,6 @@ generateBuildings();
 generateEffects();
 generateTiles();
 generateVexmoraExpansion();
+generateAbyssExpansion();
 
-console.log('generate-pixel-assets: обновлены текстурированные PNG-спрайты VEXMORA!');
+console.log('generate-pixel-assets: обновлены текстурированные PNG-спрайты VEXMORA (RISE OF THE ABYSS)!');
