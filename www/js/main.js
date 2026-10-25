@@ -1,60 +1,95 @@
-// Точка входа: связывает игровой движок, 2D-рендерер, мультитач-ввод и интерфейс
+// Точка входа Horizon: Выживание (2D Pixel-Art Action-Survival RPG)
 
-import { createGameEngine, SAVE_KEY } from './engine.js';
-import { createRenderer } from './sprites.js';
-import { createUI } from './ui.js';
-import { createInputController } from './input.js';
-import { sound } from './audio.js';
+import { SoundEngine } from './audio.js';
+import { GameEngine } from './engine.js';
+import { Renderer } from './sprites.js';
+import { InputController } from './input.js';
+import { UIManager } from './ui.js';
 
 const canvas = document.getElementById('game-canvas');
-const engine = createGameEngine();
+const minimap = document.getElementById('minimap-canvas');
 
-// Загружаем сохранённые настройки звука/графики при запуске
-try {
-  const raw = localStorage.getItem(SAVE_KEY);
-  if (raw) {
-    const parsed = JSON.parse(raw);
-    if (parsed && parsed.settings) {
-      Object.assign(engine.state.settings, parsed.settings);
-      sound.setSettings(engine.state.settings);
+const sound = new SoundEngine();
+const engine = new GameEngine(sound);
+const renderer = new Renderer(canvas, minimap);
+const ui = new UIManager(engine, renderer);
+
+engine.paused = true;
+
+const input = new InputController({
+  onUnlockAudio: () => sound.unlock(),
+  onAttack: () => engine.performAttack(),
+  onJump: () => engine.jump(),
+  onDash: () => engine.dash(),
+  onGrenade: () => engine.throwGrenade(),
+  onCycleWeapon: () => engine.cycleWeapon(),
+  onQuickHeal: () => engine.useConsumable('medkit'),
+  onSkill: (skillId) => engine.useSkill(skillId),
+  onInteract: () => {
+    const res = engine.interact();
+    ui.handleInteractionResult(res);
+  },
+  onOpenTab: (tab) => {
+    if (!document.getElementById('title-screen').classList.contains('hidden')) return;
+    if (!document.getElementById('modal-panel').classList.contains('hidden') && ui.activeTab === tab) {
+      ui.closeModal();
+    } else {
+      ui.openModal(tab);
+    }
+  },
+  onEscape: () => {
+    if (!document.getElementById('modal-panel').classList.contains('hidden') ||
+        !document.getElementById('dialog-modal').classList.contains('hidden')) {
+      ui.closeModal();
     }
   }
-} catch (_e) {
-  // игнорируем при приватном режиме
-}
-
-const renderer = createRenderer(canvas, engine);
-const ui = createUI(engine, renderer, () => {
-  lastTime = performance.now();
 });
-const input = createInputController(engine, ui);
 
-window.addEventListener('resize', () => renderer.resize());
-window.addEventListener('orientationchange', () => setTimeout(() => renderer.resize(), 120));
+document.getElementById('btn-new-game')?.addEventListener('click', () => {
+  input.resetAll();
+  ui.startGame(false);
+});
 
-renderer.resize();
-ui.showMainMenu();
+document.getElementById('btn-continue-game')?.addEventListener('click', () => {
+  input.resetAll();
+  ui.startGame(true);
+});
+
+window.addEventListener('resize', () => {
+  renderer.resize(engine.settings.quality);
+});
+
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden && document.getElementById('title-screen').classList.contains('hidden')) {
+    engine.saveGame(true);
+  }
+});
 
 let lastTime = performance.now();
+let fpsSmooth = 60;
 
-function frame(now) {
-  const dt = Math.min(0.05, Math.max(0.001, (now - lastTime) / 1000));
+function loop(now) {
+  const rawDt = Math.max(0.001, (now - lastTime) / 1000);
   lastTime = now;
 
-  if (!engine.state.paused && !engine.state.gameOver) {
-    const inp = input.poll();
-    engine.update(dt, inp);
-    ui.updateHud(false);
-  } else {
-    // Плавная живая панорама лагеря на фоне главного меню
-    engine.state.playTime += dt * 0.45;
+  const instFps = 1 / rawDt;
+  fpsSmooth = fpsSmooth * 0.92 + instFps * 0.08;
+  ui.fpsValue = fpsSmooth;
+
+  if (!engine.paused) {
+    engine.update(rawDt, input.getState());
   }
 
-  renderer.render();
-  requestAnimationFrame(frame);
+  renderer.render(engine);
+
+  if (document.getElementById('title-screen').classList.contains('hidden')) {
+    ui.updateHud(false);
+  }
+
+  requestAnimationFrame(loop);
 }
 
-requestAnimationFrame(frame);
+renderer.render(engine);
+requestAnimationFrame(loop);
 
-// Экспорт для автотестов и инспекции
 window.__horizonGame = { engine, renderer, ui, input };

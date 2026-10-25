@@ -1,1017 +1,982 @@
-// Высокопроизводительный 2D-рендерер с предрендером спрайтов в offscreen-атлас
-// Оптимизирован для слабых телефонов Android (60 FPS, culling за пределами камеры, пул частиц)
+// Пиксель-арт 2.5D рендерер (imageSmoothingEnabled = false, единый масштаб пикселя, Y-сортировка)
+// Отрисовывает каждую модель из независимого прозрачного PNG / спрайт-листа в assets/sprites/**
 
-import { BIOMES, CAMPFIRES, NPCS, WEAPONS, RESOURCES, CONSUMABLES } from './data.js';
-import { getBiomeIdAt } from './world.js';
+import { BIOMES, CAMPFIRES, NPCS, WEAPONS, ITEMS, RESOURCES, BOSSES, SECRETS } from './data.js';
+import { getBiomeIdAt, dist2 } from './world.js';
 
-export function createRenderer(canvas, engine) {
-  const ctx = canvas.getContext('2d', { alpha: false });
-  const sprites = buildSpriteAtlas();
-  const ambientMotes = Array.from({ length: 42 }, () => ({
-    ox: Math.random() * 1400 - 700,
-    oy: Math.random() * 900 - 450,
-    phase: Math.random() * Math.PI * 2,
-    speed: 0.4 + Math.random() * 0.8,
-    size: 1.8 + Math.random() * 2.4
-  }));
+const ASSET_MANIFEST = {
+  // Текстуры тайлов локаций
+  tile_grass:   'assets/sprites/tiles/grass.png',
+  tile_asphalt: 'assets/sprites/tiles/asphalt.png',
+  tile_sand:    'assets/sprites/tiles/sand.png',
+  tile_snow:    'assets/sprites/tiles/snow.png',
+  tile_water:   'assets/sprites/tiles/water.png',
 
-  let viewW = 960;
-  let viewH = 540;
-  let dpr = 1;
+  // Спрайт-листы персонажей, врагов, босса и NPC
+  hero_sheet:    'assets/sprites/characters/hero_sheet.png',
+  zombie_sheet:  'assets/sprites/characters/zombie_sheet.png',
+  bandit_sheet:  'assets/sprites/characters/bandit_sheet.png',
+  soldier_sheet: 'assets/sprites/characters/soldier_sheet.png',
+  monster_sheet: 'assets/sprites/characters/monster_sheet.png',
+  boss_sheet:    'assets/sprites/characters/boss_sheet.png',
+  npc_trader:    'assets/sprites/characters/npc_trader.png',
+  npc_quest:     'assets/sprites/characters/npc_quest.png',
+  npc_medic:     'assets/sprites/characters/npc_medic.png',
+  npc_farmer:    'assets/sprites/characters/npc_farmer.png',
 
-  function resize() {
-    const q = engine.state.settings.quality;
+  // Все 8 видов оружия
+  wpn_pistol:      'assets/sprites/weapons/pistol.png',
+  wpn_shotgun:     'assets/sprites/weapons/shotgun.png',
+  wpn_rifle:       'assets/sprites/weapons/rifle.png',
+  wpn_sniper:      'assets/sprites/weapons/sniper.png',
+  wpn_knife:       'assets/sprites/weapons/knife.png',
+  wpn_sword:       'assets/sprites/weapons/sword.png',
+  wpn_bow:         'assets/sprites/weapons/bow.png',
+  wpn_magic_staff: 'assets/sprites/weapons/magic_staff.png',
+
+  // Все 8 предметов
+  itm_medkit:   'assets/sprites/items/medkit.png',
+  itm_ammo:     'assets/sprites/items/ammo.png',
+  itm_grenade:  'assets/sprites/items/grenade.png',
+  itm_food:     'assets/sprites/items/food.png',
+  itm_potion:   'assets/sprites/items/potion.png',
+  itm_key:      'assets/sprites/items/key.png',
+  itm_coin:     'assets/sprites/items/coin.png',
+  itm_backpack: 'assets/sprites/items/backpack.png',
+
+  // Все 6 видов транспорта
+  veh_car:  'assets/sprites/vehicles/car.png',
+  veh_moto: 'assets/sprites/vehicles/moto.png',
+  veh_jeep: 'assets/sprites/vehicles/jeep.png',
+  veh_bus:  'assets/sprites/vehicles/bus.png',
+  veh_heli: 'assets/sprites/vehicles/heli.png',
+  veh_boat: 'assets/sprites/vehicles/boat.png',
+
+  // Все объекты окружения
+  prp_barrel:     'assets/sprites/props/barrel.png',
+  prp_barrel_red: 'assets/sprites/props/barrel_red.png',
+  prp_crates:     'assets/sprites/props/crates.png',
+  prp_campfire:   'assets/sprites/props/campfire_sheet.png',
+  prp_tree:       'assets/sprites/props/tree.png',
+  prp_pine_tree:  'assets/sprites/props/pine_tree.png',
+  prp_rock:       'assets/sprites/props/rock.png',
+  prp_bush:       'assets/sprites/props/bush.png',
+  prp_tent:       'assets/sprites/props/tent.png',
+  prp_fence:      'assets/sprites/props/fence.png',
+
+  // Все 9 зданий
+  bld_house:      'assets/sprites/buildings/house.png',
+  bld_shop:       'assets/sprites/buildings/shop.png',
+  bld_warehouse:  'assets/sprites/buildings/warehouse.png',
+  bld_bunker:     'assets/sprites/buildings/bunker.png',
+  bld_watchtower: 'assets/sprites/buildings/watchtower.png',
+  bld_factory:    'assets/sprites/buildings/factory.png',
+  bld_hospital:   'assets/sprites/buildings/hospital.png',
+  bld_police:     'assets/sprites/buildings/police.png',
+  bld_base:       'assets/sprites/buildings/base.png',
+
+  // Все 6 пиксельных эффектов (спрайт-листы)
+  fx_explosion: 'assets/sprites/effects/explosion_sheet.png',
+  fx_muzzle:    'assets/sprites/effects/muzzle_sheet.png',
+  fx_magic:     'assets/sprites/effects/magic_sheet.png',
+  fx_hit:       'assets/sprites/effects/hit_sheet.png',
+  fx_smoke:     'assets/sprites/effects/smoke_sheet.png',
+  fx_water:     'assets/sprites/effects/water_sheet.png'
+};
+
+// Единый пиксельный множитель для мобильного экрана (чёткий пиксель-арт без мыла)
+const PIXEL_SCALE = 1.5;
+
+export class Renderer {
+  constructor(canvas, minimapCanvas) {
+    this.canvas = canvas;
+    this.ctx = canvas.getContext('2d', { alpha: false });
+    this.minimapCanvas = minimapCanvas;
+    this.mmCtx = minimapCanvas ? minimapCanvas.getContext('2d') : null;
+
+    this.width = window.innerWidth;
+    this.height = window.innerHeight;
+    this.dpr = 1;
+    this.minimapTick = 0;
+
+    this.images = {};
+    this.patterns = {};
+    this.preloadAssets();
+    this.resize('medium');
+  }
+
+  preloadAssets() {
+    if (typeof Image === 'undefined') return;
+    for (const [key, src] of Object.entries(ASSET_MANIFEST)) {
+      const img = new Image();
+      img.decoding = 'async';
+      img.onload = () => {
+        if (key.startsWith('tile_') && this.ctx) {
+          // Увеличиваем 32x32 пиксельный тайл до 48x48 с отключённым сглаживанием для чёткого паттерна земли
+          const off = document.createElement('canvas');
+          off.width = 48;
+          off.height = 48;
+          const octx = off.getContext('2d');
+          octx.imageSmoothingEnabled = false;
+          octx.drawImage(img, 0, 0, 48, 48);
+          this.patterns[key] = this.ctx.createPattern(off, 'repeat');
+        }
+      };
+      img.src = src;
+      this.images[key] = img;
+    }
+  }
+
+  imgReady(key) {
+    const img = this.images[key];
+    return !!(img && img.complete && img.naturalWidth > 0);
+  }
+
+  resize(quality = 'medium') {
     const rawDpr = window.devicePixelRatio || 1;
-    dpr = q === 'low' ? 0.8 : q === 'high' ? Math.min(2, rawDpr) : Math.min(1.25, rawDpr);
-    const cssW = window.innerWidth || 960;
-    const cssH = window.innerHeight || 540;
-    canvas.width = Math.max(320, Math.round(cssW * dpr));
-    canvas.height = Math.max(240, Math.round(cssH * dpr));
-    viewW = cssW;
-    viewH = cssH;
+    const maxDpr = quality === 'low' ? 1.0 : quality === 'medium' ? 1.5 : 2.0;
+    this.dpr = Math.min(rawDpr, maxDpr);
+    this.width = Math.max(320, window.innerWidth);
+    this.height = Math.max(240, window.innerHeight);
+    this.canvas.width = Math.floor(this.width * this.dpr);
+    this.canvas.height = Math.floor(this.height * this.dpr);
+    this.ctx.imageSmoothingEnabled = false;
   }
 
-  function makeOffscreen(w, h, drawFn) {
-    const c = document.createElement('canvas');
-    c.width = w;
-    c.height = h;
-    const g = c.getContext('2d');
-    drawFn(g, w, h);
-    return c;
-  }
-
-  function buildSpriteAtlas() {
-    const atlas = {};
-
-    // Дерево Пустоши
-    atlas.tree = makeOffscreen(96, 112, (g) => {
-      g.fillStyle = 'rgba(0,0,0,0.34)';
-      g.beginPath(); g.ellipse(48, 94, 28, 12, 0, 0, Math.PI * 2); g.fill();
-      g.fillStyle = '#5c3a21';
-      g.fillRect(41, 62, 14, 32);
-      const blobs = [[48, 44, 30, '#15803d'], [32, 52, 22, '#166534'], [64, 52, 22, '#166534'], [48, 32, 24, '#22c55e'], [42, 26, 14, '#4ade80']];
-      for (const [bx, by, br, col] of blobs) {
-        g.fillStyle = col;
-        g.beginPath(); g.arc(bx, by, br, 0, Math.PI * 2); g.fill();
-      }
-    });
-
-    // Морозная ель
-    atlas.pine_tree = makeOffscreen(96, 116, (g) => {
-      g.fillStyle = 'rgba(0,0,0,0.34)';
-      g.beginPath(); g.ellipse(48, 98, 26, 11, 0, 0, Math.PI * 2); g.fill();
-      g.fillStyle = '#473021';
-      g.fillRect(42, 72, 12, 26);
-      const tiers = [[48, 46, 34, 78, '#0f4c5c'], [48, 30, 28, 60, '#155e75'], [48, 14, 21, 42, '#0ea5e9']];
-      for (const [tx, ty, hw, by, col] of tiers) {
-        g.fillStyle = col;
-        g.beginPath();
-        g.moveTo(tx, ty);
-        g.lineTo(tx - hw, by);
-        g.lineTo(tx + hw, by);
-        g.closePath();
-        g.fill();
-        g.fillStyle = 'rgba(224,242,254,0.7)';
-        g.beginPath();
-        g.moveTo(tx, ty);
-        g.lineTo(tx - hw * 0.55, ty + (by - ty) * 0.45);
-        g.lineTo(tx + hw * 0.55, ty + (by - ty) * 0.45);
-        g.closePath();
-        g.fill();
-      }
-    });
-
-    // Куст алой травы
-    atlas.herb = makeOffscreen(56, 56, (g) => {
-      g.fillStyle = 'rgba(0,0,0,0.28)';
-      g.beginPath(); g.ellipse(28, 42, 16, 7, 0, 0, Math.PI * 2); g.fill();
-      const leaves = [-0.6, -0.2, 0.25, 0.65];
-      for (const a of leaves) {
-        g.save();
-        g.translate(28, 40);
-        g.rotate(a);
-        g.fillStyle = '#16a34a';
-        g.beginPath(); g.ellipse(0, -12, 5, 13, 0, 0, Math.PI * 2); g.fill();
-        g.restore();
-      }
-      for (const [fx, fy] of [[22, 24], [33, 22], [28, 16]]) {
-        g.fillStyle = '#ef4444';
-        g.beginPath(); g.arc(fx, fy, 4.5, 0, Math.PI * 2); g.fill();
-        g.fillStyle = '#fca5a5';
-        g.beginPath(); g.arc(fx - 1, fy - 1, 1.8, 0, Math.PI * 2); g.fill();
-      }
-    });
-
-    // Рудные жилы
-    const makeOre = (baseCol, crystalCol, glowCol) => makeOffscreen(68, 68, (g) => {
-      g.fillStyle = 'rgba(0,0,0,0.36)';
-      g.beginPath(); g.ellipse(34, 52, 24, 10, 0, 0, Math.PI * 2); g.fill();
-      g.fillStyle = baseCol;
-      g.beginPath();
-      g.moveTo(12, 50); g.lineTo(18, 28); g.lineTo(35, 22); g.lineTo(52, 30); g.lineTo(56, 50);
-      g.closePath(); g.fill();
-      const shards = [[26, 18, 22, 38, 32, 38], [38, 14, 33, 36, 45, 36], [46, 24, 41, 42, 51, 42]];
-      for (const [x1, y1, x2, y2, x3, y3] of shards) {
-        g.fillStyle = crystalCol;
-        g.beginPath(); g.moveTo(x1, y1); g.lineTo(x2, y2); g.lineTo(x3, y3); g.closePath(); g.fill();
-        g.strokeStyle = glowCol;
-        g.lineWidth = 1.5;
-        g.stroke();
-      }
-    });
-
-    atlas.iron_vein = makeOre('#334155', '#94a3b8', '#e2e8f0');
-    atlas.mithril_vein = makeOre('#1e3a5f', '#38bdf8', '#bae6fd');
-    atlas.crystal_vein = makeOre('#3b0764', '#ec4899', '#fbcfe8');
-
-    // Ящик
-    atlas.crate = makeOffscreen(56, 56, (g) => {
-      g.fillStyle = 'rgba(0,0,0,0.32)';
-      g.beginPath(); g.ellipse(28, 45, 19, 8, 0, 0, Math.PI * 2); g.fill();
-      g.fillStyle = '#92400e';
-      g.fillRect(12, 16, 32, 28);
-      g.strokeStyle = '#d97706';
-      g.lineWidth = 3;
-      g.strokeRect(13.5, 17.5, 29, 25);
-      g.beginPath(); g.moveTo(13, 18); g.lineTo(43, 42); g.stroke();
-    });
-
-    // Препятствия: камни, колонны руин, ледяные шпили, обсидиан
-    atlas.rock = makeOffscreen(64, 64, (g) => {
-      g.fillStyle = 'rgba(0,0,0,0.34)';
-      g.beginPath(); g.ellipse(32, 48, 23, 10, 0, 0, Math.PI * 2); g.fill();
-      g.fillStyle = '#475569';
-      g.beginPath(); g.moveTo(11, 46); g.lineTo(18, 24); g.lineTo(36, 18); g.lineTo(52, 29); g.lineTo(54, 46); g.closePath(); g.fill();
-      g.fillStyle = '#64748b';
-      g.beginPath(); g.moveTo(18, 24); g.lineTo(36, 18); g.lineTo(42, 32); g.lineTo(22, 34); g.closePath(); g.fill();
-    });
-
-    atlas.bush_statue = makeOffscreen(64, 76, (g) => {
-      g.fillStyle = 'rgba(0,0,0,0.34)';
-      g.beginPath(); g.ellipse(32, 62, 20, 9, 0, 0, Math.PI * 2); g.fill();
-      g.fillStyle = '#64748b';
-      g.fillRect(20, 22, 24, 40);
-      g.fillStyle = '#94a3b8';
-      g.fillRect(17, 16, 30, 8);
-      g.fillStyle = '#4ade80';
-      g.fillRect(28, 30, 8, 16);
-    });
-
-    const makePillar = (c1, c2, runeCol) => makeOffscreen(64, 88, (g) => {
-      g.fillStyle = 'rgba(0,0,0,0.38)';
-      g.beginPath(); g.ellipse(32, 74, 22, 10, 0, 0, Math.PI * 2); g.fill();
-      g.fillStyle = c1;
-      g.fillRect(18, 16, 28, 58);
-      g.fillStyle = c2;
-      g.fillRect(14, 12, 36, 9);
-      g.fillRect(14, 66, 36, 9);
-      g.fillStyle = runeCol;
-      g.fillRect(29, 28, 6, 26);
-    });
-
-    atlas.ruin_pillar = makePillar('#573b36', '#7c534c', '#f87171');
-    atlas.ice_pillar = makePillar('#0369a1', '#38bdf8', '#e0f2fe');
-    atlas.obsidian_spire = makePillar('#2e1065', '#4c1d95', '#e879f9');
-    atlas.twisted_root = makePillar('#365314', '#4d7c0f', '#a3e635');
-
-    atlas.lantern = makeOffscreen(56, 76, (g) => {
-      g.fillStyle = '#475569';
-      g.fillRect(23, 32, 10, 34);
-      g.fillStyle = '#fbbf24';
-      g.beginPath(); g.arc(28, 26, 9, 0, Math.PI * 2); g.fill();
-      g.strokeStyle = '#334155';
-      g.lineWidth = 3;
-      g.strokeRect(18, 16, 20, 20);
-    });
-
-    atlas.anvil = makeOffscreen(64, 56, (g) => {
-      g.fillStyle = 'rgba(0,0,0,0.35)';
-      g.beginPath(); g.ellipse(32, 44, 22, 8, 0, 0, Math.PI * 2); g.fill();
-      g.fillStyle = '#334155';
-      g.fillRect(20, 28, 24, 16);
-      g.fillStyle = '#94a3b8';
-      g.beginPath(); g.moveTo(10, 22); g.lineTo(54, 22); g.lineTo(44, 31); g.lineTo(18, 31); g.closePath(); g.fill();
-    });
-
-    atlas.monolith = makeOffscreen(88, 124, (g) => {
-      g.fillStyle = 'rgba(0,0,0,0.42)';
-      g.beginPath(); g.ellipse(44, 106, 30, 12, 0, 0, Math.PI * 2); g.fill();
-      g.fillStyle = '#1e1b4b';
-      g.beginPath(); g.moveTo(44, 8); g.lineTo(68, 36); g.lineTo(62, 104); g.lineTo(26, 104); g.lineTo(20, 36); g.closePath(); g.fill();
-      g.strokeStyle = '#38bdf8';
-      g.lineWidth = 2.5;
-      g.stroke();
-      g.fillStyle = '#fbbf24';
-      g.beginPath(); g.arc(44, 52, 9, 0, Math.PI * 2); g.fill();
-    });
-
-    atlas.rune_wall = makeOffscreen(72, 84, (g) => {
-      g.fillStyle = '#4c1d95';
-      g.fillRect(10, 14, 52, 58);
-      g.strokeStyle = '#e879f9';
-      g.lineWidth = 3;
-      g.strokeRect(12, 16, 48, 54);
-      g.beginPath();
-      g.moveTo(22, 24); g.lineTo(36, 44); g.lineTo(28, 62);
-      g.moveTo(48, 22); g.lineTo(36, 44); g.lineTo(50, 60);
-      g.stroke();
-    });
-
-    return atlas;
-  }
-
-  // ── Главная функция отрисовки кадра ──────────────────────────────────
-  function render() {
-    const st = engine.state;
-    const world = engine.world;
-    const p = st.player;
-
+  render(engine) {
+    const ctx = this.ctx;
+    const w = this.width;
+    const h = this.height;
     ctx.save();
-    ctx.scale(dpr, dpr);
+    ctx.scale(this.dpr, this.dpr);
+    ctx.imageSmoothingEnabled = false;
 
-    // Смещение камеры со встряской при ударах
-    const shakeX = st.camera.shake > 0 ? (Math.random() - 0.5) * st.camera.shake : 0;
-    const shakeY = st.camera.shake > 0 ? (Math.random() - 0.5) * st.camera.shake : 0;
-    const camX = st.camera.x + shakeX;
-    const camY = st.camera.y + shakeY;
-    const left = camX - viewW * 0.5;
-    const top = camY - viewH * 0.5;
-    const right = left + viewW;
-    const bottom = top + viewH;
+    const shakeX = engine.camera.shake > 0 ? Math.round((Math.random() - 0.5) * engine.camera.shake) : 0;
+    const shakeY = engine.camera.shake > 0 ? Math.round((Math.random() - 0.5) * engine.camera.shake) : 0;
+    const camX = Math.round(engine.camera.x - w * 0.5 + shakeX);
+    const camY = Math.round(engine.camera.y - h * 0.5 + shakeY);
 
-    // 1. Земля и тайлы биомов
-    drawTerrain(left, top, right, bottom, st.playTime);
+    // 1. Пиксельная земля локаций, дороги и водные преграды
+    this.drawGround(ctx, engine, camX, camY, w, h);
+    this.drawRoads(ctx, engine.world.roads, camX, camY, w, h);
+    this.drawHazardsAndBossArenas(ctx, engine, camX, camY, w, h);
 
-    ctx.save();
-    ctx.translate(-left, -top);
+    // 2. Трофеи на земле (отдельные PNG предметов) и ударные волны
+    this.drawDrops(ctx, engine.drops, camX, camY, w, h);
+    this.drawShockwaves(ctx, engine.shockwaves, camX, camY);
 
-    // 2. Тропы, арены боссов, опасные лужи, шипы и каменные островки
-    drawRoadsAndArenas(left, top, right, bottom);
-    drawHazards(left, top, right, bottom, st.playTime);
-    drawTelegraphsAndShockwaves();
+    // 3. Сбор всех видимых объектов мира и Y-сортировка (2.5D глубина)
+    const drawables = [];
+    const pad = 160;
 
-    // 3. Сбор видимых объектов мира для Y-сортировки (глубина 2.5D)
-    const renderList = [];
-    const pad = 110;
-
-    for (const obs of world.obstacles) {
-      if (obs.x < left - pad || obs.x > right + pad || obs.y < top - pad || obs.y > bottom + pad) continue;
-      renderList.push({ y: obs.y, kind: 'obs', ref: obs });
+    for (const bld of engine.world.buildings) {
+      if (bld.x < camX - pad || bld.x > camX + w + pad || bld.y < camY - pad || bld.y > camY + h + pad) continue;
+      drawables.push({ kind: 'building', y: bld.y, obj: bld });
     }
-    for (const nd of world.nodes) {
-      if (nd.respawnTimer > 0 || nd.hp <= 0) continue;
-      if (nd.x < left - pad || nd.x > right + pad || nd.y < top - pad || nd.y > bottom + pad) continue;
-      renderList.push({ y: nd.y, kind: 'node', ref: nd });
+
+    for (const veh of engine.world.vehicles) {
+      if (veh.x < camX - pad || veh.x > camX + w + pad || veh.y < camY - pad || veh.y > camY + h + pad) continue;
+      drawables.push({ kind: 'vehicle', y: veh.y, obj: veh });
     }
-    for (const ch of world.chests) {
-      if (ch.x < left - pad || ch.x > right + pad || ch.y < top - pad || ch.y > bottom + pad) continue;
-      renderList.push({ y: ch.y, kind: 'chest', ref: ch });
+
+    const nearProps = engine.world.queryPropsNear(engine.camera.x, engine.camera.y);
+    for (const pr of nearProps) {
+      if (pr.x < camX - pad || pr.x > camX + w + pad || pr.y < camY - pad || pr.y > camY + h + pad) continue;
+      drawables.push({ kind: 'prop', y: pr.y, obj: pr });
     }
-    for (const br of world.braziers) {
-      if (br.x < left - pad || br.x > right + pad || br.y < top - pad || br.y > bottom + pad) continue;
-      renderList.push({ y: br.y, kind: 'brazier', ref: br });
+    if (w > 480) {
+      for (const sideX of [engine.camera.x - 360, engine.camera.x + 360]) {
+        for (const pr of engine.world.queryPropsNear(sideX, engine.camera.y)) {
+          if (pr.x < camX - pad || pr.x > camX + w + pad || pr.y < camY - pad || pr.y > camY + h + pad) continue;
+          if (!drawables.some(d => d.obj === pr)) drawables.push({ kind: 'prop', y: pr.y, obj: pr });
+        }
+      }
     }
-    for (const camp of CAMPFIRES) {
-      if (camp.x < left - pad || camp.x > right + pad || camp.y < top - pad || camp.y > bottom + pad) continue;
-      renderList.push({ y: camp.y, kind: 'camp', ref: camp });
+
+    for (const nd of engine.world.nodes) {
+      if (nd.respawnTimer > 0) continue;
+      if (nd.x < camX - pad || nd.x > camX + w + pad || nd.y < camY - pad || nd.y > camY + h + pad) continue;
+      drawables.push({ kind: 'node', y: nd.y, obj: nd });
     }
+
+    for (const c of CAMPFIRES) {
+      if (c.x < camX - pad || c.x > camX + w + pad || c.y < camY - pad || c.y > camY + h + pad) continue;
+      drawables.push({ kind: 'campfire', y: c.y, obj: c });
+    }
+
     for (const npc of NPCS) {
-      if (npc.x < left - pad || npc.x > right + pad || npc.y < top - pad || npc.y > bottom + pad) continue;
-      renderList.push({ y: npc.y, kind: 'npc', ref: npc });
+      if (npc.x < camX - pad || npc.x > camX + w + pad || npc.y < camY - pad || npc.y > camY + h + pad) continue;
+      drawables.push({ kind: 'npc', y: npc.y, obj: npc });
     }
-    for (const lt of st.lootDrops) {
-      if (lt.x < left - 50 || lt.x > right + 50 || lt.y < top - 50 || lt.y > bottom + 50) continue;
-      renderList.push({ y: lt.y, kind: 'loot', ref: lt });
-    }
-    for (const en of st.enemies) {
-      if (en.x < left - pad || en.x > right + pad || en.y < top - pad || en.y > bottom + pad) continue;
-      renderList.push({ y: en.y, kind: 'enemy', ref: en });
-    }
-    if (st.activeBoss) {
-      renderList.push({ y: st.activeBoss.y, kind: 'boss', ref: st.activeBoss });
-    }
-    renderList.push({ y: p.y, kind: 'player', ref: p });
 
-    renderList.sort((a, b) => a.y - b.y);
+    for (const e of engine.enemies) {
+      if (e.x < camX - pad || e.x > camX + w + pad || e.y < camY - pad || e.y > camY + h + pad) continue;
+      drawables.push({ kind: 'enemy', y: e.y, obj: e });
+    }
 
-    for (let i = 0; i < renderList.length; i++) {
-      const item = renderList[i];
+    for (const b of engine.bossEntities) {
+      if (b.x < camX - 220 || b.x > camX + w + 220 || b.y < camY - 220 || b.y > camY + h + 220) continue;
+      drawables.push({ kind: 'boss', y: b.y, obj: b });
+    }
+
+    if (!engine.player.dead && !engine.player.vehicleId) {
+      drawables.push({ kind: 'player', y: engine.player.y, obj: engine.player });
+    }
+
+    drawables.sort((a, b) => a.y - b.y);
+
+    for (let i = 0; i < drawables.length; i++) {
+      const item = drawables[i];
       switch (item.kind) {
-        case 'obs': drawObstacle(item.ref); break;
-        case 'node': drawNode(item.ref); break;
-        case 'chest': drawChest(item.ref, st.playTime); break;
-        case 'brazier': drawBrazier(item.ref, st.playTime); break;
-        case 'camp': drawCampfire(item.ref, st.unlockedCampfires.includes(item.ref.id), st.playTime); break;
-        case 'npc': drawNpc(item.ref, st.playTime); break;
-        case 'loot': drawLoot(item.ref, st.playTime); break;
-        case 'enemy': drawEnemy(item.ref, st.playTime); break;
-        case 'boss': drawBoss(item.ref, st.playTime); break;
-        case 'player': drawPlayer(item.ref, st.playTime); break;
+        case 'building': this.drawBuilding(ctx, item.obj, engine, camX, camY); break;
+        case 'vehicle':  this.drawVehicle(ctx, item.obj, engine, camX, camY); break;
+        case 'prop':     this.drawProp(ctx, item.obj, camX, camY); break;
+        case 'node':     this.drawNode(ctx, item.obj, camX, camY); break;
+        case 'campfire': this.drawCampfire(ctx, item.obj, engine, camX, camY); break;
+        case 'npc':      this.drawNpc(ctx, item.obj, engine, camX, camY); break;
+        case 'enemy':    this.drawEnemy(ctx, item.obj, camX, camY); break;
+        case 'boss':     this.drawBoss(ctx, item.obj, camX, camY); break;
+        case 'player':   this.drawPlayer(ctx, item.obj, engine, camX, camY); break;
       }
     }
 
-    // 4. Снаряды, частицы и всплывающий урон
-    drawProjectiles(st.projectiles);
-    drawParticles(engine.particles);
-    drawFloatingTexts(engine.floatingTexts);
-    drawQuestCompass(p);
+    // 4. Взмахи клинков, пули, летящие гранаты, пиксельные спрайт-эффекты и всплывающий урон
+    this.drawSlashes(ctx, engine.slashes, camX, camY);
+    this.drawProjectiles(ctx, engine.projectiles, camX, camY);
+    this.drawThrownGrenades(ctx, engine.thrownGrenades, camX, camY);
+    this.drawParticles(ctx, engine.particles, camX, camY);
+    this.drawSpriteEffects(ctx, engine.spriteEffects, camX, camY);
+    this.drawFloatingTexts(ctx, engine.floatingTexts, camX, camY);
+
+    // 5. Атмосферная Ночь (с тёплым светом вокруг костров, зданий, фар и героя)
+    this.drawDayNightLighting(ctx, engine, camX, camY, w, h);
+
+    // 6. Стрелка-компас к активному квесту
+    this.drawQuestPointer(ctx, engine, w, h);
 
     ctx.restore();
 
-    // 5. Атмосферные частицы биома и освещение смены дня/ночи
-    if (st.settings.quality !== 'low') {
-      drawAmbientBiomeMotes(st.currentBiome, st.playTime);
-    }
-    drawDayNightOverlay(st.dayTime, p.x - left, p.y - top);
-
-    ctx.restore();
-  }
-
-  function drawTerrain(left, top, right, bottom) {
-    const step = 96;
-    const startX = Math.floor(left / step) * step;
-    const startY = Math.floor(top / step) * step;
-
-    for (let y = startY; y < bottom; y += step) {
-      for (let x = startX; x < right; x += step) {
-        const bId = getBiomeIdAt(x + 48, y + 48);
-        const b = BIOMES[bId];
-        const checker = ((Math.floor(x / step) + Math.floor(y / step)) & 1) === 0;
-        ctx.fillStyle = checker ? b.groundBase : b.groundAlt;
-        ctx.fillRect(x - left, y - top, step + 1, step + 1);
-
-        // Декоративные травинки / трещины на тайле без аллокаций
-        const hash = Math.abs(Math.sin(x * 12.9898 + y * 78.233)) * 43758.5453;
-        const frac = hash - Math.floor(hash);
-        if (frac > 0.55) {
-          ctx.fillStyle = b.accent;
-          ctx.globalAlpha = 0.12;
-          const dx = x - left + (frac * 64);
-          const dy = y - top + ((frac * 137) % 64);
-          ctx.fillRect(dx, dy, 6, 6);
-          ctx.globalAlpha = 1;
-        }
-      }
+    this.minimapTick++;
+    if (this.mmCtx && this.minimapTick % 4 === 0) {
+      this.renderMinimap(engine);
     }
   }
 
-  function drawRoadsAndArenas(left, top, right, bottom) {
-    const world = engine.world;
+  // ── Отрисовка пиксельной земли по биомам ─────────────────────────────
+  drawGround(ctx, engine, camX, camY, w, h) {
+    const patch = 192; // кратно 48px тайлу!
+    const startX = Math.floor(camX / patch) * patch;
+    const startY = Math.floor(camY / patch) * patch;
+
     ctx.save();
-    ctx.lineCap = 'round';
-    ctx.strokeStyle = 'rgba(120, 98, 72, 0.34)';
-    ctx.lineWidth = 54;
-    for (const r of world.roads) {
-      ctx.beginPath();
-      ctx.moveTo(r.x1, r.y1);
-      ctx.lineTo(r.x2, r.y2);
-      ctx.stroke();
-    }
-
-    // Каменная площадь Лагеря Рубежа
-    if (2400 > left - 350 && 2400 < right + 350 && 2380 > top - 350 && 2380 < bottom + 350) {
-      ctx.fillStyle = 'rgba(71, 85, 105, 0.36)';
-      ctx.beginPath();
-      ctx.arc(2400, 2380, 250, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.strokeStyle = 'rgba(148, 163, 184, 0.35)';
-      ctx.lineWidth = 4;
-      ctx.stroke();
+    ctx.translate(-camX, -camY);
+    for (let gy = startY; gy < camY + h + patch; gy += patch) {
+      for (let gx = startX; gx < camX + w + patch; gx += patch) {
+        const biomeId = getBiomeIdAt(gx + patch * 0.5, gy + patch * 0.5);
+        const biome = BIOMES[biomeId];
+        const patKey = `tile_${biome.tile}`;
+        if (this.patterns[patKey]) {
+          ctx.fillStyle = this.patterns[patKey];
+        } else {
+          ctx.fillStyle = biome.groundBase;
+        }
+        ctx.fillRect(gx, gy, patch, patch);
+      }
     }
     ctx.restore();
+
+    // Чёткая пиксельная рамка границы зоны
+    ctx.strokeStyle = '#ef4444';
+    ctx.lineWidth = 4;
+    ctx.strokeRect(44 - camX, 44 - camY, engine.world.width - 88, engine.world.height - 88);
   }
 
-  function drawHazards(left, top, right, bottom, time) {
-    const world = engine.world;
-    for (const h of world.hazards) {
-      if (h.kind === 'water_moat') {
-        if (h.x < left - 260 || h.x > right + 260 || h.y < top - 260 || h.y > bottom + 260) continue;
-        // Водное кольцо вокруг Острова Светлячков
-        ctx.save();
-        ctx.beginPath();
-        ctx.arc(h.x, h.y, h.outerRadius, 0, Math.PI * 2);
-        ctx.arc(h.x, h.y, h.innerRadius, 0, Math.PI * 2, true);
-        ctx.fillStyle = 'rgba(14, 116, 144, 0.78)';
-        ctx.fill();
-        ctx.strokeStyle = 'rgba(56, 189, 248, 0.45)';
+  drawRoads(ctx, roads, camX, camY, w, h) {
+    ctx.save();
+    ctx.lineCap = 'square';
+    for (const r of roads) {
+      const sx1 = r.x1 - camX, sy1 = r.y1 - camY;
+      const sx2 = r.x2 - camX, sy2 = r.y2 - camY;
+      if (Math.max(sx1, sx2) < -100 || Math.min(sx1, sx2) > w + 100 ||
+          Math.max(sy1, sy2) < -100 || Math.min(sy1, sy2) > h + 100) continue;
+
+      if (r.kind === 'asphalt') {
+        ctx.strokeStyle = '#181c24';
+        ctx.lineWidth = r.width + 6;
+        ctx.beginPath(); ctx.moveTo(sx1, sy1); ctx.lineTo(sx2, sy2); ctx.stroke();
+
+        ctx.strokeStyle = '#333945';
+        ctx.lineWidth = r.width;
+        ctx.beginPath(); ctx.moveTo(sx1, sy1); ctx.lineTo(sx2, sy2); ctx.stroke();
+
+        // Жёлтая дорожная разметка
+        ctx.strokeStyle = '#e5a93c';
         ctx.lineWidth = 3;
-        ctx.stroke();
-        ctx.restore();
+        ctx.setLineDash([14, 14]);
+        ctx.beginPath(); ctx.moveTo(sx1, sy1); ctx.lineTo(sx2, sy2); ctx.stroke();
+        ctx.setLineDash([]);
+      } else {
+        ctx.strokeStyle = '#5c4328';
+        ctx.lineWidth = r.width + 4;
+        ctx.beginPath(); ctx.moveTo(sx1, sy1); ctx.lineTo(sx2, sy2); ctx.stroke();
 
-        // Плиты для прыжков через воду
-        for (const st of world.steppingStones) {
-          ctx.fillStyle = '#64748b';
-          ctx.beginPath();
-          ctx.arc(st.x, st.y, st.radius, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.strokeStyle = '#cbd5e1';
-          ctx.lineWidth = 2;
-          ctx.stroke();
-        }
-        continue;
-      }
-
-      if (h.x < left - 60 || h.x > right + 60 || h.y < top - 60 || h.y > bottom + 60) continue;
-      if (h.kind === 'acid') {
-        const pulse = 1 + Math.sin(time * 3.5 + h.x) * 0.06;
-        ctx.fillStyle = 'rgba(132, 204, 22, 0.46)';
-        ctx.beginPath(); ctx.arc(h.x, h.y, h.radius * pulse, 0, Math.PI * 2); ctx.fill();
-        ctx.strokeStyle = '#bef264';
-        ctx.lineWidth = 2;
-        ctx.stroke();
-      } else if (h.kind === 'lava') {
-        const pulse = 1 + Math.sin(time * 4.2 + h.y) * 0.07;
-        ctx.fillStyle = 'rgba(239, 68, 68, 0.58)';
-        ctx.beginPath(); ctx.arc(h.x, h.y, h.radius * pulse, 0, Math.PI * 2); ctx.fill();
-        ctx.fillStyle = 'rgba(251, 191, 36, 0.55)';
-        ctx.beginPath(); ctx.arc(h.x, h.y, h.radius * 0.55, 0, Math.PI * 2); ctx.fill();
-      } else if (h.kind === 'spikes') {
-        const cycle = (time + (h.phase || 0)) % 3.2;
-        const active = cycle > 1.9 && cycle < 2.9;
-        const warn = cycle > 1.3 && cycle <= 1.9;
-        ctx.fillStyle = active ? 'rgba(239,68,68,0.45)' : warn ? 'rgba(251,191,36,0.35)' : 'rgba(30,41,59,0.55)';
-        ctx.beginPath(); ctx.arc(h.x, h.y, h.radius, 0, Math.PI * 2); ctx.fill();
-        if (active) {
-          ctx.fillStyle = '#e2e8f0';
-          for (const [ox, oy] of [[-10, -6], [10, -6], [0, 10], [0, -12]]) {
-            ctx.beginPath();
-            ctx.moveTo(h.x + ox, h.y + oy - 11);
-            ctx.lineTo(h.x + ox - 5, h.y + oy + 4);
-            ctx.lineTo(h.x + ox + 5, h.y + oy + 4);
-            ctx.closePath();
-            ctx.fill();
-          }
-        }
+        ctx.strokeStyle = '#8b6843';
+        ctx.lineWidth = r.width - 6;
+        ctx.beginPath(); ctx.moveTo(sx1, sy1); ctx.lineTo(sx2, sy2); ctx.stroke();
       }
     }
+    ctx.restore();
   }
 
-  function drawTelegraphsAndShockwaves() {
-    const st = engine.state;
-    for (const tg of st.telegraphs) {
-      const progress = 1 - tg.timer / tg.maxTimer;
+  drawHazardsAndBossArenas(ctx, engine, camX, camY, w, h) {
+    for (const hz of engine.world.hazards) {
+      const sx = Math.round(hz.x - camX);
+      const sy = Math.round(hz.y - camY);
+      if (sx < -300 || sx > w + 300 || sy < -300 || sy > h + 300) continue;
+
+      // Кольцевая река с пиксельной водой
       ctx.save();
-      ctx.fillStyle = tg.color;
-      ctx.globalAlpha = 0.16 + progress * 0.25;
-      ctx.beginPath(); ctx.arc(tg.x, tg.y, tg.radius, 0, Math.PI * 2); ctx.fill();
-      ctx.globalAlpha = 0.85;
-      ctx.strokeStyle = tg.color;
-      ctx.lineWidth = 2.5;
-      ctx.beginPath(); ctx.arc(tg.x, tg.y, tg.radius * progress, 0, Math.PI * 2); ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(sx, sy, hz.outerRadius, 0, Math.PI * 2);
+      ctx.arc(sx, sy, hz.innerRadius, 0, Math.PI * 2, true);
+      ctx.fillStyle = '#2563eb';
+      ctx.fill();
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = '#181c24';
+      ctx.stroke();
       ctx.restore();
+
+      for (const st of engine.world.steppingStones) {
+        const px = Math.round(st.x - camX);
+        const py = Math.round(st.y - camY);
+        ctx.fillStyle = '#181c24';
+        ctx.fillRect(px - 22, py - 15, 44, 30);
+        ctx.fillStyle = '#94a3b8';
+        ctx.fillRect(px - 20, py - 13, 40, 26);
+        ctx.fillStyle = '#cbd5e1';
+        ctx.fillRect(px - 17, py - 10, 34, 8);
+      }
     }
 
-    for (const sw of st.shockwaves) {
-      const alpha = Math.max(0.12, 1 - sw.radius / sw.maxRadius);
+    // Контуры арен Боссов
+    for (const b of engine.bossEntities) {
+      const sx = Math.round(b.homeX - camX);
+      const sy = Math.round(b.homeY - camY);
+      if (sx < -420 || sx > w + 420 || sy < -420 || sy > h + 420) continue;
       ctx.save();
-      ctx.globalAlpha = alpha;
-      ctx.strokeStyle = sw.color;
-      ctx.lineWidth = sw.friendly ? 5 : 7;
+      ctx.strokeStyle = 'rgba(239, 68, 68, 0.45)';
+      ctx.lineWidth = 3;
+      ctx.setLineDash([12, 10]);
       ctx.beginPath();
-      ctx.arc(sw.x, sw.y, sw.radius, 0, Math.PI * 2);
+      ctx.arc(sx, sy, b.arenaRadius, 0, Math.PI * 2);
       ctx.stroke();
       ctx.restore();
     }
   }
 
-  function drawObstacle(obs) {
-    const sp = sprites[obs.kind] || sprites.rock;
-    ctx.drawImage(sp, obs.x - sp.width * 0.5, obs.y - sp.height * 0.78);
+  // ── Здания (все 9 типов с вывесками и индикаторами входа) ────────────
+  drawBuilding(ctx, bld, engine, camX, camY) {
+    const sx = Math.round(bld.x - camX);
+    const sy = Math.round(bld.y - camY);
+    const key = `bld_${bld.kind}`;
+    const dw = Math.round(bld.spriteW * PIXEL_SCALE);
+    const dh = Math.round(bld.spriteH * PIXEL_SCALE);
+
+    // Пиксельная тень под основанием здания
+    ctx.fillStyle = 'rgba(0,0,0,0.28)';
+    ctx.fillRect(Math.round(sx - dw * 0.46), sy - 6, Math.round(dw * 0.92), 12);
+
+    if (this.imgReady(key)) {
+      ctx.drawImage(this.images[key], Math.round(sx - dw * 0.5), sy - dh, dw, dh);
+    } else {
+      ctx.fillStyle = '#475569';
+      ctx.fillRect(Math.round(sx - dw * 0.45), sy - dh, Math.round(dw * 0.9), dh);
+    }
+
+    // Пиксельный маркер активного входа перед дверью
+    if (bld.interactType) {
+      const isDone = (bld.interactType === 'loot_once' && bld.looted) ||
+                     (bld.interactType === 'secret_vault' && engine.discoveredSecrets.includes(bld.secretId));
+      if (!isDone) {
+        const bob = Math.round(Math.sin(engine.stats.playTime * 4.5) * 3);
+        let badge = '📦';
+        let col = '#fbbf24';
+        if (bld.interactType === 'shop') { badge = '🏪 SHOP'; col = '#4ade80'; }
+        else if (bld.interactType === 'heal') { badge = '🏥 +HP'; col = '#38bdf8'; }
+        else if (bld.interactType === 'secret_vault') { badge = '🗝️ ЗАМОК'; col = '#c084fc'; }
+
+        ctx.font = 'bold 11px monospace';
+        ctx.textAlign = 'center';
+        const tw = ctx.measureText(badge).width + 10;
+        ctx.fillStyle = 'rgba(15, 23, 42, 0.85)';
+        ctx.fillRect(Math.round(sx - tw * 0.5), sy + 6 + bob, Math.round(tw), 16);
+        ctx.strokeStyle = col;
+        ctx.lineWidth = 1;
+        ctx.strokeRect(Math.round(sx - tw * 0.5), sy + 6 + bob, Math.round(tw), 16);
+        ctx.fillStyle = col;
+        ctx.fillText(badge, sx, sy + 18 + bob);
+      }
+    }
   }
 
-  function drawNode(nd) {
-    const sp = sprites[nd.kind] || sprites.tree;
-    ctx.save();
-    if (nd.hitFlash > 0) {
-      ctx.translate((Math.random() - 0.5) * 5, 0);
-      ctx.filter = 'brightness(1.7)';
+  // ── Транспорт (6 видов: машина, мотоцикл, внедорожник, автобус, вертолёт, лодка) ──
+  drawVehicle(ctx, veh, engine, camX, camY) {
+    const sx = Math.round(veh.x - camX);
+    const sy = Math.round(veh.y - camY);
+    const key = `veh_${veh.kind}`;
+    const img = this.images[key];
+    const driven = engine.player.vehicleId === veh.id;
+
+    if (this.imgReady(key)) {
+      const dw = Math.round(img.naturalWidth * PIXEL_SCALE);
+      const dh = Math.round(img.naturalHeight * PIXEL_SCALE);
+      ctx.save();
+      ctx.translate(sx, sy);
+      if (Math.cos(veh.angle) < -0.15) ctx.scale(-1, 1);
+      ctx.drawImage(img, Math.round(-dw * 0.5), Math.round(-dh * 0.72), dw, dh);
+      ctx.restore();
     }
-    ctx.drawImage(sp, nd.x - sp.width * 0.5, nd.y - sp.height * 0.80);
-    ctx.restore();
+
+    if (driven) {
+      // Полоска HP игрока над управляемым транспортом
+      this.drawMiniBar(ctx, sx, sy - 38, 42, engine.player.hp / engine.player.maxHp, '#22c55e');
+    } else if (veh.drivable && dist2(engine.player.x, engine.player.y, veh.x, veh.y) < 160 * 160) {
+      ctx.font = 'bold 10px monospace';
+      ctx.textAlign = 'center';
+      ctx.fillStyle = '#38bdf8';
+      ctx.fillText('🚗 РУЛЬ', sx, sy - 30);
+    }
+  }
+
+  // ── Пропы и разрушаемые объекты (деревья, кусты, камни, ящики, бочки, палатки, заборы) ──
+  drawProp(ctx, pr, camX, camY) {
+    const sx = Math.round(pr.x - camX);
+    const sy = Math.round(pr.y - camY);
+    const key = `prp_${pr.kind}`;
+    if (this.imgReady(key)) {
+      const img = this.images[key];
+      const dw = Math.round(img.naturalWidth * PIXEL_SCALE);
+      const dh = Math.round(img.naturalHeight * PIXEL_SCALE);
+      ctx.drawImage(img, Math.round(sx - dw * 0.5), Math.round(sy - dh * 0.82), dw, dh);
+    }
+  }
+
+  drawNode(ctx, nd, camX, camY) {
+    const sx = Math.round(nd.x - camX);
+    const sy = Math.round(nd.y - camY);
+    const shake = nd.hitFlash > 0 ? Math.round((Math.random() - 0.5) * 5) : 0;
+    const key = `prp_${nd.kind}`;
+
+    if (this.imgReady(key)) {
+      const img = this.images[key];
+      const dw = Math.round(img.naturalWidth * PIXEL_SCALE);
+      const dh = Math.round(img.naturalHeight * PIXEL_SCALE);
+      ctx.drawImage(img, Math.round(sx + shake - dw * 0.5), Math.round(sy - dh * 0.85), dw, dh);
+    }
 
     if (nd.hp < nd.maxHp) {
-      drawMiniBar(nd.x, nd.y - sp.height * 0.72, 38, nd.hp / nd.maxHp, '#38bdf8');
+      this.drawMiniBar(ctx, sx, sy - 38, 32, nd.hp / nd.maxHp, nd.explosive ? '#ef4444' : '#f59e0b');
     }
   }
 
-  function drawChest(ch, time) {
-    ctx.save();
-    const bob = !ch.opened && ch.kind === 'mythic' ? Math.sin(time * 4) * 3 : 0;
-    ctx.fillStyle = 'rgba(0,0,0,0.36)';
-    ctx.beginPath(); ctx.ellipse(ch.x, ch.y + 6, 20, 8, 0, 0, Math.PI * 2); ctx.fill();
+  // ── Анимированный пиксельный Костёр (4 кадра campfire_sheet.png) ──────
+  drawCampfire(ctx, c, engine, camX, camY) {
+    const sx = Math.round(c.x - camX);
+    const sy = Math.round(c.y - camY);
+    const unlocked = engine.unlockedCamps.includes(c.id);
 
-    const bodyCol = ch.opened ? '#475569' : ch.kind === 'mythic' ? '#7e22ce' : ch.kind === 'gold' ? '#b45309' : '#78350f';
-    const trimCol = ch.opened ? '#94a3b8' : ch.kind === 'mythic' ? '#fbbf24' : ch.kind === 'gold' ? '#fde047' : '#d97706';
-
-    ctx.fillStyle = bodyCol;
-    ctx.fillRect(ch.x - 16, ch.y - 16 + bob, 32, 22);
-    ctx.strokeStyle = trimCol;
-    ctx.lineWidth = 2.5;
-    ctx.strokeRect(ch.x - 16, ch.y - 16 + bob, 32, 22);
-
-    if (!ch.opened) {
-      ctx.fillStyle = trimCol;
-      ctx.fillRect(ch.x - 4, ch.y - 8 + bob, 8, 7);
-    }
-    ctx.restore();
-  }
-
-  function drawBrazier(br, time) {
-    ctx.fillStyle = '#334155';
-    ctx.beginPath(); ctx.arc(br.x, br.y, 16, 0, Math.PI * 2); ctx.fill();
-    ctx.strokeStyle = br.lit ? '#38bdf8' : '#64748b';
-    ctx.lineWidth = 3;
-    ctx.stroke();
-    if (br.lit) {
-      const flick = Math.sin(time * 12 + br.x) * 3;
-      ctx.fillStyle = '#38bdf8';
-      ctx.beginPath(); ctx.arc(br.x, br.y - 6, 10 + flick * 0.4, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = '#e0f2fe';
-      ctx.beginPath(); ctx.arc(br.x, br.y - 8, 5, 0, Math.PI * 2); ctx.fill();
-    }
-  }
-
-  function drawCampfire(camp, unlocked, time) {
-    ctx.save();
-    ctx.fillStyle = 'rgba(0,0,0,0.4)';
-    ctx.beginPath(); ctx.ellipse(camp.x, camp.y + 6, 26, 11, 0, 0, Math.PI * 2); ctx.fill();
-
-    // Поленья и камни
-    ctx.strokeStyle = '#78350f';
-    ctx.lineWidth = 6;
-    ctx.beginPath();
-    ctx.moveTo(camp.x - 15, camp.y + 5); ctx.lineTo(camp.x + 15, camp.y - 5);
-    ctx.moveTo(camp.x - 15, camp.y - 5); ctx.lineTo(camp.x + 15, camp.y + 5);
-    ctx.stroke();
-
-    if (unlocked) {
-      const f = Math.sin(time * 11) * 3;
-      ctx.fillStyle = 'rgba(251, 146, 60, 0.25)';
-      ctx.beginPath(); ctx.arc(camp.x, camp.y - 4, 38 + f, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = '#f97316';
-      ctx.beginPath();
-      ctx.moveTo(camp.x, camp.y - 28 - f);
-      ctx.quadraticCurveTo(camp.x + 16, camp.y - 6, camp.x, camp.y + 4);
-      ctx.quadraticCurveTo(camp.x - 16, camp.y - 6, camp.x, camp.y - 28 - f);
-      ctx.fill();
-      ctx.fillStyle = '#fde047';
-      ctx.beginPath(); ctx.arc(camp.x, camp.y - 8, 7, 0, Math.PI * 2); ctx.fill();
+    if (this.imgReady('prp_campfire')) {
+      const frame = unlocked ? (Math.floor(engine.stats.playTime * 8) % 4) : 0;
+      const dw = Math.round(32 * PIXEL_SCALE);
+      const dh = Math.round(32 * PIXEL_SCALE);
+      ctx.save();
+      if (!unlocked) ctx.globalAlpha = 0.65;
+      ctx.drawImage(this.images.prp_campfire, frame * 32, 0, 32, 32, Math.round(sx - dw * 0.5), Math.round(sy - dh * 0.78), dw, dh);
+      ctx.restore();
     }
 
-    ctx.font = 'bold 11px system-ui, sans-serif';
+    ctx.font = 'bold 11px sans-serif';
     ctx.textAlign = 'center';
-    ctx.fillStyle = unlocked ? '#fed7aa' : '#94a3b8';
-    ctx.fillText(camp.name, camp.x, camp.y - 36);
-    ctx.restore();
+    ctx.fillStyle = unlocked ? '#fde68a' : '#94a3b8';
+    ctx.fillText(unlocked ? `🔥 ${c.name}` : `🔒 ${c.name}`, sx, sy - 36);
   }
 
-  function drawNpc(npc, time) {
-    const bob = Math.sin(time * 3 + npc.x) * 2;
-    ctx.save();
-    ctx.fillStyle = 'rgba(0,0,0,0.35)';
-    ctx.beginPath(); ctx.ellipse(npc.x, npc.y + 8, 15, 7, 0, 0, Math.PI * 2); ctx.fill();
-
-    // Плащ и фигура NPC
-    ctx.fillStyle = npc.color;
-    ctx.beginPath(); ctx.arc(npc.x, npc.y - 8 + bob, 13, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = '#fde68a';
-    ctx.beginPath(); ctx.arc(npc.x, npc.y - 22 + bob, 8.5, 0, Math.PI * 2); ctx.fill();
-
-    // Значок над головой
-    ctx.font = 'bold 12px system-ui, sans-serif';
-    ctx.textAlign = 'center';
-    ctx.fillStyle = '#f8fafc';
-    ctx.fillText(npc.name, npc.x, npc.y - 38 + bob);
-    ctx.restore();
-  }
-
-  function drawLoot(lt, time) {
-    const bob = Math.sin(time * 5 + lt.x) * 3.5;
-    let color = '#fbbf24';
-    let label = '💰';
-    if (lt.type === 'resource' && RESOURCES[lt.itemId]) {
-      color = RESOURCES[lt.itemId].color;
-      label = RESOURCES[lt.itemId].icon;
-    } else if (lt.type === 'consumable' && CONSUMABLES[lt.itemId]) {
-      color = '#4ade80';
-      label = CONSUMABLES[lt.itemId].icon;
-    } else if (lt.type === 'relic') {
-      color = '#c084fc';
-      label = '💍';
+  // ── 4 NPC (Торговец, Квестовый, Лекарь, Фермер — 2 кадра анимации) ────
+  drawNpc(ctx, npc, engine, camX, camY) {
+    const sx = Math.round(npc.x - camX);
+    const sy = Math.round(npc.y - camY);
+    const key = npc.sprite;
+    if (this.imgReady(key)) {
+      const frame = Math.floor(engine.stats.playTime * 2.5) % 2;
+      const dw = Math.round(32 * PIXEL_SCALE);
+      const dh = Math.round(32 * PIXEL_SCALE);
+      ctx.drawImage(this.images[key], frame * 32, 0, 32, 32, Math.round(sx - dw * 0.5), Math.round(sy - dh * 0.88), dw, dh);
     }
 
-    ctx.save();
-    ctx.fillStyle = 'rgba(0,0,0,0.32)';
-    ctx.beginPath(); ctx.ellipse(lt.x, lt.y + 6, 10, 4.5, 0, 0, Math.PI * 2); ctx.fill();
-
-    ctx.fillStyle = color;
-    ctx.globalAlpha = 0.32;
-    ctx.beginPath(); ctx.arc(lt.x, lt.y - 4 + bob, 13, 0, Math.PI * 2); ctx.fill();
-    ctx.globalAlpha = 1;
-
-    ctx.font = '16px system-ui, sans-serif';
+    ctx.font = 'bold 11px sans-serif';
     ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(label, lt.x, lt.y - 4 + bob);
-    ctx.restore();
+    ctx.fillStyle = '#0f172a';
+    ctx.fillText(npc.name, sx + 1, sy - 41);
+    ctx.fillStyle = '#fde047';
+    ctx.fillText(npc.name, sx, sy - 42);
+    ctx.font = '10px sans-serif';
+    ctx.fillStyle = '#cbd5e1';
+    ctx.fillText(npc.role, sx, sy - 54);
   }
 
-  function drawEnemy(e, time) {
-    const hop = e.behavior === 'melee_hop' ? Math.abs(Math.sin(time * 6 + e.x)) * 6 : Math.sin(time * 8 + e.x) * 2;
-    const zOff = (e.z || 0) + hop;
+  // ── Враги (Зомби, Бандит, Солдат, Монстр — 6-кадровые спрайт-листы) ──
+  drawEnemy(ctx, e, camX, camY) {
+    const sx = Math.round(e.x - camX);
+    const sy = Math.round(e.y - camY);
+    const sz = Math.round(e.z || 0);
+    const sheetKey = `${e.sprite}_sheet`;
 
-    ctx.save();
-    // Тень под врагом
-    const shadowScale = Math.max(0.45, 1 - zOff / 120);
-    ctx.fillStyle = 'rgba(0,0,0,0.38)';
-    ctx.beginPath();
-    ctx.ellipse(e.x, e.y + 8, e.radius * shadowScale, e.radius * 0.45 * shadowScale, 0, 0, Math.PI * 2);
-    ctx.fill();
+    const moving = Math.hypot(e.vx, e.vy) > 10;
+    let frame = 0;
+    if (e.hitFlash > 0) frame = 5;
+    else if (e.attackCd > 1.35) frame = 4;
+    else if (moving) frame = Math.floor(e.animTime) % 4;
 
-    const bodyY = e.y - zOff - 6;
-    ctx.fillStyle = e.hitFlash > 0 ? '#ffffff' : e.color;
-    ctx.beginPath();
-    ctx.arc(e.x, bodyY, e.radius, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.strokeStyle = 'rgba(15, 23, 42, 0.75)';
-    ctx.lineWidth = 2.2;
-    ctx.stroke();
+    if (this.imgReady(sheetKey)) {
+      const img = this.images[sheetKey];
+      const fw = Math.floor(img.naturalWidth / 6);
+      const fh = img.naturalHeight;
+      const scale = e.kind === 'infected_runner' ? PIXEL_SCALE * 1.06 : PIXEL_SCALE;
+      const dw = Math.round(fw * scale);
+      const dh = Math.round(fh * scale);
 
-    // Глаза врага
-    const lookX = Math.sign(engine.state.player.x - e.x) * 3;
-    ctx.fillStyle = e.eyeColor || '#fef08a';
-    ctx.beginPath();
-    ctx.arc(e.x - 5 + lookX, bodyY - 3, 3.2, 0, Math.PI * 2);
-    ctx.arc(e.x + 5 + lookX, bodyY - 3, 3.2, 0, Math.PI * 2);
-    ctx.fill();
+      ctx.save();
+      ctx.translate(sx, sy - sz);
+      if (e.vx < -8) ctx.scale(-1, 1);
+      ctx.drawImage(img, frame * fw, 0, fw, fh, Math.round(-dw * 0.5), Math.round(-dh * 0.88), dw, dh);
+      ctx.restore();
+    }
 
     if (e.stunTimer > 0) {
-      ctx.font = '12px system-ui, sans-serif';
+      ctx.fillStyle = '#38bdf8';
+      ctx.font = 'bold 11px monospace';
       ctx.textAlign = 'center';
-      ctx.fillText('💫', e.x, bodyY - e.radius - 12);
+      ctx.fillText('⚡ОГЛУШЁН', sx, sy - sz - 44);
     }
 
-    if (e.hp < e.maxHp) {
-      drawMiniBar(e.x, bodyY - e.radius - 9, 34, e.hp / e.maxHp, '#ef4444');
+    this.drawMiniBar(ctx, sx, sy - sz - 38, 30, Math.max(0, e.hp / e.maxHp), '#ef4444');
+  }
+
+  // ── Боссы (6-кадровый boss_sheet.png + фазовая аура) ─────────────────
+  drawBoss(ctx, b, camX, camY) {
+    const sx = Math.round(b.x - camX);
+    const sy = Math.round(b.y - camY);
+    const sz = Math.round(b.z || 0);
+
+    if (b.phase === 2) {
+      ctx.strokeStyle = 'rgba(239, 68, 68, 0.7)';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.arc(sx, sy - 20, b.radius + 12 + Math.sin(b.animTime * 2) * 3, 0, Math.PI * 2);
+      ctx.stroke();
     }
+
+    let frame = Math.floor(b.animTime) % 4;
+    if (b.hitFlash > 0) frame = 5;
+    else if (b.actionTimer < 0.6 || b.dashActive > 0) frame = 4;
+
+    if (this.imgReady('boss_sheet')) {
+      const img = this.images.boss_sheet;
+      const fw = 48;
+      const fh = 48;
+      const dw = Math.round(fw * PIXEL_SCALE * 1.35);
+      const dh = Math.round(fh * PIXEL_SCALE * 1.35);
+      ctx.drawImage(img, frame * fw, 0, fw, fh, Math.round(sx - dw * 0.5), Math.round(sy - sz - dh * 0.86), dw, dh);
+    }
+
+    this.drawMiniBar(ctx, sx, sy - sz - 76, 68, Math.max(0, b.hp / b.maxHp), '#f43f5e');
+    ctx.font = 'bold 12px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#fda4af';
+    ctx.fillText(`☠️ ${b.name}`, sx, sy - sz - 84);
+  }
+
+  // ── Главный герой (hero_sheet.png: 4 направления ходьбы, бег, прыжок, атака, урон + оружие в руках!) ──
+  drawPlayer(ctx, p, engine, camX, camY) {
+    const sx = Math.round(p.x - camX);
+    const sy = Math.round(p.y - camY);
+    const sz = Math.round(p.z || 0);
+
+    // Динамическая тень при прыжке
+    if (sz > 2) {
+      const shScale = Math.max(0.45, 1 - sz / 130);
+      ctx.fillStyle = 'rgba(0,0,0,0.34)';
+      ctx.beginPath();
+      ctx.ellipse(sx, sy, Math.round(13 * shScale), Math.round(6 * shScale), 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // Аура энергощита от зелья или навыка Спецзаряд
+    if (p.shieldBuffTimer > 0) {
+      ctx.strokeStyle = '#38bdf8';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(sx, sy - sz - 18, 24, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+
+    // Определяем строку и кадр в hero_sheet.png (4 колонки × 6 строк по 32x32)
+    let row = 0;
+    let col = 0;
+    let flipLeft = false;
+
+    const dirRowMap = { down: 0, up: 1, right: 2, left: 3 };
+    if (p.animState === 'hurt') {
+      row = 5; col = 3;
+      flipLeft = p.facingDir === 'left';
+    } else if (p.animState === 'jump') {
+      row = 5; col = p.vz > 0 ? 0 : 1;
+      flipLeft = p.facingDir === 'left';
+    } else if (p.animState === 'attack') {
+      row = 5; col = 2;
+      flipLeft = Math.cos(p.facing) < 0;
+    } else if (p.animState === 'run') {
+      row = 4; col = Math.floor(p.animTime) % 4;
+      flipLeft = p.facingDir === 'left' || (p.facingDir !== 'right' && p.vx < -5);
+    } else if (p.animState === 'walk') {
+      row = dirRowMap[p.facingDir] ?? 0;
+      col = Math.floor(p.animTime) % 4;
+    } else {
+      row = dirRowMap[p.facingDir] ?? 0;
+      col = 0;
+    }
+
+    // Если смотрим вверх, рисуем оружие за персонажем; иначе перед ним
+    const drawWeaponBehind = p.facingDir === 'up' && p.animState !== 'attack';
+    if (drawWeaponBehind) {
+      this.drawEquippedWeapon(ctx, p, engine, sx, sy - sz - 16);
+    }
+
+    // Рюкзак за спиной при виде сбоку/вверх, если улучшен Рюкзак
+    if ((engine.inventory.backpackLevel || 0) > 0 && p.facingDir === 'up' && this.imgReady('itm_backpack')) {
+      ctx.drawImage(this.images.itm_backpack, sx - 10, sy - sz - 28, 20, 20);
+    }
+
+    if (this.imgReady('hero_sheet')) {
+      const dw = Math.round(32 * PIXEL_SCALE);
+      const dh = Math.round(32 * PIXEL_SCALE);
+      ctx.save();
+      ctx.translate(sx, sy - sz);
+      if (flipLeft) ctx.scale(-1, 1);
+      ctx.drawImage(this.images.hero_sheet, col * 32, row * 32, 32, 32, Math.round(-dw * 0.5), Math.round(-dh * 0.88), dw, dh);
+      ctx.restore();
+    }
+
+    if (!drawWeaponBehind) {
+      this.drawEquippedWeapon(ctx, p, engine, sx, sy - sz - 15);
+    }
+  }
+
+  // Отдельный прозрачный PNG текущего оружия прямо в руках героя!
+  drawEquippedWeapon(ctx, p, engine, wx, wy) {
+    const wId = engine.inventory.equippedWeapon;
+    const key = `wpn_${wId}`;
+    if (!this.imgReady(key)) return;
+    const img = this.images[key];
+    const angle = p.facing;
+    const facingLeft = Math.cos(angle) < 0;
+
+    ctx.save();
+    ctx.translate(Math.round(wx + Math.cos(angle) * 10), Math.round(wy + Math.sin(angle) * 6));
+    if (facingLeft) {
+      ctx.scale(1, -1);
+      ctx.rotate(-angle);
+    } else {
+      ctx.rotate(angle);
+    }
+    const scale = 1.05;
+    const dw = Math.round(img.naturalWidth * scale);
+    const dh = Math.round(img.naturalHeight * scale);
+    ctx.drawImage(img, -4, Math.round(-dh * 0.5), dw, dh);
     ctx.restore();
   }
 
-  function drawBoss(b, time) {
-    const zOff = (b.z || 0) + Math.sin(time * 4) * 3;
-    ctx.save();
-
-    // Аура босса на земле
-    ctx.strokeStyle = b.phase === 2 ? '#fb7185' : b.accent;
-    ctx.globalAlpha = 0.45;
-    ctx.lineWidth = 3;
-    ctx.beginPath();
-    ctx.arc(b.x, b.y + 6, b.radius + 12 + Math.sin(time * 6) * 4, 0, Math.PI * 2);
-    ctx.stroke();
-    ctx.globalAlpha = 1;
-
-    ctx.fillStyle = 'rgba(0,0,0,0.48)';
-    ctx.beginPath();
-    ctx.ellipse(b.x, b.y + 12, b.radius * 1.05, b.radius * 0.46, 0, 0, Math.PI * 2);
-    ctx.fill();
-
-    const by = b.y - zOff - 12;
-    // Рога / Корона босса
-    ctx.fillStyle = b.accent;
-    ctx.beginPath();
-    ctx.moveTo(b.x - b.radius * 0.7, by - b.radius * 0.5);
-    ctx.lineTo(b.x - b.radius * 1.05, by - b.radius * 1.25);
-    ctx.lineTo(b.x - b.radius * 0.25, by - b.radius * 0.85);
-    ctx.moveTo(b.x + b.radius * 0.7, by - b.radius * 0.5);
-    ctx.lineTo(b.x + b.radius * 1.05, by - b.radius * 1.25);
-    ctx.lineTo(b.x + b.radius * 0.25, by - b.radius * 0.85);
-    ctx.fill();
-
-    ctx.fillStyle = b.hitFlash > 0 ? '#ffffff' : b.color;
-    ctx.beginPath();
-    ctx.arc(b.x, by, b.radius, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.lineWidth = 3.5;
-    ctx.strokeStyle = b.accent;
-    ctx.stroke();
-
-    // Светящиеся глаза босса
-    ctx.fillStyle = '#fef08a';
-    ctx.beginPath();
-    ctx.arc(b.x - 11, by - 5, 5, 0, Math.PI * 2);
-    ctx.arc(b.x + 11, by - 5, 5, 0, Math.PI * 2);
-    ctx.fill();
-
-    ctx.restore();
+  drawMiniBar(ctx, cx, cy, w, ratio, color) {
+    const x = Math.round(cx - w * 0.5);
+    const y = Math.round(cy);
+    ctx.fillStyle = '#0f172a';
+    ctx.fillRect(x - 1, y - 1, w + 2, 6);
+    ctx.fillStyle = color;
+    ctx.fillRect(x, y, Math.round(w * Math.max(0, Math.min(1, ratio))), 4);
   }
 
-  function drawPlayer(p, time) {
-    const w = WEAPONS[p.equippedWeapon] || WEAPONS.sword_iron;
-    const zOff = p.z || 0;
-    const moving = Math.hypot(p.vx, p.vy) > 18;
-    const stride = moving ? Math.sin(p.walkCycle) * 5 : 0;
-    const bob = moving ? Math.abs(Math.cos(p.walkCycle)) * 2.5 : Math.sin(time * 3.2) * 1.2;
+  // ── Трофеи на земле (отдельные PNG предметов!) ───────────────────────
+  drawDrops(ctx, drops, camX, camY, w, h) {
+    const now = performance.now() * 0.005;
+    for (const d of drops) {
+      const sx = Math.round(d.x - camX);
+      const sy = Math.round(d.y - camY + Math.sin(now + d.x) * 3);
+      if (sx < -24 || sx > w + 24 || sy < -24 || sy > h + 24) continue;
 
-    ctx.save();
+      let key = null;
+      if (d.kind === 'coin') key = 'itm_coin';
+      else if (d.kind === 'ammo') key = 'itm_ammo';
+      else if (d.kind === 'item') key = `itm_${d.itemId}`;
 
-    // Тень под ногами уменьшается в прыжке — даёт чёткое ощущение высоты!
-    const shadowScale = Math.max(0.42, 1 - zOff / 115);
-    ctx.fillStyle = 'rgba(0,0,0,0.42)';
-    ctx.beginPath();
-    ctx.ellipse(p.x, p.y + 9, 17 * shadowScale, 8 * shadowScale, 0, 0, Math.PI * 2);
-    ctx.fill();
-
-    const py = p.y - zOff - bob;
-
-    // Аура Ярости / Щита Бастиона
-    if (p.rageTimer > 0) {
-      ctx.strokeStyle = 'rgba(251, 191, 36, 0.65)';
-      ctx.lineWidth = 2.5;
-      ctx.beginPath(); ctx.arc(p.x, py - 8, 25 + Math.sin(time * 10) * 2, 0, Math.PI * 2); ctx.stroke();
+      if (key && this.imgReady(key)) {
+        ctx.drawImage(this.images[key], sx - 12, sy - 12, 24, 24);
+      } else {
+        ctx.fillStyle = '#38bdf8';
+        ctx.fillRect(sx - 6, sy - 6, 12, 12);
+        const res = RESOURCES[d.resId];
+        if (res) {
+          ctx.font = '13px sans-serif';
+          ctx.textAlign = 'center';
+          ctx.fillText(res.emoji, sx, sy + 5);
+        }
+      }
     }
-    if (p.aegisTimer > 0) {
-      ctx.fillStyle = 'rgba(192, 132, 252, 0.18)';
-      ctx.strokeStyle = 'rgba(216, 180, 254, 0.78)';
-      ctx.lineWidth = 2.5;
-      ctx.beginPath(); ctx.arc(p.x, py - 8, 28, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+  }
 
-      // 3 вращающихся эфирных клинка вокруг игрока
-      for (let k = 0; k < 3; k++) {
-        const ang = time * 4.5 + (k * Math.PI * 2) / 3;
-        const bx = p.x + Math.cos(ang) * 72;
-        const by = p.y + Math.sin(ang) * 72;
+  drawThrownGrenades(ctx, grenades, camX, camY) {
+    for (const g of grenades) {
+      const sx = Math.round(g.x - camX);
+      const sy = Math.round(g.y - camY);
+      ctx.fillStyle = 'rgba(0,0,0,0.35)';
+      ctx.fillRect(sx - 5, sy - 2, 10, 4);
+      if (this.imgReady('itm_grenade')) {
         ctx.save();
-        ctx.translate(bx, by);
-        ctx.rotate(ang + Math.PI * 0.5);
-        ctx.fillStyle = '#e879f9';
-        ctx.beginPath();
-        ctx.moveTo(0, -13); ctx.lineTo(5, 4); ctx.lineTo(0, 11); ctx.lineTo(-5, 4);
-        ctx.closePath();
-        ctx.fill();
+        ctx.translate(sx, Math.round(sy - g.z));
+        ctx.rotate(g.life * 16);
+        ctx.drawImage(this.images.itm_grenade, -11, -11, 22, 22);
         ctx.restore();
       }
     }
-
-    // Развевающийся плащ героя
-    ctx.fillStyle = p.hitFlash > 0 ? '#ffffff' : '#be123c';
-    ctx.beginPath();
-    ctx.moveTo(p.x - 10, py - 14);
-    ctx.lineTo(p.x + 10, py - 14);
-    ctx.lineTo(p.x + 13 - p.facingX * 8, py + 7 - p.facingY * 4);
-    ctx.lineTo(p.x - 13 - p.facingX * 8, py + 7 - p.facingY * 4);
-    ctx.closePath();
-    ctx.fill();
-
-    // Шагающие ботинки
-    ctx.fillStyle = '#1e293b';
-    ctx.beginPath();
-    ctx.arc(p.x - 6, py + 6 + stride, 4.5, 0, Math.PI * 2);
-    ctx.arc(p.x + 6, py + 6 - stride, 4.5, 0, Math.PI * 2);
-    ctx.fill();
-
-    // Корпус брони
-    const armorColors = {
-      armor_tunic: '#3b82f6',
-      armor_ranger: '#10b981',
-      armor_crimson: '#dc2626',
-      armor_frost: '#0ea5e9',
-      armor_horizon: '#a855f7'
-    };
-    ctx.fillStyle = p.hitFlash > 0 ? '#ffffff' : (armorColors[p.equippedArmor] || '#3b82f6');
-    ctx.beginPath();
-    ctx.arc(p.x, py - 6, 13, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.strokeStyle = '#0f172a';
-    ctx.lineWidth = 2;
-    ctx.stroke();
-
-    // Голова и капюшон/шлем
-    ctx.fillStyle = p.hitFlash > 0 ? '#ffffff' : '#1e293b';
-    ctx.beginPath();
-    ctx.arc(p.x, py - 20, 9.5, 0, Math.PI * 2);
-    ctx.fill();
-    // Светящийся визор глаз странника
-    ctx.fillStyle = '#38bdf8';
-    ctx.beginPath();
-    ctx.arc(p.x - 3 + p.facingX * 3, py - 20 + p.facingY * 2, 2.1, 0, Math.PI * 2);
-    ctx.arc(p.x + 3 + p.facingX * 3, py - 20 + p.facingY * 2, 2.1, 0, Math.PI * 2);
-    ctx.fill();
-
-    // Оружие в руке + дуга взмаха атаки
-    if (p.swingTimer > 0) {
-      const prog = 1 - p.swingTimer / p.swingDuration;
-      if (p.swingStyle === 'whirlwind') {
-        ctx.strokeStyle = '#f97316';
-        ctx.lineWidth = 10;
-        ctx.globalAlpha = 0.78 * (1 - prog * 0.5);
-        ctx.beginPath();
-        ctx.arc(p.x, py - 6, 62 + prog * 34, 0, Math.PI * 2);
-        ctx.stroke();
-        ctx.globalAlpha = 1;
-      } else {
-        const halfArc = (w.arc || 1.6) * 0.5;
-        const dir = p.comboStep % 2 === 0 ? 1 : -1;
-        const startA = p.swingAngle - halfArc * dir;
-        const curA = startA + halfArc * 2 * prog * dir;
-
-        if (w.style !== 'bow' && w.style !== 'staff') {
-          ctx.save();
-          ctx.strokeStyle = w.trailColor;
-          ctx.lineWidth = w.style === 'hammer' ? 14 : 9;
-          ctx.globalAlpha = 0.65 * (1 - prog * 0.4);
-          ctx.beginPath();
-          ctx.arc(p.x, py - 6, (w.range || 72) * 0.72, Math.min(startA, curA), Math.max(startA, curA));
-          ctx.stroke();
-          ctx.restore();
-        }
-        drawHeldWeapon(p.x, py - 6, curA, w);
-      }
-    } else {
-      drawHeldWeapon(p.x, py - 6, p.facingAngle + 0.45, w);
-    }
-
-    ctx.restore();
   }
 
-  function drawHeldWeapon(cx, cy, angle, w) {
-    ctx.save();
-    ctx.translate(cx, cy);
-    ctx.rotate(angle);
-    ctx.fillStyle = w.color;
-    ctx.strokeStyle = '#0f172a';
-    ctx.lineWidth = 1.5;
-
-    if (w.style === 'hammer') {
-      ctx.fillStyle = '#78350f';
-      ctx.fillRect(8, -2.5, 24, 5);
-      ctx.fillStyle = w.color;
-      ctx.fillRect(26, -10, 12, 20);
-    } else if (w.style === 'bow') {
-      ctx.strokeStyle = w.color;
-      ctx.lineWidth = 3;
-      ctx.beginPath();
-      ctx.arc(12, 0, 13, -1.1, 1.1);
-      ctx.stroke();
-    } else if (w.style === 'staff') {
-      ctx.fillStyle = '#7c2d12';
-      ctx.fillRect(6, -2, 24, 4);
-      ctx.fillStyle = w.color;
-      ctx.beginPath(); ctx.arc(32, 0, 5.5, 0, Math.PI * 2); ctx.fill();
-    } else if (w.style === 'scythe') {
-      ctx.fillStyle = '#4c1d95';
-      ctx.fillRect(6, -2, 28, 4);
-      ctx.fillStyle = w.color;
-      ctx.beginPath();
-      ctx.moveTo(32, -2); ctx.quadraticCurveTo(38, 16, 20, 20); ctx.lineTo(28, 2);
-      ctx.closePath(); ctx.fill();
-    } else {
-      const len = w.style === 'daggers' ? 20 : 28;
-      ctx.beginPath();
-      ctx.moveTo(10, -3);
-      ctx.lineTo(10 + len, 0);
-      ctx.lineTo(10, 3);
-      ctx.closePath();
-      ctx.fill();
-      ctx.stroke();
-    }
-    ctx.restore();
-  }
-
-  function drawProjectiles(projectiles) {
-    for (const pr of projectiles) {
+  drawSlashes(ctx, slashes, camX, camY) {
+    for (const sl of slashes) {
+      const alpha = sl.life / sl.maxLife;
       ctx.save();
-      ctx.translate(pr.x, pr.y);
-      const ang = Math.atan2(pr.vy, pr.vx);
-      ctx.rotate(ang);
-
-      if (pr.kind === 'arrow') {
-        ctx.strokeStyle = pr.color;
-        ctx.lineWidth = 3;
-        ctx.beginPath();
-        ctx.moveTo(-12, 0); ctx.lineTo(10, 0);
-        ctx.stroke();
-      } else if (pr.kind === 'crescent') {
-        ctx.strokeStyle = pr.color;
-        ctx.lineWidth = 5;
-        ctx.beginPath();
-        ctx.arc(0, 0, pr.radius, -1.1, 1.1);
-        ctx.stroke();
-      } else {
-        ctx.fillStyle = pr.color;
-        ctx.beginPath();
-        ctx.arc(0, 0, pr.radius, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.fillStyle = '#ffffff';
-        ctx.beginPath();
-        ctx.arc(0, 0, pr.radius * 0.45, 0, Math.PI * 2);
-        ctx.fill();
-      }
+      ctx.globalAlpha = alpha * 0.8;
+      ctx.strokeStyle = sl.color;
+      ctx.lineWidth = 8;
+      ctx.beginPath();
+      ctx.arc(Math.round(sl.x - camX), Math.round(sl.y - camY - 12), sl.range * 0.82, sl.angle - sl.arc * 0.45, sl.angle + sl.arc * 0.45);
+      ctx.stroke();
       ctx.restore();
     }
   }
 
-  function drawParticles(pool) {
-    for (let i = 0; i < pool.length; i++) {
-      const pt = pool[i];
-      if (!pt.active) continue;
+  drawShockwaves(ctx, waves, camX, camY) {
+    for (const sw of waves) {
+      const alpha = 1 - sw.radius / sw.maxRadius;
+      ctx.save();
+      ctx.globalAlpha = Math.max(0.15, alpha);
+      ctx.strokeStyle = sw.color;
+      ctx.lineWidth = sw.friendly ? 4 : 6;
+      ctx.beginPath();
+      ctx.arc(Math.round(sw.x - camX), Math.round(sw.y - camY), Math.round(sw.radius), 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    }
+  }
+
+  drawProjectiles(ctx, projectiles, camX, camY) {
+    for (const pr of projectiles) {
+      const sx = Math.round(pr.x - camX);
+      const sy = Math.round(pr.y - camY);
+      if (pr.kind === 'bullet') {
+        const ang = Math.atan2(pr.vy, pr.vx);
+        ctx.save();
+        ctx.translate(sx, sy);
+        ctx.rotate(ang);
+        ctx.fillStyle = '#181c24';
+        ctx.fillRect(-7, -3, 14, 6);
+        ctx.fillStyle = pr.color;
+        ctx.fillRect(-6, -2, 12, 4);
+        ctx.restore();
+      } else if (pr.kind === 'arrow') {
+        const ang = Math.atan2(pr.vy, pr.vx);
+        ctx.save();
+        ctx.translate(sx, sy);
+        ctx.rotate(ang);
+        ctx.fillStyle = '#d6a15c';
+        ctx.fillRect(-9, -1, 16, 3);
+        ctx.fillStyle = '#e2e8f0';
+        ctx.fillRect(5, -3, 5, 6);
+        ctx.restore();
+      } else {
+        // Сфера синей магии
+        ctx.fillStyle = '#181c24';
+        ctx.fillRect(sx - 7, sy - 7, 14, 14);
+        ctx.fillStyle = pr.color;
+        ctx.fillRect(sx - 5, sy - 5, 10, 10);
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(sx - 2, sy - 2, 4, 4);
+      }
+    }
+  }
+
+  // ── Отрисовка 6 пиксельных спрайт-листов эффектов ────────────────────
+  drawSpriteEffects(ctx, spriteEffects, camX, camY) {
+    for (const fx of spriteEffects) {
+      const key = `fx_${fx.kind}`;
+      if (!this.imgReady(key)) continue;
+      const img = this.images[key];
+      const fw = Math.floor(img.naturalWidth / fx.totalFrames);
+      const fh = img.naturalHeight;
+      const dw = Math.round(fw * PIXEL_SCALE * fx.scale);
+      const dh = Math.round(fh * PIXEL_SCALE * fx.scale);
+      const sx = Math.round(fx.x - camX - dw * 0.5);
+      const sy = Math.round(fx.y - camY - dh * 0.5);
+      ctx.drawImage(img, fx.frame * fw, 0, fw, fh, sx, sy, dw, dh);
+    }
+  }
+
+  drawParticles(ctx, particles, camX, camY) {
+    for (const pt of particles) {
       ctx.globalAlpha = Math.max(0, pt.life / pt.maxLife);
       ctx.fillStyle = pt.color;
-      ctx.beginPath();
-      ctx.arc(pt.x, pt.y - pt.z, pt.size, 0, Math.PI * 2);
-      ctx.fill();
+      const s = Math.max(2, Math.round(pt.size));
+      ctx.fillRect(Math.round(pt.x - camX), Math.round(pt.y - camY), s, s);
     }
     ctx.globalAlpha = 1;
   }
 
-  function drawFloatingTexts(texts) {
-    ctx.save();
+  drawFloatingTexts(ctx, texts, camX, camY) {
     ctx.textAlign = 'center';
     for (const ft of texts) {
-      ctx.globalAlpha = Math.max(0, Math.min(1, ft.life / ft.maxLife * 1.3));
-      ctx.font = `800 ${ft.size}px system-ui, sans-serif`;
-      ctx.strokeStyle = 'rgba(9, 11, 18, 0.88)';
-      ctx.lineWidth = 3.5;
-      ctx.strokeText(ft.text, ft.x, ft.y);
+      const sx = Math.round(ft.x - camX);
+      const sy = Math.round(ft.y - camY);
+      ctx.font = ft.big ? 'bold 15px monospace' : 'bold 12px monospace';
+      ctx.fillStyle = '#0f172a';
+      ctx.fillText(ft.text, sx + 1, sy + 1);
       ctx.fillStyle = ft.color;
-      ctx.fillText(ft.text, ft.x, ft.y);
+      ctx.fillText(ft.text, sx, sy);
+    }
+  }
+
+  // ── Атмосферная Ночь (с освещением вокруг героя и костров) ───────────
+  drawDayNightLighting(ctx, engine, camX, camY, w, h) {
+    const t = engine.timeOfDay;
+    const darkness = Math.max(0, (Math.cos(t * Math.PI * 2) + 0.18) * 0.42);
+    if (darkness <= 0.03) return;
+
+    ctx.save();
+    const px = Math.round(engine.player.x - camX);
+    const py = Math.round(engine.player.y - camY - 12);
+    const grad = ctx.createRadialGradient(px, py, 65, px, py, Math.max(w, h) * 0.62);
+    grad.addColorStop(0, `rgba(12, 20, 44, ${darkness * 0.16})`);
+    grad.addColorStop(1, `rgba(7, 11, 26, ${darkness})`);
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, w, h);
+
+    if (engine.settings.quality !== 'low') {
+      for (const c of CAMPFIRES) {
+        if (!engine.unlockedCamps.includes(c.id)) continue;
+        const cx = Math.round(c.x - camX);
+        const cy = Math.round(c.y - camY);
+        if (cx < -160 || cx > w + 160 || cy < -160 || cy > h + 160) continue;
+        const cg = ctx.createRadialGradient(cx, cy, 8, cx, cy, 130);
+        cg.addColorStop(0, 'rgba(251, 146, 60, 0.26)');
+        cg.addColorStop(1, 'rgba(251, 146, 60, 0)');
+        ctx.fillStyle = cg;
+        ctx.beginPath();
+        ctx.arc(cx, cy, 130, 0, Math.PI * 2);
+        ctx.fill();
+      }
     }
     ctx.restore();
   }
 
-  function drawQuestCompass(p) {
-    const q = engine.getCurrentQuest();
+  drawQuestPointer(ctx, engine, w, h) {
+    const q = engine.getActiveQuest();
     if (!q || !q.targetPos) return;
-    const dx = q.targetPos.x - p.x;
-    const dy = q.targetPos.y - p.y;
+    const dx = q.targetPos.x - engine.player.x;
+    const dy = q.targetPos.y - engine.player.y;
     const dist = Math.hypot(dx, dy);
-    if (dist < 140) return;
+    if (dist < 220) return;
 
     const ang = Math.atan2(dy, dx);
-    const rx = p.x + Math.cos(ang) * 52;
-    const ry = p.y - 8 + Math.sin(ang) * 52;
+    const r = Math.min(w, h) * 0.34;
+    const cx = Math.round(w * 0.5 + Math.cos(ang) * r);
+    const cy = Math.round(h * 0.5 + Math.sin(ang) * r);
 
     ctx.save();
-    ctx.translate(rx, ry);
+    ctx.translate(cx, cy);
     ctx.rotate(ang);
-    ctx.fillStyle = 'rgba(251, 191, 36, 0.88)';
+    ctx.fillStyle = '#fbbf24';
+    ctx.strokeStyle = '#0f172a';
+    ctx.lineWidth = 2;
     ctx.beginPath();
-    ctx.moveTo(9, 0);
-    ctx.lineTo(-6, -5.5);
-    ctx.lineTo(-3, 0);
-    ctx.lineTo(-6, 5.5);
+    ctx.moveTo(11, 0);
+    ctx.lineTo(-8, -7);
+    ctx.lineTo(-4, 0);
+    ctx.lineTo(-8, 7);
     ctx.closePath();
     ctx.fill();
+    ctx.stroke();
     ctx.restore();
+
+    ctx.font = 'bold 11px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#fde68a';
+    ctx.fillText(`${Math.round(dist / 10)} м`, cx, cy + 18);
   }
 
-  function drawAmbientBiomeMotes(biomeId, time) {
-    const colors = {
-      meadow: '#fde047',
-      ruins: '#fb923c',
-      mire: '#bef264',
-      frost: '#e0f2fe',
-      rift: '#e879f9'
-    };
-    ctx.save();
-    ctx.fillStyle = colors[biomeId] || '#fde047';
-    ctx.globalAlpha = 0.52;
-    for (const m of ambientMotes) {
-      const sx = ((viewW * 0.5 + m.ox + Math.sin(time * m.speed + m.phase) * 36) % viewW + viewW) % viewW;
-      const sy = ((viewH * 0.5 + m.oy + Math.cos(time * m.speed * 0.8 + m.phase) * 28) % viewH + viewH) % viewH;
+  // ── Мини-карта и Полноэкранная Карта Зоны ────────────────────────────
+  renderMinimap(engine) {
+    const ctx = this.mmCtx;
+    const mw = this.minimapCanvas.width;
+    const mh = this.minimapCanvas.height;
+    const sx = mw / engine.world.width;
+    const sy = mh / engine.world.height;
+
+    ctx.fillStyle = '#3a6636';
+    ctx.fillRect(0, 0, mw, mh);
+
+    ctx.fillStyle = '#cfdbe8'; // Снежные Горы (СВ)
+    ctx.fillRect(mw * 0.5, 0, mw * 0.5, mh * 0.32);
+
+    ctx.fillStyle = '#333945'; // Город (Восток)
+    ctx.fillRect(mw * 0.61, mh * 0.32, mw * 0.39, mh * 0.38);
+
+    ctx.fillStyle = '#cfa26b'; // Пустыня и Завод (ЮЗ)
+    ctx.fillRect(0, mh * 0.65, mw * 0.54, mh * 0.35);
+
+    ctx.strokeStyle = '#94a3b8';
+    ctx.lineWidth = 1.5;
+    for (const r of engine.world.roads) {
       ctx.beginPath();
-      ctx.arc(sx, sy, m.size, 0, Math.PI * 2);
-      ctx.fill();
+      ctx.moveTo(r.x1 * sx, r.y1 * sy);
+      ctx.lineTo(r.x2 * sx, r.y2 * sy);
+      ctx.stroke();
     }
-    ctx.restore();
+
+    // Здания на мини-карте
+    ctx.fillStyle = '#cbd5e1';
+    for (const bld of engine.world.buildings) {
+      ctx.fillRect(bld.x * sx - 1.5, bld.y * sy - 1.5, 3, 3);
+    }
+
+    // Костры
+    for (const c of CAMPFIRES) {
+      ctx.fillStyle = engine.unlockedCamps.includes(c.id) ? '#fb923c' : '#64748b';
+      ctx.fillRect(c.x * sx - 2, c.y * sy - 2, 4, 4);
+    }
+
+    // Боссы
+    ctx.fillStyle = '#ef4444';
+    for (const b of engine.bossEntities) {
+      ctx.fillRect(b.x * sx - 2.5, b.y * sy - 2.5, 5, 5);
+    }
+
+    // Цель квеста
+    const q = engine.getActiveQuest();
+    if (q?.targetPos) {
+      ctx.strokeStyle = '#fde047';
+      ctx.lineWidth = 1.5;
+      ctx.strokeRect(q.targetPos.x * sx - 3, q.targetPos.y * sy - 3, 6, 6);
+    }
+
+    // Герой
+    ctx.fillStyle = '#38bdf8';
+    ctx.fillRect(engine.player.x * sx - 2.5, engine.player.y * sy - 2.5, 5, 5);
   }
-
-  function drawDayNightOverlay(dayTime, playerScreenX, playerScreenY) {
-    // dayTime: 0.5 — яркий день, 0.0 / 1.0 — полночь
-    const nightFactor = Math.max(0, Math.cos(dayTime * Math.PI * 2) * 0.5 + 0.35);
-    if (nightFactor <= 0.04) return;
-
-    ctx.save();
-    const grad = ctx.createRadialGradient(
-      playerScreenX, playerScreenY, 85,
-      playerScreenX, playerScreenY, Math.max(viewW, viewH) * 0.72
-    );
-    grad.addColorStop(0, `rgba(10, 15, 32, ${nightFactor * 0.12})`);
-    grad.addColorStop(1, `rgba(6, 10, 26, ${nightFactor * 0.56})`);
-    ctx.fillStyle = grad;
-    ctx.fillRect(0, 0, viewW, viewH);
-    ctx.restore();
-  }
-
-  function drawMiniBar(cx, cy, w, ratio, color) {
-    const clamped = Math.max(0, Math.min(1, ratio));
-    ctx.fillStyle = 'rgba(9, 11, 18, 0.82)';
-    ctx.fillRect(cx - w * 0.5 - 1, cy - 1, w + 2, 6);
-    ctx.fillStyle = color;
-    ctx.fillRect(cx - w * 0.5, cy, w * clamped, 4);
-  }
-
-  return {
-    resize,
-    render
-  };
 }

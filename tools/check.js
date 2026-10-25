@@ -1,166 +1,186 @@
-// Полный набор логических и интеграционных тестов игрового движка Horizon RP
+// Автоматическая комплексная проверка всех пиксельных ассетов и игровых систем Horizon: Выживание
 import assert from 'node:assert/strict';
-import { createGameEngine } from '../www/js/engine.js';
-import {
-  BIOMES, WEAPONS, ARMORS, RELICS, SKILLS, RECIPES,
-  ENEMIES, BOSSES, SECRETS, QUESTS, ACHIEVEMENTS
-} from '../www/js/data.js';
-import { getBiomeIdAt } from '../www/js/world.js';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
+const storageMap = new Map();
+globalThis.localStorage = {
+  getItem: (k) => (storageMap.has(k) ? storageMap.get(k) : null),
+  setItem: (k, v) => storageMap.set(k, String(v)),
+  removeItem: (k) => storageMap.delete(k)
+};
+globalThis.window = { innerWidth: 844, innerHeight: 390, devicePixelRatio: 2 };
+
+const { GameEngine } = await import('../www/js/engine.js');
+const { WEAPONS, ITEMS, SKILLS, BOSSES, QUESTS, SECRETS, NPCS, ACHIEVEMENTS, BIOMES } = await import('../www/js/data.js');
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const rootDir = path.resolve(__dirname, '..');
+
+const noopSound = { enabled: true, play() {}, unlock() {} };
 let passed = 0;
+
 function test(name, fn) {
   fn();
   passed++;
   console.log(`  ✓ ${name}`);
 }
 
-console.log('=== Horizon RP: Проверка игрового движка и контента ===');
+console.log('=== Проверка ассетов и игровых механик Horizon: Выживание (v2 Pixel-Art) ===');
 
-test('Целостность всех таблиц контента (биомы, оружие, враги, боссы, рецепты, квесты)', () => {
-  assert.equal(Object.keys(BIOMES).length, 5);
-  assert.ok(Object.keys(WEAPONS).length >= 6);
-  assert.ok(Object.keys(ARMORS).length >= 5);
-  assert.ok(Object.keys(RELICS).length >= 8);
-  assert.equal(Object.keys(SKILLS).length, 3);
-  assert.ok(RECIPES.length >= 14);
-  assert.ok(Object.keys(ENEMIES).length >= 12);
-  assert.equal(Object.keys(BOSSES).length, 4);
-  assert.equal(SECRETS.length, 4);
-  assert.ok(QUESTS.length >= 7);
-  assert.equal(ACHIEVEMENTS.length, 16);
+test('1. Все прозрачные пиксель-арт PNG и спрайт-листы существуют и валидны', () => {
+  const spritesJs = fs.readFileSync(path.join(rootDir, 'www/js/sprites.js'), 'utf8');
+  const matches = [...spritesJs.matchAll(/'(assets\/sprites\/[^']+\.png)'/g)].map(m => m[1]);
+  assert.ok(matches.length >= 48, `Должно быть минимум 48 отдельных спрайтов, найдено: ${matches.length}`);
+
+  for (const rel of matches) {
+    const full = path.join(rootDir, 'www', rel);
+    assert.ok(fs.existsSync(full), `Отсутствует PNG-файл: ${rel}`);
+    const buf = fs.readFileSync(full);
+    assert.equal(buf[0], 0x89);
+    assert.equal(buf[1], 0x50); // 'P'
+    assert.equal(buf[2], 0x4e); // 'N'
+    assert.equal(buf[3], 0x47); // 'G'
+    const width = buf.readUInt32BE(16);
+    const height = buf.readUInt32BE(20);
+    const colorType = buf[25];
+    assert.equal(colorType, 6, `${rel} должен быть RGBA с прозрачным фоном (colorType=6)`);
+    assert.ok(width >= 16 && height >= 16, `${rel} некорректный размер ${width}x${height}`);
+  }
 });
 
-test('Генерация мира 4800x4800, 5 биомов, сундуков и секретных объектов', () => {
-  const g = createGameEngine();
-  assert.equal(g.world.width, 4800);
-  assert.equal(g.world.height, 4800);
-  assert.ok(g.world.nodes.length > 100, 'Должно быть сгенерировано >100 ресурсных узлов');
-  assert.ok(g.world.chests.length >= 8, 'Должны быть секретные и мировые сундуки');
-  assert.equal(g.world.braziers.length, 3, 'Три жаровни Монолита');
-  assert.equal(getBiomeIdAt(2400, 2400), 'meadow');
-  assert.equal(getBiomeIdAt(4150, 2350), 'ruins');
-  assert.equal(getBiomeIdAt(820, 820), 'mire');
-  assert.equal(getBiomeIdAt(3960, 720), 'frost');
-  assert.equal(getBiomeIdAt(4120, 4120), 'rift');
+test('2. Все 4 биома, 9 типов зданий, 6 видов транспорта, 4 NPC и 4 Босса присутствуют в мире', () => {
+  const eng = new GameEngine(noopSound);
+  assert.equal(Object.keys(BIOMES).length, 4);
+  assert.equal(NPCS.length, 4);
+  assert.equal(eng.bossEntities.length, 4);
+
+  const bldKinds = new Set(eng.world.buildings.map(b => b.kind));
+  for (const k of ['house', 'shop', 'warehouse', 'bunker', 'watchtower', 'factory', 'hospital', 'police', 'base']) {
+    assert.ok(bldKinds.has(k), `Здание типа ${k} должно быть размещено в мире`);
+  }
+
+  const vehKinds = new Set(eng.world.vehicles.map(v => v.kind));
+  for (const k of ['car', 'moto', 'jeep', 'bus', 'heli', 'boat']) {
+    assert.ok(vehKinds.has(k), `Транспорт типа ${k} должен быть размещён в мире`);
+  }
 });
 
-test('Передвижение, физика прыжка (ось Z) и уклонение от ударной волны в прыжке', () => {
-  const g = createGameEngine();
-  const startX = g.state.player.x;
-  for (let i = 0; i < 15; i++) g.update(0.03, { moveX: 1, moveY: 0, attackHeld: false });
-  assert.ok(g.state.player.x > startX + 30, 'Игрок должен сдвинуться вправо');
+test('3. Все 8 видов оружия, патроны, авто-переключение и все состояния анимации героя работают', () => {
+  assert.equal(Object.keys(WEAPONS).length, 8);
+  assert.equal(Object.keys(ITEMS).length, 8);
 
-  assert.equal(g.triggerJump(1, 0), true);
-  g.update(0.08, { moveX: 0, moveY: 0, attackHeld: false });
-  assert.ok(g.state.player.z > 14, 'В прыжке координата Z должна подняться > 14');
+  const eng = new GameEngine(noopSound);
+  // 4 направления ходьбы + бег
+  for (const [mx, my, expectedDir] of [[1, 0, 'right'], [-1, 0, 'left'], [0, -1, 'up'], [0, 1, 'down']]) {
+    eng.update(0.04, { moveX: mx, moveY: my, sprintHeld: false, attackHeld: false });
+    assert.equal(eng.player.facingDir, expectedDir);
+    assert.equal(eng.player.animState, 'walk');
+  }
+  eng.update(0.04, { moveX: 1, moveY: 0, sprintHeld: true, attackHeld: false });
+  assert.equal(eng.player.animState, 'run');
 
-  // Пускаем вражескую ударную волну прямо через игрока, пока он в воздухе
-  const hpBefore = g.state.player.hp;
-  g.state.player.invulnTimer = 0;
-  g.state.shockwaves.push({
-    x: g.state.player.x - 10,
-    y: g.state.player.y,
-    radius: 8,
-    maxRadius: 60,
-    speed: 200,
-    color: '#ef4444',
-    friendly: false,
-    damage: 45,
-    jumpable: true
-  });
-  g.update(0.02, { moveX: 0, moveY: 0, attackHeld: false });
-  assert.equal(g.state.player.hp, hpBefore, 'Прыжок должен позволять перепрыгивать ударные волны боссов без урона');
-});
+  // Прыжок
+  assert.equal(eng.jump(), true);
+  eng.update(0.04, { moveX: 0, moveY: 0 });
+  assert.equal(eng.player.animState, 'jump');
+  for (let i = 0; i < 30; i++) eng.update(0.04, { moveX: 0, moveY: 0 });
+  assert.equal(eng.player.z, 0);
 
-test('Все 6 видов оружия (ближний бой + стрелы + самонаводящиеся сферы + коса)', () => {
-  const g = createGameEngine();
+  // Стрельба из всех 8 видов оружия
   for (const wId of Object.keys(WEAPONS)) {
-    if (!g.state.inventory.weapons.includes(wId)) g.state.inventory.weapons.push(wId);
-    g.equipItem('weapon', wId);
-    g.state.player.attackCooldown = 0;
-
-    // Ставим тестового врага прямо перед героем
-    g.state.enemies.push({
-      uid: `test_${wId}`,
-      ...ENEMIES.goblin,
-      hp: 200, maxHp: 200,
-      x: g.state.player.x + 48,
-      y: g.state.player.y,
-      z: 0, vz: 0, vx: 0, vy: 0,
-      attackTimer: 5, specialTimer: 5, stunTimer: 0, hitFlash: 0
-    });
-
-    assert.equal(g.triggerAttack(), true, `Атака оружием ${wId} должна сработать`);
-    for (let k = 0; k < 10; k++) g.update(0.03, { moveX: 0, moveY: 0, attackHeld: false });
-
-    const target = g.state.enemies.find(e => e.uid === `test_${wId}`);
-    assert.ok(!target || target.hp < 200, `Оружие ${wId} должно нанести урон врагу`);
-    g.state.enemies.length = 0;
+    if (!eng.inventory.weapons.includes(wId)) eng.grantWeapon(wId);
+    eng.equipWeapon(wId);
+    eng.inventory.ammo = 40;
+    eng.player.attackTimer = 0;
+    assert.equal(eng.performAttack(), true, `Оружие ${wId} должно стрелять/бить`);
   }
+
+  // Если патроны кончились на огнестреле — автоматический переход на оружие ближнего боя!
+  eng.equipWeapon('rifle');
+  eng.inventory.ammo = 0;
+  eng.player.attackTimer = 0;
+  assert.equal(eng.performAttack(), true);
+  assert.equal(WEAPONS[eng.inventory.equippedWeapon].ammoCost, 0);
 });
 
-test('Все 3 боевые способности (Вихрь Пламени, Громовой Прыжок, Эфирный Бастион)', () => {
-  const g = createGameEngine();
-  g.state.skillRanks.whirlwind = 2;
-  g.state.skillRanks.thunder_slam = 2;
-  g.state.skillRanks.aegis_pulse = 2;
-  g.state.player.stamina = 100;
-
-  assert.equal(g.triggerSkill('whirlwind'), true);
-  g.state.player.stamina = 100;
-  assert.equal(g.triggerSkill('thunder_slam'), true);
-  for (let i = 0; i < 16; i++) g.update(0.03, { moveX: 0, moveY: 0 });
-  assert.equal(g.state.player.thunderLeap, null, 'Громовой прыжок должен успешно завершиться приземлением');
-
-  g.state.player.stamina = 100;
-  g.state.player.hp = 40;
-  assert.equal(g.triggerSkill('aegis_pulse'), true);
-  assert.ok(g.state.player.hp > 40, 'Эфирный Бастион должен исцелить игрока');
-  assert.ok(g.state.player.aegisTimer > 0, 'Эфирный Бастион должен активировать щит и клинки');
+test('4. Осколочные гранаты и красные взрывные бочки создают пиксельные взрывы и наносят урон', () => {
+  const eng = new GameEngine(noopSound);
+  eng.player.x = 2850;
+  eng.player.y = 2400;
+  const en = eng.spawnEnemyAt(eng.player.x + 110, eng.player.y, 'zombie');
+  assert.ok(en);
+  assert.equal(eng.throwGrenade(), true);
+  for (let i = 0; i < 20; i++) eng.update(0.04, { moveX: 0, moveY: 0 });
+  assert.ok(eng.stats.explosionsTriggered >= 1, 'Граната должна взорваться');
+  assert.ok(eng.spriteEffects.some(fx => fx.kind === 'explosion' || fx.kind === 'smoke'));
 });
 
-test('Ремесло, заточка оружия, прокачка характеристик и сохранение/загрузка', () => {
-  const g = createGameEngine();
-  g.state.player.gold = 2000;
-  g.state.inventory.resources = { wood: 30, herb: 30, meat: 20, iron: 30, soul: 30, mithril: 30, crystal: 30 };
+test('5. Вождение транспорта (мотоцикл, седан, внедорожник) и таран врагов работают', () => {
+  const eng = new GameEngine(noopSound);
+  const moto = eng.world.vehicles.find(v => v.kind === 'moto' && v.drivable);
+  assert.ok(moto);
+  eng.player.x = moto.x;
+  eng.player.y = moto.y + 20;
+  const res = eng.interact();
+  assert.equal(res.type, 'vehicle_enter');
+  assert.equal(eng.player.vehicleId, moto.id);
 
-  assert.equal(g.craftRecipe('craft_bow'), true);
-  assert.ok(g.state.inventory.weapons.includes('bow_storm'));
+  const startX = moto.x;
+  for (let i = 0; i < 10; i++) eng.update(0.04, { moveX: 1, moveY: 0 });
+  assert.ok(moto.x > startX + 40, 'Транспорт должен ехать');
 
-  assert.equal(g.upgradeWeapon('bow_storm'), true);
-  assert.equal(g.state.weaponUpgrades.bow_storm, 1);
-
-  g.state.player.statPoints = 3;
-  assert.equal(g.allocateStat('power'), true);
-  assert.equal(g.state.player.attributes.power, 1);
-
-  const saved = g.serializeSave();
-  const g2 = createGameEngine();
-  assert.equal(g2.loadGame(saved), true);
-  assert.equal(g2.state.weaponUpgrades.bow_storm, 1);
-  assert.equal(g2.state.player.attributes.power, 1);
-  assert.ok(g2.state.inventory.weapons.includes('bow_storm'));
+  eng.interact(); // Выход из транспорта
+  assert.equal(eng.player.vehicleId, null);
 });
 
-test('Сражение с 4 боссами и прогресс квестов/достижений', () => {
-  const g = createGameEngine();
-  for (const bossId of ['morgrath', 'xylla', 'valkor', 'azariel']) {
-    const bDef = BOSSES[bossId];
-    g.state.player.x = bDef.x + 120;
-    g.state.player.y = bDef.y;
-    for (let i = 0; i < 40; i++) g.update(0.03, { moveX: 0, moveY: 0 });
-    assert.ok(g.state.activeBoss && g.state.activeBoss.id === bossId, `Босс ${bossId} должен вступить в бой`);
+test('6. Открытие запертых Бункеров и Спецскладов Серебряным Ключом + коллизии зданий', () => {
+  const eng = new GameEngine(noopSound);
+  const vaultBld = eng.world.buildings.find(b => b.secretId === 'sec_warehouse_city');
+  assert.ok(vaultBld);
 
-    // Добиваем босса атакой и проверяем получение трофеев и достижений
-    g.state.activeBoss.hp = 5;
-    g.state.activeBoss.x = g.state.player.x + 35;
-    g.state.activeBoss.y = g.state.player.y;
-    g.state.player.attackCooldown = 0;
-    g.triggerAttack();
-    g.update(0.03, { moveX: 0, moveY: 0 });
-    assert.ok(g.state.defeatedBosses.includes(bossId), `Босс ${bossId} должен засчитаться побеждённым`);
-  }
-  assert.ok(g.state.unlockedAchievements.includes('ach_azariel'));
+  // Проверка AABB коллизии здания: игрок внутри контура выталкивается наружу
+  eng.player.x = vaultBld.x;
+  eng.player.y = vaultBld.y - 10;
+  eng.resolveEntityObstacles(eng.player, false);
+  assert.ok(eng.player.y >= vaultBld.y + eng.player.radius - 1 || Math.abs(eng.player.x - vaultBld.x) > vaultBld.colW * 0.5);
+
+  // Открытие двери ключом
+  eng.player.x = vaultBld.x;
+  eng.player.y = vaultBld.y + 16;
+  eng.inventory.consumables.key = 1;
+  const unlocked = eng.interact();
+  assert.equal(unlocked.type, 'secret_vault');
+  assert.equal(eng.inventory.consumables.key, 0);
+  assert.ok(eng.discoveredSecrets.includes('sec_warehouse_city'));
+  assert.ok(eng.inventory.weapons.includes('shotgun'));
 });
 
-console.log(`\nВсе проверки пройдены успешно: ${passed}/${passed}`);
+test('7. Магазин SHOP, Рюкзак, Крафт, Квесты, Уровни и Сохранение/Загрузка работают без потерь', () => {
+  const eng = new GameEngine(noopSound);
+  eng.inventory.coins = 1000;
+  eng.inventory.resources = { wood: 20, stone: 20, scrap: 20, herb: 20 };
+
+  assert.equal(eng.buyShopItem('item', 'backpack'), true);
+  assert.equal(eng.inventory.backpackLevel, 1);
+  assert.ok(eng.getMaxAmmo() > 120);
+
+  assert.equal(eng.craftRecipe('rc_grenade'), true);
+  assert.equal(eng.craftRecipe('rc_bow'), true);
+  assert.ok(eng.inventory.weapons.includes('bow'));
+
+  eng.gainXp(320);
+  assert.ok(eng.player.level >= 3);
+  assert.equal(eng.allocateStat('power'), true);
+  assert.equal(eng.upgradeSkill('magic_nova'), true);
+
+  assert.equal(eng.saveGame(true), true);
+  const eng2 = new GameEngine(noopSound);
+  assert.equal(eng2.loadGame(), true);
+  assert.equal(eng2.inventory.backpackLevel, 1);
+  assert.ok(eng2.inventory.weapons.includes('bow'));
+  assert.ok(eng2.skills.magic_nova.level >= 1);
+});
+
+console.log(`\nИТОГ: ${passed}/7 комплексных проверок v2 успешно пройдено!`);

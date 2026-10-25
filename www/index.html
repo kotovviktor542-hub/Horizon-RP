@@ -1,267 +1,195 @@
 <!DOCTYPE html>
 <html lang="ru">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-  <meta name="theme-color" content="#090b12">
-  <meta name="mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-capable" content="yes">
-  <title>Horizon: Пепел Рубежа — 2D Action RPG</title>
-  <link rel="stylesheet" href="css/style.css">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <meta name="theme-color" content="#0b1220" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <title>Horizon: Выживание — 2D Pixel Action RPG</title>
+  <link rel="icon" type="image/png" href="icon.png" />
+  <link rel="stylesheet" href="css/style.css" />
 </head>
 <body>
   <canvas id="game-canvas"></canvas>
 
   <!-- ГЛАВНОЕ МЕНЮ -->
-  <section id="main-menu" class="fullscreen-overlay">
-    <div class="menu-card">
-      <div class="menu-badge">2D ACTION · ВЫЖИВАНИЕ · ОТКРЫТЫЙ МИР</div>
-      <h1 class="menu-title">HORIZON<span>ПЕПЕЛ РУБЕЖА</span></h1>
-      <p class="menu-desc">
-        Исследуй огромный мир из 5 биомов, добывай редкие руды, создавай легендарное оружие,
-        открывай тайные святилища и сокруши четырёх Стражей Разлома!
+  <section id="title-screen" class="overlay-screen">
+    <div class="title-card">
+      <div class="title-badge">PIXEL-ART 2D SURVIVAL ACTION RPG</div>
+      <h1 class="game-logo">HORIZON<span>ВЫЖИВАНИЕ</span></h1>
+      <p class="game-subtitle">
+        Исследуй 4 локации (Лес, Город, Пустыня и Снежные Горы), сражайся с зомби, мародёрами, солдатами и 4 боссами, води транспорт, открывай бункеры ключами и собери все 8 видов оружия!
       </p>
 
-      <div class="menu-buttons">
-        <button type="button" id="btn-continue" class="menu-btn primary hidden">
-          <span>▶ Продолжить приключение</span>
-          <small id="continue-sub">Ур. 1 · Изумрудная Пустошь</small>
-        </button>
-
-        <button type="button" id="btn-new-game" class="menu-btn accent">
-          <span>⚔️ Новая игра</span>
-          <small>Начать путь в Лагере Рубежа</small>
-        </button>
-
-        <div class="menu-row-btns">
-          <button type="button" id="btn-menu-settings" class="menu-btn secondary">⚙️ Настройки</button>
-          <button type="button" id="btn-menu-help" class="menu-btn secondary">📖 Управление</button>
-        </div>
+      <div class="title-preview-strip">
+        <img src="assets/sprites/weapons/pistol.png" alt="Пистолет" class="px-img" />
+        <img src="assets/sprites/weapons/shotgun.png" alt="Дробовик" class="px-img" />
+        <img src="assets/sprites/weapons/rifle.png" alt="Автомат" class="px-img" />
+        <img src="assets/sprites/weapons/sniper.png" alt="Снайперка" class="px-img" />
+        <img src="assets/sprites/weapons/sword.png" alt="Меч" class="px-img" />
+        <img src="assets/sprites/weapons/magic_staff.png" alt="Магия" class="px-img" />
+        <img src="assets/sprites/items/medkit.png" alt="Аптечка" class="px-img" />
+        <img src="assets/sprites/items/grenade.png" alt="Граната" class="px-img" />
+        <img src="assets/sprites/items/key.png" alt="Ключ" class="px-img" />
+        <img src="assets/sprites/items/backpack.png" alt="Рюкзак" class="px-img" />
       </div>
 
-      <div class="menu-footer">Версия 1.0 · Оптимизировано для Android</div>
+      <div class="title-actions">
+        <button id="btn-continue-game" class="primary-btn hidden">▶ Продолжить выживание</button>
+        <button id="btn-new-game" class="primary-btn accent">⚔️ Новая игра</button>
+      </div>
+
+      <div class="title-features">
+        <span>🔫 8 оружий + Патроны</span>
+        <span>🏢 9 зданий + Бункеры</span>
+        <span>🚗 Транспорт и Гранаты</span>
+        <span>💾 Автосохранение</span>
+      </div>
     </div>
   </section>
 
-  <!-- ПОДТВЕРЖДЕНИЕ НОВОЙ ИГРЫ -->
-  <div id="confirm-overlay" class="dialog-backdrop hidden">
-    <div class="dialog-card">
-      <h3>Начать новую игру?</h3>
-      <p>Текущее сохранение будет перезаписано новым персонажем. Продолжить?</p>
-      <div class="dialog-actions">
-        <button type="button" id="btn-confirm-yes" class="ui-btn btn-primary">Да, начать заново</button>
-        <button type="button" id="btn-confirm-no" class="ui-btn btn-secondary">Отмена</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- ОКНО ОБУЧЕНИЯ / УПРАВЛЕНИЯ -->
-  <div id="help-overlay" class="dialog-backdrop hidden">
-    <div class="dialog-card wide">
-      <h3>📖 Управление и советы по выживанию</h3>
-      <div class="help-grid">
-        <div>
-          <h4>📱 На телефоне (Сенсор)</h4>
-          <ul>
-            <li><b>Левый джойстик</b> — плавное движение на 360°</li>
-            <li><b>Большая кнопка ⚔️</b> — атака (можно зажать для серии!)</li>
-            <li><b>🦘 Прыжок</b> — перепрыгивай ударные волны боссов, шипы, лужи и плиты на воде!</li>
-            <li><b>Кнопки 1 / 2 / 3</b> — активные способности героя</li>
-            <li><b>🧪 Зелье</b> — мгновенное лечение в бою</li>
-          </ul>
-        </div>
-        <div>
-          <h4>⌨️ На ПК / Клавиатуре</h4>
-          <ul>
-            <li><b>WASD / Стрелки</b> — передвижение</li>
-            <li><b>ЛКМ / J</b> — атака оружием</li>
-            <li><b>Пробел</b> — прыжок / уклонение</li>
-            <li><b>1, 2, 3</b> — способности · <b>Q</b> — зелье · <b>E</b> — действие</li>
-            <li><b>I</b> — Герой и Инвентарь · <b>M</b> — Карта · <b>Esc</b> — Пауза</li>
-          </ul>
-        </div>
-      </div>
-      <div class="dialog-actions">
-        <button type="button" id="btn-close-help" class="ui-btn btn-primary">Понятно, в бой!</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- БОЕВОЙ ИНТЕРФЕЙС (HUD) -->
+  <!-- ИГРОВОЙ HUD -->
   <div id="hud" class="hidden">
-    <!-- Верхняя левая панель характеристик -->
-    <div class="hud-top-left">
-      <div class="hero-bars-card">
-        <div class="lvl-circle" id="lvl-badge" title="Уровень">1</div>
-        <div class="bars-stack">
-          <div class="bar-track hp-track">
-            <div class="bar-fill hp-fill" id="hp-fill"></div>
-            <span class="bar-label" id="hp-text">120 / 120</span>
-          </div>
-          <div class="dual-bars">
-            <div class="bar-track sm-track" title="Выносливость">
-              <div class="bar-fill stam-fill" id="stam-fill"></div>
-            </div>
-            <div class="bar-track sm-track" title="Сытость / Тонус">
-              <div class="bar-fill sat-fill" id="sat-fill"></div>
-            </div>
-          </div>
-          <div class="bar-track xp-track" title="Опыт до уровня">
-            <div class="bar-fill xp-fill" id="xp-fill"></div>
-          </div>
+    <div class="hud-top">
+      <div class="hud-bars-card">
+        <div class="hero-header">
+          <span id="hud-level" class="lvl-pill">Ур. 1</span>
+          <span id="hud-biome" class="biome-pill">Зелёный Лес</span>
+          <span id="hud-fps" class="fps-pill hidden">60 FPS</span>
+        </div>
+
+        <div class="bar-row">
+          <span class="bar-icon">❤️</span>
+          <div class="bar-track"><div id="bar-hp" class="bar-fill hp"></div><span id="txt-hp" class="bar-text">130/130</span></div>
+        </div>
+        <div class="bar-row">
+          <span class="bar-icon">⚡</span>
+          <div class="bar-track"><div id="bar-stamina" class="bar-fill stamina"></div></div>
+          <span class="bar-icon">🍖</span>
+          <div class="bar-track small"><div id="bar-hunger" class="bar-fill hunger"></div></div>
+        </div>
+        <div class="bar-row xp-row">
+          <div class="bar-track thin"><div id="bar-xp" class="bar-fill xp"></div></div>
+        </div>
+
+        <div class="currency-row">
+          <span class="stat-chip"><img src="assets/sprites/items/coin.png" class="px-icon" alt="" /><b id="hud-coins">95</b></span>
+          <span class="stat-chip"><img src="assets/sprites/items/ammo.png" class="px-icon" alt="" /><b id="hud-ammo">54/120</b></span>
+          <span class="stat-chip"><img src="assets/sprites/items/key.png" class="px-icon" alt="" /><b id="hud-keys">1</b></span>
+          <button id="hud-weapon-switch" class="weapon-switch-chip" title="Сменить оружие (Q)">
+            <img id="hud-weapon-img" src="assets/sprites/weapons/pistol.png" class="px-icon-w" alt="" />
+            <span id="hud-weapon-name">Пистолет</span>
+          </button>
         </div>
       </div>
 
-      <div class="status-pills">
-        <span class="pill gold">💰 <b id="gold-text">60</b></span>
-        <span class="pill biome" id="biome-text">Изумрудная Пустошь</span>
-        <span class="pill time" id="time-text">☀️ День</span>
+      <!-- Трекер активного квеста и полоска босса -->
+      <div class="hud-center-info">
+        <div id="quest-tracker" class="quest-tracker" title="Открыть журнал квестов">
+          <div id="quest-tracker-title" class="qt-title">📜 Квест</div>
+          <div id="quest-tracker-goal" class="qt-goal">Загрузка...</div>
+        </div>
+
+        <div id="boss-banner" class="boss-banner hidden">
+          <div id="boss-banner-name" class="boss-name">Босс</div>
+          <div class="boss-bar-track"><div id="boss-bar-fill" class="boss-bar-fill"></div></div>
+        </div>
       </div>
 
-      <!-- Трекер заданий (нажатие открывает журнал) -->
-      <div id="quest-tracker" class="quest-tracker">
-        <div class="qt-header" id="quest-title">📜 Первые шаги на Рубеже</div>
-        <div class="qt-body" id="quest-goals"></div>
-      </div>
-    </div>
+      <!-- Мини-карта и быстрые вкладки -->
+      <div class="hud-right-top">
+        <div class="minimap-wrap" id="btn-open-map" title="Карта и перемещение">
+          <canvas id="minimap-canvas" width="94" height="94"></canvas>
+          <span id="hud-daytime" class="day-chip">☀️ День 1</span>
+        </div>
 
-    <!-- Полоса здоровья БОССА по центру сверху -->
-    <div id="boss-hud" class="boss-hud hidden">
-      <div class="boss-title" id="boss-name">Морграт, Страж Пепла</div>
-      <div class="boss-bar-track">
-        <div class="boss-bar-fill" id="boss-fill"></div>
-      </div>
-    </div>
-
-    <!-- Верхняя правая панель: быстрые вкладки + мини-карта -->
-    <div class="hud-top-right">
-      <div class="quick-nav">
-        <button type="button" id="btn-open-hero" class="nav-icon-btn" title="Герой и Характеристики">
-          ⭐<span>Герой</span>
-          <i id="hero-alert-dot" class="alert-dot hidden"></i>
-        </button>
-        <button type="button" id="btn-open-bag" class="nav-icon-btn" title="Инвентарь и Заточка">
-          🎒<span>Сумка</span>
-        </button>
-        <button type="button" id="btn-open-craft" class="nav-icon-btn" title="Ремесло">
-          🔨<span>Крафт</span>
-        </button>
-        <button type="button" id="btn-open-map" class="nav-icon-btn" title="Карта и Телепорт">
-          🗺️<span>Карта</span>
-        </button>
-        <button type="button" id="btn-open-pause" class="nav-icon-btn" title="Настройки и Пауза">
-          ⚙️<span>Меню</span>
-        </button>
-      </div>
-      <canvas id="minimap-canvas" width="104" height="104" title="Открыть карту мира"></canvas>
-    </div>
-
-    <!-- Всплывающие уведомления наград и достижений -->
-    <div id="toast-container" class="toast-container"></div>
-
-    <!-- Контекстная кнопка взаимодействия (сундук / костёр / NPC / жаровня) -->
-    <button type="button" id="btn-interact" class="interact-btn hidden">
-      <span id="btn-interact-label">📦 Открыть сундук</span>
-    </button>
-
-    <!-- Левая сенсорная зона: Виртуальный джойстик -->
-    <div id="joystick-zone" class="joystick-zone">
-      <div id="joystick-base" class="joystick-base">
-        <div id="joystick-knob" class="joystick-knob"></div>
+        <div class="quick-menu-btns">
+          <button class="icon-btn" data-open-tab="inventory" title="Арсенал и Рюкзак">🎒<span id="badge-inv" class="dot-badge hidden"></span></button>
+          <button class="icon-btn" data-open-tab="hero" title="Характеристики и Навыки">⭐<span id="badge-hero" class="dot-badge hidden"></span></button>
+          <button class="icon-btn" data-open-tab="shop" title="Торговец и Крафт">🏪</button>
+          <button class="icon-btn" data-open-tab="settings" title="Меню и Настройки">⚙️</button>
+        </div>
       </div>
     </div>
 
-    <!-- Правая сенсорная зона: Боевые кнопки и способности -->
-    <div class="action-cluster">
-      <button type="button" id="btn-potion" class="act-btn potion-btn" title="Быстрое зелье (Q)">
-        <span id="btn-potion-icon">🧪</span>
-        <b id="btn-potion-count" class="corner-count">×3</b>
-        <em id="btn-potion-cd" class="cd-overlay"></em>
-      </button>
+    <div id="toast-stack" class="toast-stack"></div>
+    <div id="combo-badge" class="combo-badge hidden">КОМБО ×3</div>
 
-      <button type="button" id="btn-skill-1" class="act-btn skill-btn s1" title="Вихрь Пламени (1)">
-        <span>🔥</span>
-        <small>1</small>
-        <em id="cd-skill-1" class="cd-overlay"></em>
-      </button>
+    <!-- Контекстная кнопка взаимодействия (NPC, SHOP, Бункер, Машина, Костёр) -->
+    <button id="btn-interact" class="interact-btn hidden">💬 Взаимодействовать</button>
 
-      <button type="button" id="btn-skill-2" class="act-btn skill-btn s2" title="Громовой Прыжок (2)">
-        <span>⚡</span>
-        <small>2</small>
-        <em id="cd-skill-2" class="cd-overlay"></em>
-      </button>
+    <!-- Мобильное управление: Джойстик слева + Кнопки экшена справа -->
+    <div class="controls-layer">
+      <div id="joystick-zone" class="joystick-zone">
+        <div id="joystick-base" class="joystick-base">
+          <div id="joystick-knob" class="joystick-knob"></div>
+        </div>
+      </div>
 
-      <button type="button" id="btn-skill-3" class="act-btn skill-btn s3" title="Эфирный Бастион (3)">
-        <span>🛡️</span>
-        <small>3</small>
-        <em id="cd-skill-3" class="cd-overlay"></em>
-      </button>
+      <div class="combat-cluster">
+        <button id="btn-heal" class="ctrl-btn small heal" title="Аптечка (H)">
+          <img src="assets/sprites/items/medkit.png" class="px-btn-img" alt="HP" />
+          <span id="hud-medkits" class="count-pill">3</span>
+        </button>
 
-      <button type="button" id="btn-jump" class="act-btn jump-btn" title="Прыжок (Пробел)">
-        <span>🦘</span>
-        <small>Прыжок</small>
-      </button>
+        <button id="btn-grenade" class="ctrl-btn small grenade" title="Бросить гранату (G)">
+          <img src="assets/sprites/items/grenade.png" class="px-btn-img" alt="Граната" />
+          <span id="hud-grenades" class="count-pill">2</span>
+        </button>
 
-      <button type="button" id="btn-attack" class="act-btn attack-btn" title="Атака (Удерживать для комбо)">
-        <span id="btn-attack-icon">⚔️</span>
-        <small>Удар</small>
-      </button>
+        <button id="btn-skill-1" class="ctrl-btn skill s1" title="Навык 1">
+          <span>⚔️</span><small id="cd-skill-1"></small>
+        </button>
+        <button id="btn-skill-2" class="ctrl-btn skill s2" title="Навык 2">
+          <span>🌀</span><small id="cd-skill-2"></small>
+        </button>
+        <button id="btn-skill-3" class="ctrl-btn skill s3" title="Навык 3">
+          <span>⚡</span><small id="cd-skill-3"></small>
+        </button>
+
+        <button id="btn-dash" class="ctrl-btn medium dash" title="Рывок (L)">💨<span>Рывок</span></button>
+        <button id="btn-jump" class="ctrl-btn medium jump" title="Прыжок (K)">🦘<span>Прыжок</span></button>
+        <button id="btn-attack" class="ctrl-btn big attack" title="Огонь / Удар (Пробел)">🎯<span>ОГОНЬ</span></button>
+      </div>
     </div>
   </div>
 
-  <!-- МОДАЛЬНОЕ ОКНО: ГЕРОЙ / ИНВЕНТАРЬ / РЕМЕСЛО / УМЕНИЯ / ЗАДАНИЯ / КАРТА / НАСТРОЙКИ -->
-  <div id="game-modal" class="modal-backdrop hidden">
+  <!-- МОДАЛЬНОЕ МЕНЮ (Инвентарь, Герой, Магазин SHOP, Крафт, Квесты, Карта, Достижения, Настройки) -->
+  <section id="modal-panel" class="modal-backdrop hidden">
     <div class="modal-window">
-      <header class="modal-tabs-bar">
-        <div class="tabs-scroll">
-          <button type="button" class="tab-btn active" data-tab="hero">⭐ Герой</button>
-          <button type="button" class="tab-btn" data-tab="inventory">🎒 Снаряжение</button>
-          <button type="button" class="tab-btn" data-tab="craft">🔨 Ремесло</button>
-          <button type="button" class="tab-btn" data-tab="skills">⚡ Умения</button>
-          <button type="button" class="tab-btn" data-tab="quests">📜 Задания</button>
-          <button type="button" class="tab-btn" data-tab="map">🗺️ Карта</button>
-          <button type="button" class="tab-btn" data-tab="settings">⚙️ Настройки</button>
-        </div>
-        <button type="button" id="btn-close-modal" class="close-x" aria-label="Закрыть">✕</button>
+      <header class="modal-tabs">
+        <button class="tab-btn active" data-tab="inventory">🎒 Арсенал</button>
+        <button class="tab-btn" data-tab="hero">⭐ Герой</button>
+        <button class="tab-btn" data-tab="shop">🏪 Магазин</button>
+        <button class="tab-btn" data-tab="craft">🛠️ Крафт</button>
+        <button class="tab-btn" data-tab="quests">📜 Квесты</button>
+        <button class="tab-btn" data-tab="map">🗺️ Карта</button>
+        <button class="tab-btn" data-tab="achievements">🏅 Награды</button>
+        <button class="tab-btn" data-tab="settings">⚙️</button>
+        <button id="btn-close-modal" class="close-btn" aria-label="Закрыть">✕</button>
       </header>
-      <main id="modal-body" class="modal-body"></main>
+      <div id="modal-body" class="modal-body"></div>
     </div>
-  </div>
+  </section>
 
   <!-- ДИАЛОГ С NPC -->
-  <div id="npc-overlay" class="dialog-backdrop hidden">
-    <div class="dialog-card">
-      <div class="npc-tag" id="npc-role">Наставница Рубежа</div>
-      <h3 id="npc-name">Хранительница Лира</h3>
-      <p id="npc-text"></p>
-      <div id="npc-actions" class="dialog-actions"></div>
+  <section id="dialog-modal" class="modal-backdrop hidden">
+    <div class="dialog-box">
+      <h3 id="dialog-npc-name">NPC</h3>
+      <p id="dialog-npc-text">Приветствую!</p>
+      <div id="dialog-actions" class="dialog-actions"></div>
     </div>
-  </div>
+  </section>
 
-  <!-- ЭКРАН ПОРАЖЕНИЯ / ВОЗРОЖДЕНИЯ -->
-  <div id="death-overlay" class="dialog-backdrop hidden">
-    <div class="dialog-card death-card">
-      <h3>💀 Вы пали в бою</h3>
-      <p>Пламя путевого костра сохранило вашу душу и всё собранное снаряжение.</p>
-      <div class="dialog-actions">
-        <button type="button" id="btn-respawn" class="ui-btn btn-primary">🔥 Возродиться у костра</button>
-      </div>
+  <!-- ЭКРАН ВОЗРОЖДЕНИЯ -->
+  <section id="death-modal" class="modal-backdrop hidden">
+    <div class="dialog-box death-box">
+      <h3>💀 Вы тяжело ранены</h3>
+      <p>Союзники эвакуируют вас к ближайшему зажжённому костру со всем снаряжением, оружием и ключами.</p>
+      <button id="btn-respawn" class="primary-btn accent">🔥 Возродиться у костра</button>
     </div>
-  </div>
-
-  <!-- ЭКРАН ПОБЕДЫ НАД ФИНАЛЬНЫМ БОССОМ -->
-  <div id="victory-overlay" class="dialog-backdrop hidden" data-seen="0">
-    <div class="dialog-card victory-card">
-      <h3>👑 Владыка Разлома Повержен!</h3>
-      <p>
-        Вы сокрушили Азариэля и остановили вторжение Бездны! Мир остаётся открытым:
-        отыщите все 4 секретные реликвии, заточите оружие до +10 и откройте все 16 достижений!
-      </p>
-      <div class="dialog-actions">
-        <button type="button" id="btn-continue-win" class="ui-btn btn-primary">⚔️ Продолжить исследование мира</button>
-      </div>
-    </div>
-  </div>
+  </section>
 
   <script type="module" src="js/main.js"></script>
 </body>

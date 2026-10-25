@@ -1,2440 +1,2406 @@
-// Основной игровой движок Horizon: Пепел Рубежа
-// Полный цикл: физика 2.5D + прыжки по оси Z, боёвка, 6 видов оружия, 3 способности,
-// 14 видов врагов, 4 уникальных босса, выживание, квесты, достижения, туман войны и сохранения.
+// Игровое ядро Horizon: Выживание (Пиксель-арт 2D Action-Survival RPG)
+// Боевая система (8 видов оружия, патроны, гранаты, взрывные бочки),
+// AABB-коллизии зданий, транспорт, бункеры с ключами, квесты, крафт и сохранения.
 
 import {
-  WORLD_CONFIG, RARITIES, BIOMES, CAMPFIRES, NPCS, SECRETS,
-  RESOURCES, CONSUMABLES, WEAPONS, ARMORS, RELICS,
-  SKILLS, RECIPES, ENEMIES, BOSSES, QUESTS, ACHIEVEMENTS
+  WORLD_CONFIG, RARITIES, BIOMES, CAMPFIRES, NPCS, WEAPONS,
+  ITEMS, RESOURCES, RECIPES, SKILLS, ENEMIES, BOSSES, SECRETS, QUESTS, ACHIEVEMENTS
 } from './data.js';
-import { createWorld, getBiomeIdAt, dist2 } from './world.js';
-import { sound } from './audio.js';
+import { createWorld, dist2, getBiomeIdAt } from './world.js';
 
-export const SAVE_KEY = 'horizon_rp_save_v1';
-const FOG_GRID = 48; // 48x48 ячеек тумана войны (по 100px)
+const SAVE_KEY = 'horizon_rp_save_v2';
 
-export function createGameEngine(options = {}) {
-  const world = createWorld(options.seed || 20261025);
+function clamp(v, lo, hi) {
+  return v < lo ? lo : v > hi ? hi : v;
+}
 
-  // Пул частиц и всплывающего текста (без аллокаций в кадре для слабых Android)
-  const MAX_PARTICLES = 220;
-  const particles = Array.from({ length: MAX_PARTICLES }, () => ({ active: false }));
-  const floatingTexts = [];
-  const toasts = [];
+function randRange(min, max) {
+  return min + Math.random() * (max - min);
+}
 
-  const state = createInitialState();
+function randInt(min, max) {
+  return Math.floor(randRange(min, max + 0.999));
+}
 
-  function createInitialState() {
-    return {
-      version: 1,
-      playTime: 0,
-      dayTime: 0.28, // 0..1 (0.25 утро, 0.5 полдень, 0.78 закат, 0.0 полночь)
-      currentBiome: 'meadow',
-      paused: false,
-      gameOver: false,
-      victoryShown: false,
+export class GameEngine {
+  constructor(sound) {
+    this.sound = sound;
+    this.world = createWorld(20261025);
+    this.paused = false;
 
-      settings: {
-        quality: 'medium', // 'low' | 'medium' | 'high'
-        sfxVolume: 0.7,
-        musicVolume: 0.35,
-        muted: false,
-        screenShake: true,
-        joystickMode: 'dynamic'
+    this.settings = {
+      quality: 'medium', // 'low' | 'medium' | 'high'
+      sound: true,
+      autoAim: true,
+      showFps: false
+    };
+
+    this.resetState();
+  }
+
+  resetState() {
+    this.timeOfDay = 0.30; // Солнечное утро на старте
+    this.dayCount = 1;
+    this.autosaveTimer = 0;
+    this.spawnTimer = 1.0;
+    this.waterSplashTimer = 0;
+
+    this.player = {
+      x: WORLD_CONFIG.spawnX,
+      y: WORLD_CONFIG.spawnY,
+      z: 0,
+      vz: 0,
+      vx: 0,
+      vy: 0,
+      radius: 14,
+      facing: 0,
+      facingDir: 'down', // 'down' | 'up' | 'left' | 'right'
+      animState: 'idle', // 'idle' | 'walk' | 'run' | 'jump' | 'attack' | 'hurt'
+      animTime: 0,
+      sprinting: false,
+      vehicleId: null,
+
+      level: 1,
+      xp: 0,
+      xpNext: 100,
+      statPoints: 0,
+      skillPoints: 1,
+
+      stats: {
+        power: 1,
+        vitality: 1,
+        agility: 1,
+        luck: 1
       },
 
-      player: {
-        x: WORLD_CONFIG.spawnX,
-        y: WORLD_CONFIG.spawnY,
+      hp: 130,
+      maxHp: 130,
+      stamina: 100,
+      maxStamina: 100,
+      hunger: 100,
+      maxHunger: 100,
+
+      attackTimer: 0,
+      attackAnimTimer: 0,
+      hurtAnimTimer: 0,
+      grenadeTimer: 0,
+      dashTimer: 0,
+      dashActive: 0,
+      dashDirX: 1,
+      dashDirY: 0,
+      invulnTimer: 0,
+      shieldBuffTimer: 0,
+      foodRegenTimer: 0,
+      comboCount: 0,
+      comboTimer: 0,
+      dead: false
+    };
+
+    this.inventory = {
+      coins: 95,
+      ammo: 54,
+      backpackLevel: 0, // 0..4 (+вместимость боезапаса, +HP, +добыча)
+      equippedWeapon: 'pistol',
+      weapons: ['pistol', 'knife'],
+      consumables: {
+        medkit: 3,
+        grenade: 2,
+        food: 2,
+        potion: 1,
+        key: 1
+      },
+      resources: {
+        wood: 2,
+        stone: 1,
+        scrap: 2,
+        herb: 2
+      }
+    };
+
+    this.weaponUpgrades = { pistol: 0, knife: 0 };
+
+    this.skills = {
+      slash_wave: { level: 1, cd: 0 },
+      magic_nova: { level: 0, cd: 0 },
+      adrenaline: { level: 0, cd: 0 }
+    };
+
+    this.unlockedCamps = ['camp_forest'];
+    this.discoveredSecrets = [];
+    this.lootedBuildings = [];
+    this.defeatedBosses = [];
+    this.unlockedAchievements = [];
+
+    this.questIndex = 0;
+    this.questProgress = {};
+
+    this.stats = {
+      totalKills: 0,
+      biomeKills: { forest: 0, city: 0, desert: 0, mountains: 0 },
+      resourcesGathered: 0,
+      totalCrafted: 0,
+      explosionsTriggered: 0,
+      droveVehicle: 0,
+      playTime: 0
+    };
+
+    this.enemies = [];
+    this.bossEntities = [];
+    this.projectiles = [];
+    this.thrownGrenades = [];
+    this.drops = [];
+    this.particles = [];
+    this.spriteEffects = []; // пиксельные спрайт-эффекты (explosion, muzzle, magic, hit, smoke, water)
+    this.floatingTexts = [];
+    this.slashes = [];
+    this.shockwaves = [];
+    this.toasts = [];
+
+    this.camera = {
+      x: this.player.x,
+      y: this.player.y,
+      shake: 0
+    };
+
+    this.recalcDerivedStats(true);
+    this.spawnInitialBosses();
+    this.populateInitialEnemies();
+  }
+
+  getMaxAmmo() {
+    return 120 + (this.inventory.backpackLevel || 0) * 65;
+  }
+
+  getLootMultiplier() {
+    return 1 + (this.inventory.backpackLevel || 0) * 0.15 + this.player.stats.luck * 0.04;
+  }
+
+  recalcDerivedStats(refill = false) {
+    const p = this.player;
+    const vit = p.stats.vitality;
+    const agi = p.stats.agility;
+    const bp = this.inventory.backpackLevel || 0;
+    const prevMaxHp = p.maxHp || 130;
+    p.maxHp = Math.round(112 + p.level * 16 + vit * 22 + bp * 25);
+    p.maxStamina = Math.round(96 + agi * 8 + p.level * 2 + bp * 6);
+    if (refill) {
+      p.hp = p.maxHp;
+      p.stamina = p.maxStamina;
+    } else if (p.maxHp > prevMaxHp) {
+      p.hp = Math.min(p.maxHp, p.hp + (p.maxHp - prevMaxHp));
+    }
+  }
+
+  getMoveSpeed() {
+    const p = this.player;
+    if (p.vehicleId) {
+      const v = this.world.vehicles.find(vh => vh.id === p.vehicleId);
+      if (v) return v.maxSpeed;
+    }
+    let spd = 205 + p.stats.agility * 7;
+    if (p.sprinting && p.stamina > 4) spd *= 1.28;
+    if (p.shieldBuffTimer > 0) spd *= 1.20;
+    if (p.hunger <= 5) spd *= 0.86;
+    return spd;
+  }
+
+  getWeaponDamage(weaponId = this.inventory.equippedWeapon) {
+    const w = WEAPONS[weaponId] || WEAPONS.knife;
+    const upg = this.weaponUpgrades[weaponId] || 0;
+    const p = this.player;
+    const mult = (1 + upg * 0.18) * (1 + p.stats.power * 0.11 + (p.level - 1) * 0.05);
+    return Math.round(w.baseDamage * mult);
+  }
+
+  getCritChance(weaponId = this.inventory.equippedWeapon) {
+    const w = WEAPONS[weaponId] || WEAPONS.knife;
+    return Math.min(0.68, 0.07 + this.player.stats.luck * 0.03 + (w.critBonus || 0));
+  }
+
+  hasSave() {
+    try {
+      return !!localStorage.getItem(SAVE_KEY);
+    } catch {
+      return false;
+    }
+  }
+
+  saveGame(silent = false) {
+    try {
+      const payload = {
+        v: 2,
+        savedAt: Date.now(),
+        timeOfDay: this.timeOfDay,
+        dayCount: this.dayCount,
+        settings: this.settings,
+        player: {
+          x: Math.round(this.player.x),
+          y: Math.round(this.player.y),
+          level: this.player.level,
+          xp: this.player.xp,
+          xpNext: this.player.xpNext,
+          statPoints: this.player.statPoints,
+          skillPoints: this.player.skillPoints,
+          stats: this.player.stats,
+          hp: Math.round(this.player.hp),
+          stamina: Math.round(this.player.stamina),
+          hunger: Math.round(this.player.hunger)
+        },
+        inventory: this.inventory,
+        weaponUpgrades: this.weaponUpgrades,
+        skills: {
+          slash_wave: { level: this.skills.slash_wave.level },
+          magic_nova: { level: this.skills.magic_nova.level },
+          adrenaline: { level: this.skills.adrenaline.level }
+        },
+        unlockedCamps: this.unlockedCamps,
+        discoveredSecrets: this.discoveredSecrets,
+        lootedBuildings: this.lootedBuildings,
+        defeatedBosses: this.defeatedBosses,
+        unlockedAchievements: this.unlockedAchievements,
+        questIndex: this.questIndex,
+        questProgress: this.questProgress,
+        stats: this.stats
+      };
+      localStorage.setItem(SAVE_KEY, JSON.stringify(payload));
+      if (!silent) this.pushToast('💾 Прогресс сохранён', '#4ade80');
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  loadGame() {
+    try {
+      const raw = localStorage.getItem(SAVE_KEY);
+      if (!raw) return false;
+      const data = JSON.parse(raw);
+      if (!data || !data.player) return false;
+
+      this.resetState();
+      this.timeOfDay = data.timeOfDay ?? 0.30;
+      this.dayCount = data.dayCount ?? 1;
+      if (data.settings) Object.assign(this.settings, data.settings);
+
+      Object.assign(this.player, data.player);
+      this.player.z = 0;
+      this.player.vz = 0;
+      this.player.dead = false;
+      this.player.vehicleId = null;
+
+      if (data.inventory) {
+        this.inventory = {
+          coins: data.inventory.coins ?? 95,
+          ammo: data.inventory.ammo ?? 54,
+          backpackLevel: data.inventory.backpackLevel ?? 0,
+          equippedWeapon: WEAPONS[data.inventory.equippedWeapon] ? data.inventory.equippedWeapon : 'pistol',
+          weapons: Array.isArray(data.inventory.weapons) && data.inventory.weapons.length
+            ? data.inventory.weapons.filter(w => !!WEAPONS[w])
+            : ['pistol', 'knife'],
+          consumables: Object.assign({ medkit: 2, grenade: 2, food: 2, potion: 1, key: 1 }, data.inventory.consumables || {}),
+          resources: Object.assign({ wood: 0, stone: 0, scrap: 0, herb: 0 }, data.inventory.resources || {})
+        };
+      }
+      if (!this.inventory.weapons.includes('knife')) this.inventory.weapons.push('knife');
+
+      if (data.weaponUpgrades) Object.assign(this.weaponUpgrades, data.weaponUpgrades);
+      if (data.skills) {
+        for (const k of Object.keys(this.skills)) {
+          if (data.skills[k]) this.skills[k].level = data.skills[k].level || 0;
+        }
+      }
+      this.unlockedCamps = data.unlockedCamps || ['camp_forest'];
+      this.discoveredSecrets = data.discoveredSecrets || [];
+      this.lootedBuildings = data.lootedBuildings || [];
+      for (const b of this.world.buildings) {
+        if (this.lootedBuildings.includes(b.id)) b.looted = true;
+      }
+      this.defeatedBosses = data.defeatedBosses || [];
+      this.unlockedAchievements = data.unlockedAchievements || [];
+      this.questIndex = data.questIndex ?? 0;
+      this.questProgress = data.questProgress || {};
+      if (data.stats) Object.assign(this.stats, data.stats);
+
+      this.recalcDerivedStats(false);
+      this.player.hp = clamp(this.player.hp, 25, this.player.maxHp);
+      this.camera.x = this.player.x;
+      this.camera.y = this.player.y;
+
+      this.bossEntities = [];
+      this.spawnInitialBosses();
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  spawnInitialBosses() {
+    this.bossEntities = [];
+    for (const b of Object.values(BOSSES)) {
+      if (this.defeatedBosses.includes(b.id)) continue;
+      this.bossEntities.push({
+        isBoss: true,
+        bossId: b.id,
+        name: b.name,
+        title: b.title,
+        biome: b.biome,
+        sprite: 'boss',
+        x: b.x,
+        y: b.y,
+        homeX: b.x,
+        homeY: b.y,
         z: 0,
         vz: 0,
         vx: 0,
         vy: 0,
-        facingX: 0,
-        facingY: 1,
-        facingAngle: Math.PI * 0.5,
-        radius: 16,
-
-        level: 1,
-        xp: 0,
-        xpNext: 100,
-        statPoints: 0,
-        skillPoints: 1,
-        gold: 60,
-
-        // Вложенные очки характеристик
-        attributes: {
-          power: 0,    // +урон оружия
-          vitality: 0, // +макс HP и защита
-          agility: 0,  // +скорость, стамина и крит
-          arcane: 0    // +урон умений и ускорение КД
-        },
-        permanentBonusHp: 0,
-
-        hp: 120,
-        maxHp: 120,
-        stamina: 100,
-        maxStamina: 100,
-        satiety: 100, // 0..100 тонус/сытость
-
-        equippedWeapon: 'sword_iron',
-        equippedArmor: 'armor_tunic',
-        equippedRelics: [null, null],
-        quickConsumable: 'potion_hp',
-
-        // Боевые таймеры и анимации
-        attackCooldown: 0,
-        swingTimer: 0,
-        swingDuration: 0.22,
-        swingAngle: 0,
-        swingStyle: 'sword',
-        comboStep: 0,
-        comboResetTimer: 0,
-        shotCounter: 0,
-
-        invulnTimer: 0,
+        radius: b.radius,
+        arenaRadius: b.arenaRadius,
+        hp: b.hp,
+        maxHp: b.hp,
+        damage: b.damage,
+        speed: b.speed,
+        xp: b.xp,
+        coins: b.coins,
+        rewardWeapon: b.rewardWeapon,
+        rewardItems: b.rewardItems || [],
+        actionTimer: 2.2,
+        phase: 1,
+        stunTimer: 0,
         hitFlash: 0,
-        consumableCooldown: 0,
-        phoenixCooldown: 0,
-
-        // Активные баффы
-        regenTimer: 0,
-        rageTimer: 0,
-        aegisTimer: 0,
-        thunderLeap: null, // { timer, duration, targetX, targetY }
-        walkCycle: 0
-      },
-
-      skillRanks: {
-        whirlwind: 1,
-        thunder_slam: 0,
-        aegis_pulse: 0
-      },
-      skillCooldowns: {
-        whirlwind: 0,
-        thunder_slam: 0,
-        aegis_pulse: 0
-      },
-
-      inventory: {
-        weapons: ['sword_iron'],
-        armors: ['armor_tunic'],
-        relics: [],
-        resources: {
-          wood: 2,
-          herb: 3,
-          meat: 1,
-          iron: 1,
-          soul: 0,
-          mithril: 0,
-          crystal: 0
-        },
-        consumables: {
-          potion_hp: 3,
-          ration_roast: 2,
-          elixir_power: 0,
-          potion_greater: 0
-        }
-      },
-
-      weaponUpgrades: {
-        sword_iron: 0
-      },
-
-      unlockedCampfires: ['camp_haven'],
-      respawnCampId: 'camp_haven',
-      discoveredSecrets: [],
-      openedChests: [],
-      brokenPermanentNodes: [],
-      litBraziers: [],
-      defeatedBosses: [],
-
-      // Прогресс квестов
-      activeQuestIndex: 0,
-      completedQuests: [],
-      questProgress: {
-        kills: 0,
-        gather: 0,
-        craft_or_upgrade: 0,
-        biomeKills: { meadow: 0, ruins: 0, mire: 0, frost: 0, rift: 0 }
-      },
-      // Бесконечный контракт охотника после или параллельно сюжету
-      bounty: {
-        level: 1,
-        biome: 'meadow',
-        kills: 0,
-        target: 8,
-        rewardGold: 110,
-        rewardXp: 120
-      },
-
-      unlockedAchievements: [],
-
-      stats: {
-        totalKills: 0,
-        totalGathered: 0,
-        totalCrafted: 0,
-        totalDamageDealt: 0,
-        bossesSlain: 0,
-        deaths: 0
-      },
-
-      // Туман войны: массив 48*48 (0 или 1)
-      fog: new Array(FOG_GRID * FOG_GRID).fill(0),
-
-      // Динамические сущности мира
-      enemies: [],
-      activeBoss: null,
-      projectiles: [],
-      shockwaves: [],
-      telegraphs: [],
-      lootDrops: [],
-
-      camera: {
-        x: WORLD_CONFIG.spawnX,
-        y: WORLD_CONFIG.spawnY,
-        shake: 0
-      },
-
-      nearbyInteractable: null
-    };
-  }
-
-  // ── Расчёт производных характеристик игрока ──────────────────────────
-  function getComputedStats() {
-    const p = state.player;
-    const w = WEAPONS[p.equippedWeapon] || WEAPONS.sword_iron;
-    const a = ARMORS[p.equippedArmor] || ARMORS.armor_tunic;
-    const upg = state.weaponUpgrades[w.id] || 0;
-
-    let maxHp = 100 + (p.level - 1) * 16 + p.attributes.vitality * 22 + a.hpBonus + p.permanentBonusHp;
-    let defense = 2 + p.attributes.vitality * 2 + a.defense;
-    let atkMult = 1 + (p.level - 1) * 0.06 + p.attributes.power * 0.09;
-    let speedMult = 1 + a.speedBonus + p.attributes.agility * 0.035;
-    let maxStamina = 100 + p.attributes.agility * 10;
-    let staminaRegen = 22 + p.attributes.agility * 2.2;
-    let critChance = 0.06 + w.critBonus + p.attributes.agility * 0.025;
-    let skillMult = 1 + p.attributes.arcane * 0.12 + (p.level - 1) * 0.05;
-    let cdrMult = Math.min(0.45, p.attributes.arcane * 0.035);
-    let lifesteal = w.lifesteal || 0;
-    let magnetRadius = 82;
-    let goldMult = 1;
-    let hpRegen = 0;
-    let hasPhoenix = false;
-
-    for (const rId of p.equippedRelics) {
-      if (!rId || !RELICS[rId]) continue;
-      const st = RELICS[rId].stats;
-      if (st.maxHp) maxHp += st.maxHp;
-      if (st.defense) defense += st.defense;
-      if (st.atkPct) atkMult += st.atkPct;
-      if (st.speedPct) speedMult += st.speedPct;
-      if (st.staminaRegen) staminaRegen += st.staminaRegen;
-      if (st.critChance) critChance += st.critChance;
-      if (st.skillPct) skillMult += st.skillPct;
-      if (st.cdrPct) cdrMult = Math.min(0.55, cdrMult + st.cdrPct);
-      if (st.lifesteal) lifesteal += st.lifesteal;
-      if (st.magnetBonus) magnetRadius += st.magnetBonus;
-      if (st.goldPct) goldMult += st.goldPct;
-      if (st.hpRegen) hpRegen += st.hpRegen;
-      if (st.phoenixRevive) hasPhoenix = true;
-    }
-
-    if (p.rageTimer > 0) {
-      atkMult += 0.30;
-      speedMult += 0.20;
-    }
-    if (p.satiety >= 65) {
-      hpRegen += 1.4;
-      staminaRegen += 5;
-    } else if (p.satiety <= 15) {
-      speedMult *= 0.90;
-    }
-    if (p.regenTimer > 0) {
-      hpRegen += 5.5;
-    }
-
-    const weaponDamage = Math.round((w.baseDamage + upg * 5.5) * atkMult);
-    const moveSpeed = Math.round(215 * speedMult);
-
-    return {
-      maxHp: Math.round(maxHp),
-      defense: Math.round(defense),
-      weaponDamage,
-      atkMult,
-      moveSpeed,
-      maxStamina: Math.round(maxStamina),
-      staminaRegen,
-      critChance: Math.min(0.75, critChance),
-      skillMult,
-      cdrMult,
-      lifesteal,
-      magnetRadius,
-      goldMult,
-      hpRegen,
-      hasPhoenix
-    };
-  }
-
-  function syncPlayerVitals(healFull = false) {
-    const cs = getComputedStats();
-    state.player.maxHp = cs.maxHp;
-    state.player.maxStamina = cs.maxStamina;
-    if (healFull) {
-      state.player.hp = cs.maxHp;
-      state.player.stamina = cs.maxStamina;
-    } else {
-      state.player.hp = Math.min(state.player.hp, cs.maxHp);
-      state.player.stamina = Math.min(state.player.stamina, cs.maxStamina);
-    }
-  }
-
-  // ── Уведомления, всплывающие цифры и частицы ─────────────────────────
-  function pushToast(title, subtitle = '', color = '#fbbf24', icon = '✨') {
-    toasts.push({ id: Math.random().toString(36).slice(2), title, subtitle, color, icon, timer: 3.6 });
-    if (toasts.length > 4) toasts.shift();
-  }
-
-  function addFloatingText(x, y, text, color = '#ffffff', size = 15) {
-    if (floatingTexts.length > 36) floatingTexts.shift();
-    floatingTexts.push({
-      x: x + (Math.random() - 0.5) * 16,
-      y,
-      vy: -48 - Math.random() * 18,
-      text,
-      color,
-      size,
-      life: 0.85,
-      maxLife: 0.85
-    });
-  }
-
-  function spawnParticles(x, y, count, color, speed = 130, life = 0.45, size = 4, z = 8) {
-    const qMult = state.settings.quality === 'low' ? 0.45 : state.settings.quality === 'high' ? 1.25 : 0.85;
-    const total = Math.max(1, Math.round(count * qMult));
-    let spawned = 0;
-    for (let i = 0; i < particles.length && spawned < total; i++) {
-      const pt = particles[i];
-      if (pt.active) continue;
-      const ang = Math.random() * Math.PI * 2;
-      const spd = speed * (0.35 + Math.random() * 0.85);
-      pt.active = true;
-      pt.x = x;
-      pt.y = y;
-      pt.z = z;
-      pt.vx = Math.cos(ang) * spd;
-      pt.vy = Math.sin(ang) * spd;
-      pt.vz = 40 + Math.random() * 90;
-      pt.color = color;
-      pt.size = size * (0.7 + Math.random() * 0.6);
-      pt.life = life * (0.75 + Math.random() * 0.45);
-      pt.maxLife = pt.life;
-      spawned++;
-    }
-  }
-
-  function addScreenShake(amount) {
-    if (!state.settings.screenShake) return;
-    state.camera.shake = Math.min(18, Math.max(state.camera.shake, amount));
-  }
-
-  // ── Туман войны ──────────────────────────────────────────────────────
-  function revealFogAround(x, y, radiusCells = 3) {
-    const cellW = WORLD_CONFIG.width / FOG_GRID;
-    const cx = Math.floor(x / cellW);
-    const cy = Math.floor(y / cellW);
-    for (let dy = -radiusCells; dy <= radiusCells; dy++) {
-      const ny = cy + dy;
-      if (ny < 0 || ny >= FOG_GRID) continue;
-      for (let dx = -radiusCells; dx <= radiusCells; dx++) {
-        const nx = cx + dx;
-        if (nx < 0 || nx >= FOG_GRID) continue;
-        if (dx * dx + dy * dy <= radiusCells * radiusCells + 1) {
-          state.fog[ny * FOG_GRID + nx] = 1;
-        }
-      }
-    }
-  }
-
-  // Первичное открытие лагеря
-  revealFogAround(WORLD_CONFIG.spawnX, WORLD_CONFIG.spawnY, 4);
-
-  // ── Добавление предметов и наград ────────────────────────────────────
-  function grantRewardItem(item, silent = false) {
-    if (!item) return;
-    if (item.type === 'gold') {
-      const amt = Math.round(item.amount * getComputedStats().goldMult);
-      state.player.gold += amt;
-      if (!silent) addFloatingText(state.player.x, state.player.y - 26, `+${amt} зол.`, '#fbbf24', 15);
-    } else if (item.type === 'resource') {
-      const cnt = item.count || 1;
-      state.inventory.resources[item.id] = (state.inventory.resources[item.id] || 0) + cnt;
-      if (!silent && RESOURCES[item.id]) {
-        addFloatingText(state.player.x, state.player.y - 24, `+${cnt} ${RESOURCES[item.id].name}`, RESOURCES[item.id].color, 13);
-      }
-    } else if (item.type === 'consumable') {
-      const cnt = item.count || 1;
-      state.inventory.consumables[item.id] = (state.inventory.consumables[item.id] || 0) + cnt;
-      if (!silent && CONSUMABLES[item.id]) {
-        pushToast('Получен предмет', `${CONSUMABLES[item.id].name} ×${cnt}`, '#34d399', CONSUMABLES[item.id].icon);
-      }
-    } else if (item.type === 'weapon' && WEAPONS[item.id]) {
-      if (!state.inventory.weapons.includes(item.id)) {
-        state.inventory.weapons.push(item.id);
-        state.weaponUpgrades[item.id] = state.weaponUpgrades[item.id] || 0;
-        if (!silent) pushToast('Новое оружие!', WEAPONS[item.id].name, RARITIES[WEAPONS[item.id].rarity].color, WEAPONS[item.id].icon);
-      } else {
-        state.weaponUpgrades[item.id] = Math.min(10, (state.weaponUpgrades[item.id] || 0) + 1);
-        if (!silent) pushToast('Оружие усилено!', `${WEAPONS[item.id].name} +${state.weaponUpgrades[item.id]}`, '#fbbf24', WEAPONS[item.id].icon);
-      }
-    } else if (item.type === 'armor' && ARMORS[item.id]) {
-      if (!state.inventory.armors.includes(item.id)) {
-        state.inventory.armors.push(item.id);
-        if (!silent) pushToast('Новая броня!', ARMORS[item.id].name, RARITIES[ARMORS[item.id].rarity].color, ARMORS[item.id].icon);
-      } else {
-        state.player.gold += 120;
-      }
-    } else if (item.type === 'relic' && RELICS[item.id]) {
-      if (!state.inventory.relics.includes(item.id)) {
-        state.inventory.relics.push(item.id);
-        // Автоэкипировка в свободный слот реликвии!
-        const emptyIdx = state.player.equippedRelics.indexOf(null);
-        if (emptyIdx !== -1) state.player.equippedRelics[emptyIdx] = item.id;
-        syncPlayerVitals(false);
-        if (!silent) pushToast('Найдена реликвия!', RELICS[item.id].name, RARITIES[RELICS[item.id].rarity].color, RELICS[item.id].icon);
-      } else {
-        state.player.gold += 150;
-      }
-    }
-  }
-
-  function grantXp(amount) {
-    const p = state.player;
-    const nightBonus = isNightTime() ? 1.30 : 1.0;
-    p.xp += Math.round(amount * nightBonus);
-    while (p.xp >= p.xpNext) {
-      p.xp -= p.xpNext;
-      p.level += 1;
-      p.xpNext = Math.round(100 * Math.pow(1.28, p.level - 1));
-      p.statPoints += 2;
-      p.skillPoints += 1;
-      // Автооткрытие способностей 2 и 3 на 2 и 3 уровнях!
-      if (p.level >= 2 && state.skillRanks.thunder_slam === 0) {
-        state.skillRanks.thunder_slam = 1;
-        pushToast('Открыта способность!', '⚡ Громовой Прыжок (Кнопка 2)', '#38bdf8', '⚡');
-      }
-      if (p.level >= 3 && state.skillRanks.aegis_pulse === 0) {
-        state.skillRanks.aegis_pulse = 1;
-        pushToast('Открыта способность!', '🛡️ Эфирный Бастион (Кнопка 3)', '#c084fc', '🛡️');
-      }
-      syncPlayerVitals(true);
-      sound.play('levelup');
-      spawnParticles(p.x, p.y, 28, '#fbbf24', 210, 0.75, 5, 12);
-      state.shockwaves.push({
-        x: p.x, y: p.y, radius: 12, maxRadius: 125, speed: 320,
-        color: '#fbbf24', friendly: true, damage: 0
+        animTime: 0,
+        dashActive: 0,
+        dashVx: 0,
+        dashVy: 0
       });
-      pushToast(`Уровень ${p.level}!`, '+2 очка характеристик · +1 очко умений', '#fbbf24', '⭐');
-      addFloatingText(p.x, p.y - 36, `УРОВЕНЬ ${p.level}!`, '#fbbf24', 18);
-    }
-    checkAchievements();
-  }
-
-  function isNightTime() {
-    return state.dayTime >= 0.80 || state.dayTime <= 0.18;
-  }
-
-  // ── Проверка квестов и достижений ────────────────────────────────────
-  function getCurrentQuest() {
-    if (state.activeQuestIndex >= QUESTS.length) return null;
-    return QUESTS[state.activeQuestIndex];
-  }
-
-  function getQuestStatus(quest) {
-    if (!quest) return null;
-    const goals = quest.goals.map(g => {
-      let current = 0;
-      if (g.kind === 'kills') current = state.questProgress.kills;
-      else if (g.kind === 'gather') current = state.questProgress.gather;
-      else if (g.kind === 'craft_or_upgrade') current = state.questProgress.craft_or_upgrade;
-      else if (g.kind === 'campfire') current = state.unlockedCampfires.includes(g.campId) ? 1 : 0;
-      else if (g.kind === 'biome_kills') current = state.questProgress.biomeKills[g.biome] || 0;
-      else if (g.kind === 'boss') current = state.defeatedBosses.includes(g.bossId) ? 1 : 0;
-      return { ...g, current: Math.min(g.target, current), done: current >= g.target };
-    });
-    return {
-      quest,
-      goals,
-      allDone: goals.every(g => g.done)
-    };
-  }
-
-  function checkQuests() {
-    let q = getCurrentQuest();
-    while (q) {
-      const st = getQuestStatus(q);
-      if (!st.allDone) break;
-      state.completedQuests.push(q.id);
-      state.activeQuestIndex += 1;
-      state.player.gold += q.rewards.gold || 0;
-      if (q.rewards.items) {
-        for (const it of q.rewards.items) grantRewardItem(it, false);
-      }
-      if (q.rewards.xp) grantXp(q.rewards.xp);
-      sound.play('chest');
-      pushToast(`Задание выполнено!`, `${q.title} (+${q.rewards.gold} зол.)`, '#4ade80', '📜');
-      q = getCurrentQuest();
     }
   }
 
-  function checkAchievements() {
-    for (const ach of ACHIEVEMENTS) {
-      if (state.unlockedAchievements.includes(ach.id)) continue;
-      if (ach.check(state)) {
-        state.unlockedAchievements.push(ach.id);
-        state.player.gold += ach.goldReward;
-        sound.play('chest');
-        pushToast(`Достижение: ${ach.name}`, `+${ach.goldReward} золота`, '#fbbf24', ach.icon);
-      }
+  populateInitialEnemies() {
+    for (let i = 0; i < 24; i++) {
+      const ang = (i / 24) * Math.PI * 2;
+      const dist = randRange(440, 1150);
+      const sx = clamp(this.player.x + Math.cos(ang) * dist, 180, this.world.width - 180);
+      const sy = clamp(this.player.y + Math.sin(ang) * dist, 180, this.world.height - 180);
+      this.spawnEnemyAt(sx, sy);
     }
   }
 
-  // ── Прыжок (ось Z), Атака, Способности, Зелья, Взаимодействие ────────
-  function triggerJump(moveX = 0, moveY = 0) {
-    const p = state.player;
-    if (state.gameOver || state.paused) return false;
-    if (p.z > 2 || p.thunderLeap) return false;
-    if (p.stamina < 14) {
-      addFloatingText(p.x, p.y - 24, 'Мало сил!', '#94a3b8', 12);
-      return false;
-    }
-    p.stamina -= 14;
-    p.vz = 335;
-    p.z = 3;
-    p.invulnTimer = Math.max(p.invulnTimer, 0.24);
-    // Небольшой импульс в сторону движения при прыжке
-    const len = Math.hypot(moveX, moveY);
-    if (len > 0.15) {
-      p.vx += (moveX / len) * 145;
-      p.vy += (moveY / len) * 145;
-    }
-    sound.play('jump');
-    spawnParticles(p.x, p.y, 8, '#cbd5e1', 85, 0.32, 3.5, 2);
-    return true;
-  }
-
-  function findAutoAimAngle() {
-    const p = state.player;
-    const w = WEAPONS[p.equippedWeapon] || WEAPONS.sword_iron;
-    const maxDist = Math.max(155, w.range + 65);
-    let bestAng = p.facingAngle;
-    let bestScore = Infinity;
-
-    const candidates = state.activeBoss ? [state.activeBoss, ...state.enemies] : state.enemies;
-    for (const e of candidates) {
-      if (!e || e.hp <= 0) continue;
-      const d = Math.hypot(e.x - p.x, e.y - p.y);
-      if (d > maxDist) continue;
-      const ang = Math.atan2(e.y - p.y, e.x - p.x);
-      let diff = Math.abs(((ang - p.facingAngle + Math.PI * 3) % (Math.PI * 2)) - Math.PI);
-      const score = d + diff * 45;
-      if (score < bestScore) {
-        bestScore = score;
-        bestAng = ang;
-      }
-    }
-    if (bestScore < Infinity) return bestAng;
-
-    // Если врагов рядом нет — автонаведение на ближайший ресурс/ящик вплотную
-    for (const n of world.nodes) {
-      if (n.respawnTimer > 0 || n.hp <= 0) continue;
-      const d = Math.hypot(n.x - p.x, n.y - p.y);
-      if (d <= 95 && d < bestScore) {
-        bestScore = d;
-        bestAng = Math.atan2(n.y - p.y, n.x - p.x);
-      }
-    }
-    return bestAng;
-  }
-
-  function triggerAttack() {
-    const p = state.player;
-    if (state.gameOver || state.paused || p.thunderLeap) return false;
-    if (p.attackCooldown > 0) return false;
-
-    const w = WEAPONS[p.equippedWeapon] || WEAPONS.sword_iron;
-    const cs = getComputedStats();
-    const aimAngle = findAutoAimAngle();
-    p.facingAngle = aimAngle;
-    p.facingX = Math.cos(aimAngle);
-    p.facingY = Math.sin(aimAngle);
-
-    p.attackCooldown = w.cooldown;
-    p.swingStyle = w.style;
-    p.swingDuration = Math.min(0.28, w.cooldown * 0.82);
-    p.swingTimer = p.swingDuration;
-    p.swingAngle = aimAngle;
-    p.comboStep = (p.comboStep + 1) % 3;
-    p.comboResetTimer = 1.1;
-
-    const isFinisher = p.comboStep === 0;
-    const dmgMult = isFinisher ? 1.28 : 1.0;
-
-    if (w.style === 'bow') {
-      sound.play('bow');
-      p.shotCounter += 1;
-      const triple = p.shotCounter % 3 === 0;
-      const angles = triple ? [aimAngle - 0.18, aimAngle, aimAngle + 0.18] : [aimAngle];
-      for (const ang of angles) {
-        state.projectiles.push({
-          x: p.x + Math.cos(ang) * 18,
-          y: p.y + Math.sin(ang) * 18,
-          vx: Math.cos(ang) * w.projectileSpeed,
-          vy: Math.sin(ang) * w.projectileSpeed,
-          radius: 7,
-          damage: Math.round(cs.weaponDamage * (triple ? 0.85 : 1.05)),
-          critChance: cs.critChance,
-          knockback: w.knockback,
-          color: w.trailColor,
-          friendly: true,
-          pierce: 1,
-          life: w.range / w.projectileSpeed,
-          kind: 'arrow'
-        });
-      }
-    } else if (w.style === 'staff') {
-      sound.play('magic');
-      state.projectiles.push({
-        x: p.x + Math.cos(aimAngle) * 20,
-        y: p.y + Math.sin(aimAngle) * 20,
-        vx: Math.cos(aimAngle) * w.projectileSpeed,
-        vy: Math.sin(aimAngle) * w.projectileSpeed,
-        radius: 10,
-        damage: Math.round(cs.weaponDamage * dmgMult),
-        critChance: cs.critChance,
-        knockback: w.knockback,
-        color: w.trailColor,
-        friendly: true,
-        homing: true,
-        splashRadius: 68,
-        pierce: 0,
-        life: w.range / w.projectileSpeed + 0.15,
-        kind: 'orb'
-      });
-    } else {
-      // Ближний бой: меч, кинжалы, молот, коса
-      sound.play(w.style === 'daggers' ? 'daggers' : w.style === 'hammer' ? 'hammer' : w.style === 'scythe' ? 'scythe' : 'swing');
-
-      if (w.style === 'daggers') {
-        p.vx += Math.cos(aimAngle) * 95;
-        p.vy += Math.sin(aimAngle) * 95;
-      }
-
-      const range = w.range * (isFinisher ? 1.12 : 1.0);
-      const halfArc = w.arc * 0.5;
-      const baseDmg = Math.round(cs.weaponDamage * dmgMult);
-
-      applyMeleeArcDamage(p.x, p.y, range, aimAngle, halfArc, baseDmg, cs.critChance, w.knockback, w.style === 'hammer' ? 0.55 : 0);
-
-      if (w.style === 'hammer' && isFinisher) {
-        addScreenShake(6);
-        state.shockwaves.push({
-          x: p.x + Math.cos(aimAngle) * 32,
-          y: p.y + Math.sin(aimAngle) * 32,
-          radius: 12,
-          maxRadius: 96,
-          speed: 360,
-          color: '#fb923c',
-          friendly: true,
-          damage: Math.round(cs.weaponDamage * 0.65),
-          hitIds: new Set()
-        });
-      }
-
-      if (w.style === 'scythe') {
-        state.projectiles.push({
-          x: p.x + Math.cos(aimAngle) * 24,
-          y: p.y + Math.sin(aimAngle) * 24,
-          vx: Math.cos(aimAngle) * 460,
-          vy: Math.sin(aimAngle) * 460,
-          radius: 16,
-          damage: Math.round(cs.weaponDamage * 0.62),
-          critChance: cs.critChance,
-          knockback: 110,
-          color: '#c084fc',
-          friendly: true,
-          pierce: 3,
-          life: 0.48,
-          kind: 'crescent'
-        });
-      }
-    }
-    return true;
-  }
-
-  function applyMeleeArcDamage(ox, oy, range, aimAngle, halfArc, baseDmg, critChance, knockback, stunDur = 0) {
-    const targets = state.activeBoss ? [state.activeBoss, ...state.enemies] : state.enemies;
-    for (let i = targets.length - 1; i >= 0; i--) {
-      const e = targets[i];
-      if (!e || e.hp <= 0) continue;
-      const dx = e.x - ox;
-      const dy = e.y - oy;
-      const d = Math.hypot(dx, dy);
-      if (d > range + e.radius) continue;
-      if (d > 18) {
-        const ang = Math.atan2(dy, dx);
-        const diff = Math.abs(((ang - aimAngle + Math.PI * 3) % (Math.PI * 2)) - Math.PI);
-        if (diff > halfArc) continue;
-      }
-      damageEnemy(e, baseDmg, critChance, Math.atan2(dy, dx), knockback, stunDur);
-    }
-
-    // Добыча ресурсов и разрушаемых стен ударом
-    for (const node of world.nodes) {
-      if (node.respawnTimer > 0 || node.hp <= 0) continue;
-      const dx = node.x - ox;
-      const dy = node.y - oy;
-      const d = Math.hypot(dx, dy);
-      if (d > range + node.radius) continue;
-      const ang = Math.atan2(dy, dx);
-      const diff = Math.abs(((ang - aimAngle + Math.PI * 3) % (Math.PI * 2)) - Math.PI);
-      if (d > 22 && diff > halfArc + 0.25) continue;
-      hitResourceNode(node, Math.max(12, Math.round(baseDmg * 0.75)));
-    }
-  }
-
-  function triggerSkill(skillId) {
-    const p = state.player;
-    if (state.gameOver || state.paused) return false;
-    const def = SKILLS[skillId];
-    if (!def) return false;
-    const rank = state.skillRanks[skillId] || 0;
-    if (rank <= 0) {
-      pushToast('Способность закрыта', `Откроется на уровне ${def.unlockLevel} или в меню «Умения»`, '#94a3b8', '🔒');
-      return false;
-    }
-    if (state.skillCooldowns[skillId] > 0) return false;
-    if (p.stamina < def.staminaCost) {
-      addFloatingText(p.x, p.y - 26, 'Не хватает выносливости!', '#94a3b8', 12);
-      return false;
-    }
-
-    const cs = getComputedStats();
-    p.stamina -= def.staminaCost;
-    state.skillCooldowns[skillId] = Math.max(1.8, def.baseCooldown * (1 - cs.cdrMult));
-    const rankScale = 1 + (rank - 1) * 0.22;
-    const skillDmg = Math.round(cs.weaponDamage * def.baseDamageMult * cs.skillMult * rankScale);
-
-    if (skillId === 'whirlwind') {
-      sound.play('skill_fire');
-      addScreenShake(7);
-      p.swingTimer = 0.34;
-      p.swingDuration = 0.34;
-      p.swingStyle = 'whirlwind';
-      spawnParticles(p.x, p.y, 26, '#f97316', 210, 0.55, 5, 10);
-      state.shockwaves.push({
-        x: p.x, y: p.y, radius: 18, maxRadius: def.radius + rank * 8,
-        speed: 440, color: '#f97316', friendly: true, damage: 0
-      });
-
-      const targets = state.activeBoss ? [state.activeBoss, ...state.enemies] : state.enemies;
-      for (const e of targets) {
-        if (!e || e.hp <= 0) continue;
-        const d = Math.hypot(e.x - p.x, e.y - p.y);
-        if (d <= def.radius + rank * 8 + e.radius) {
-          damageEnemy(e, skillDmg, cs.critChance + 0.1, Math.atan2(e.y - p.y, e.x - p.x), 260, 0.25);
-          e.burnTimer = 4.0;
-          e.burnDps = Math.max(6, Math.round(skillDmg * 0.18));
-        }
-      }
-      for (const node of world.nodes) {
-        if (node.respawnTimer <= 0 && node.hp > 0 && Math.hypot(node.x - p.x, node.y - p.y) <= def.radius + node.radius) {
-          hitResourceNode(node, skillDmg);
-        }
-      }
-    } else if (skillId === 'thunder_slam') {
-      sound.play('jump');
-      const aim = findAutoAimAngle();
-      const leapDist = 115;
-      p.thunderLeap = {
-        timer: 0,
-        duration: 0.34,
-        startX: p.x,
-        startY: p.y,
-        targetX: Math.max(80, Math.min(world.width - 80, p.x + Math.cos(aim) * leapDist)),
-        targetY: Math.max(80, Math.min(world.height - 80, p.y + Math.sin(aim) * leapDist)),
-        damage: skillDmg,
-        radius: def.radius + rank * 10
-      };
-      p.invulnTimer = 0.45;
-      p.z = 10;
-    } else if (skillId === 'aegis_pulse') {
-      sound.play('skill_shield');
-      const healAmt = Math.round(cs.maxHp * (0.22 + (rank - 1) * 0.04));
-      p.hp = Math.min(cs.maxHp, p.hp + healAmt);
-      p.aegisTimer = def.duration + (rank - 1) * 1.0;
-      addFloatingText(p.x, p.y - 28, `+${healAmt} HP`, '#4ade80', 16);
-      spawnParticles(p.x, p.y, 22, '#c084fc', 165, 0.6, 4.5, 14);
-    }
-    return true;
-  }
-
-  function useQuickConsumable(customId = null) {
-    const p = state.player;
-    if (state.gameOver) return false;
-    const itemId = customId || p.quickConsumable;
-    const def = CONSUMABLES[itemId];
-    if (!def) return false;
-    const count = state.inventory.consumables[itemId] || 0;
-    if (count <= 0) {
-      // Попробуем найти любое другое доступное зелье/еду
-      const fallback = Object.keys(CONSUMABLES).find(k => (state.inventory.consumables[k] || 0) > 0);
-      if (fallback && !customId) {
-        p.quickConsumable = fallback;
-        return useQuickConsumable(fallback);
-      }
-      addFloatingText(p.x, p.y - 26, 'Зелья закончились!', '#f87171', 13);
-      return false;
-    }
-    if (p.consumableCooldown > 0 && !customId) return false;
-
-    state.inventory.consumables[itemId] -= 1;
-    p.consumableCooldown = def.cooldown;
-    const cs = getComputedStats();
-    const heal = Math.round(cs.maxHp * def.healPct);
-    p.hp = Math.min(cs.maxHp, p.hp + heal);
-    p.satiety = Math.min(100, p.satiety + (def.satiety || 0));
-    if (def.regenBuff) p.regenTimer = Math.max(p.regenTimer, def.regenBuff);
-    if (def.rageBuff) p.rageTimer = Math.max(p.rageTimer, def.rageBuff);
-
-    sound.play('potion');
-    spawnParticles(p.x, p.y, 16, '#4ade80', 120, 0.5, 4, 12);
-    addFloatingText(p.x, p.y - 28, `+${heal} HP`, '#4ade80', 15);
-    return true;
-  }
-
-  // ── Урон по врагам и добыча ресурсов ─────────────────────────────────
-  function damageEnemy(enemy, rawDamage, critChance, knockAngle, knockForce = 140, stunDur = 0) {
-    if (!enemy || enemy.hp <= 0) return;
-    const isCrit = Math.random() < critChance;
-    const dmg = Math.max(1, Math.round(rawDamage * (isCrit ? 1.65 : 1.0) * (0.92 + Math.random() * 0.16)));
-    enemy.hp -= dmg;
-    enemy.hitFlash = 0.14;
-    state.stats.totalDamageDealt += dmg;
-
-    const kbMult = enemy.isBoss ? 0.12 : 1.0;
-    enemy.vx = (enemy.vx || 0) + Math.cos(knockAngle) * knockForce * kbMult;
-    enemy.vy = (enemy.vy || 0) + Math.sin(knockAngle) * knockForce * kbMult;
-    if (stunDur > 0 && !enemy.isBoss) {
-      enemy.stunTimer = Math.max(enemy.stunTimer || 0, stunDur);
-    }
-
-    // Вампиризм оружия и реликвий
-    const cs = getComputedStats();
-    if (cs.lifesteal > 0) {
-      const vamp = Math.max(1, Math.round(dmg * cs.lifesteal));
-      state.player.hp = Math.min(cs.maxHp, state.player.hp + vamp);
-    }
-
-    sound.play(isCrit ? 'crit' : 'hit');
-    addFloatingText(enemy.x, enemy.y - enemy.radius - 8, isCrit ? `${dmg}!` : `${dmg}`, isCrit ? '#fbbf24' : '#f8fafc', isCrit ? 18 : 14);
-    spawnParticles(enemy.x, enemy.y, isCrit ? 12 : 6, enemy.color || '#f87171', 150, 0.35, 3.8, 10);
-
-    if (enemy.hp <= 0) {
-      handleEnemyDeath(enemy);
-    }
-  }
-
-  function handleEnemyDeath(enemy) {
-    spawnParticles(enemy.x, enemy.y, enemy.isBoss ? 42 : 16, enemy.color || '#ef4444', enemy.isBoss ? 250 : 165, 0.65, 4.8, 12);
-
-    if (enemy.isBoss) {
-      const def = BOSSES[enemy.id];
-      state.stats.bossesSlain += 1;
-      state.stats.totalKills += 1;
-      if (!state.defeatedBosses.includes(enemy.id)) {
-        state.defeatedBosses.push(enemy.id);
-      }
-      addScreenShake(14);
-      sound.play('levelup');
-      state.activeBoss = null;
-      sound.setBossMode(false);
-
-      // Щедрая награда босса
-      grantRewardItem({ type: 'gold', amount: def.gold }, false);
-      if (def.rewardWeapon) grantRewardItem({ type: 'weapon', id: def.rewardWeapon }, false);
-      if (def.rewardRelic) grantRewardItem({ type: 'relic', id: def.rewardRelic }, false);
-      if (def.rewardArmor) grantRewardItem({ type: 'armor', id: def.rewardArmor }, false);
-      if (def.rewardResource) {
-        for (const [resId, cnt] of Object.entries(def.rewardResource)) {
-          grantRewardItem({ type: 'resource', id: resId, count: cnt }, false);
-        }
-      }
-      grantXp(def.xp);
-      pushToast(`БОСС ПОВЕРЖЕН!`, def.name, '#fbbf24', '👑');
-
-      if (enemy.id === 'azariel' && !state.victoryShown) {
-        state.victoryShown = true;
-      }
-      checkQuests();
-      checkAchievements();
-      saveGame();
-      return;
-    }
-
-    // Обычный монстр
-    state.stats.totalKills += 1;
-    state.questProgress.kills += 1;
-    if (enemy.biome) {
-      state.questProgress.biomeKills[enemy.biome] = (state.questProgress.biomeKills[enemy.biome] || 0) + 1;
-    }
-
-    // Прогресс контракта охотника
-    if (enemy.biome === state.bounty.biome || state.bounty.biome === 'any') {
-      state.bounty.kills += 1;
-      if (state.bounty.kills >= state.bounty.target) {
-        completeBounty();
-      }
-    }
-
-    const [gMin, gMax] = enemy.gold || [5, 10];
-    const goldAmt = gMin + Math.floor(Math.random() * (gMax - gMin + 1));
-    state.lootDrops.push({
-      id: Math.random().toString(36).slice(2),
-      x: enemy.x + (Math.random() - 0.5) * 18,
-      y: enemy.y + (Math.random() - 0.5) * 18,
-      type: 'gold',
-      amount: goldAmt,
-      life: 45
-    });
-
-    if (enemy.drops) {
-      for (const dr of enemy.drops) {
-        if (Math.random() < dr.chance) {
-          state.lootDrops.push({
-            id: Math.random().toString(36).slice(2),
-            x: enemy.x + (Math.random() - 0.5) * 24,
-            y: enemy.y + (Math.random() - 0.5) * 24,
-            type: dr.type,
-            itemId: dr.id,
-            count: 1,
-            life: 60
-          });
-        }
-      }
-    }
-
-    grantXp(enemy.xp || 20);
-    const idx = state.enemies.indexOf(enemy);
-    if (idx !== -1) state.enemies.splice(idx, 1);
-    checkQuests();
-    checkAchievements();
-  }
-
-  function completeBounty() {
-    const b = state.bounty;
-    state.player.gold += b.rewardGold;
-    grantXp(b.rewardXp);
-    pushToast(`Контракт охотника закрыт!`, `+${b.rewardGold} золота · +${b.rewardXp} опыта`, '#a78bfa', '🎯');
-    const biomeOrder = ['meadow', 'ruins', 'mire', 'frost', 'rift'];
-    const nextLvl = b.level + 1;
-    const nextBiome = biomeOrder[Math.min(biomeOrder.length - 1, Math.floor((state.player.level - 1) / 2))];
-    state.bounty = {
-      level: nextLvl,
-      biome: nextBiome,
-      kills: 0,
-      target: 8 + Math.min(12, nextLvl * 2),
-      rewardGold: 110 + nextLvl * 45,
-      rewardXp: 120 + nextLvl * 50
-    };
-  }
-
-  function hitResourceNode(node, dmg) {
-    node.hp -= dmg;
-    node.hitFlash = 0.14;
-    sound.play('hit');
-    spawnParticles(node.x, node.y, 7, node.kind === 'tree' ? '#84cc16' : '#38bdf8', 110, 0.35, 3.5, 10);
-
-    if (node.hp <= 0) {
-      node.hp = 0;
-      if (node.permanentBreak) {
-        node.respawnTimer = 999999;
-        if (!state.brokenPermanentNodes.includes(node.id)) {
-          state.brokenPermanentNodes.push(node.id);
-        }
-        sound.play('slam');
-        addScreenShake(8);
-        pushToast('Древняя печать разрушена!', 'Проход в Забытый Склеп открыт!', '#c084fc', '🗝️');
-      } else {
-        node.respawnTimer = 65; // респавн ресурса через 65 сек
-      }
-
-      if (node.dropResource === 'crate') {
-        state.lootDrops.push({
-          id: Math.random().toString(36).slice(2),
-          x: node.x, y: node.y, type: 'gold', amount: 14 + Math.floor(Math.random() * 18), life: 50
-        });
-        if (Math.random() < 0.45) {
-          state.lootDrops.push({
-            id: Math.random().toString(36).slice(2),
-            x: node.x + 10, y: node.y, type: 'consumable', itemId: 'potion_hp', count: 1, life: 50
-          });
-        }
-      } else {
-        const [mn, mx] = node.dropAmount;
-        const cnt = mn + Math.floor(Math.random() * (mx - mn + 1));
-        state.stats.totalGathered += cnt;
-        state.questProgress.gather += cnt;
-        for (let k = 0; k < cnt; k++) {
-          state.lootDrops.push({
-            id: Math.random().toString(36).slice(2),
-            x: node.x + (Math.random() - 0.5) * 24,
-            y: node.y + (Math.random() - 0.5) * 24,
-            type: 'resource',
-            itemId: node.dropResource,
-            count: 1,
-            life: 60
-          });
-        }
-      }
-      checkQuests();
-      checkAchievements();
-    }
-  }
-
-  // ── Взаимодействие с объектами мира (костры, сундуки, жаровни, NPC, алтари боссов) ──
-  function findNearbyInteractable() {
-    const p = state.player;
-    const range = 68;
-
-    for (const ch of world.chests) {
-      if (ch.opened) continue;
-      if (Math.hypot(ch.x - p.x, ch.y - p.y) <= range) {
-        if (ch.lockedUntilBraziers && state.litBraziers.length < 3) {
-          return { type: 'locked_monolith', target: ch, label: '🔒 Зажгите 3 жаровни вокруг Монолита' };
-        }
-        return { type: 'chest', target: ch, label: ch.secretId ? '✨ Открыть тайный сундук' : '📦 Открыть сундук' };
-      }
-    }
-
-    for (const br of world.braziers) {
-      if (!br.lit && Math.hypot(br.x - p.x, br.y - p.y) <= range) {
-        return { type: 'brazier', target: br, label: '🔥 Зажечь древнюю жаровню' };
-      }
-    }
-
-    for (const camp of CAMPFIRES) {
-      if (Math.hypot(camp.x - p.x, camp.y - p.y) <= range + 10) {
-        const unlocked = state.unlockedCampfires.includes(camp.id);
-        return {
-          type: 'campfire',
-          target: camp,
-          label: unlocked ? `🔥 Отдохнуть у костра (${camp.name})` : `🔥 Зажечь костёр: ${camp.name}`
-        };
-      }
-    }
-
-    for (const npc of NPCS) {
-      if (Math.hypot(npc.x - p.x, npc.y - p.y) <= range + 8) {
-        return { type: 'npc', target: npc, label: `💬 Поговорить: ${npc.name}` };
-      }
-    }
-
-    // Повторный призыв побеждённого босса в центре его арены
-    if (!state.activeBoss) {
-      for (const b of Object.values(BOSSES)) {
-        if (state.defeatedBosses.includes(b.id) && Math.hypot(b.x - p.x, b.y - p.y) <= 72) {
-          return { type: 'resummon_boss', target: b, label: `💀 Призвать вновь: ${b.name}` };
-        }
-      }
-    }
-
-    return null;
-  }
-
-  function interact() {
-    const inter = findNearbyInteractable();
-    if (!inter) return null;
-
-    if (inter.type === 'chest') {
-      const ch = inter.target;
-      ch.opened = true;
-      if (!state.openedChests.includes(ch.id)) state.openedChests.push(ch.id);
-      sound.play('chest');
-      spawnParticles(ch.x, ch.y, 26, '#fbbf24', 180, 0.7, 4.5, 14);
-
-      if (ch.secretId) {
-        const sec = SECRETS.find(s => s.id === ch.secretId);
-        if (sec && !state.discoveredSecrets.includes(sec.id)) {
-          state.discoveredSecrets.push(sec.id);
-          state.player.permanentBonusHp += sec.bonusHp || 15;
-          syncPlayerVitals(false);
-          state.player.hp = Math.min(state.player.maxHp, state.player.hp + (sec.bonusHp || 15));
-          for (const rw of sec.rewardItems) grantRewardItem(rw, false);
-          pushToast(`СЕКРЕТ ОТКРЫТ: ${sec.name}!`, `Постоянный бонус +${sec.bonusHp} к макс. здоровью!`, '#fbbf24', '🗝️');
-        }
-      } else {
-        const gold = ch.kind === 'gold' ? 75 + Math.floor(Math.random() * 55) : 32 + Math.floor(Math.random() * 30);
-        grantRewardItem({ type: 'gold', amount: gold }, false);
-        const resPool = ch.kind === 'gold' ? ['mithril', 'soul', 'crystal'] : ['iron', 'herb', 'wood'];
-        const rId = resPool[Math.floor(Math.random() * resPool.length)];
-        grantRewardItem({ type: 'resource', id: rId, count: 3 }, false);
-        grantRewardItem({ type: 'consumable', id: ch.kind === 'gold' ? 'potion_greater' : 'potion_hp', count: 1 }, false);
-      }
-      checkAchievements();
-      saveGame();
-      return { action: 'chest_opened' };
-    }
-
-    if (inter.type === 'brazier') {
-      const br = inter.target;
-      br.lit = true;
-      if (!state.litBraziers.includes(br.id)) state.litBraziers.push(br.id);
-      sound.play('skill_fire');
-      spawnParticles(br.x, br.y, 20, '#38bdf8', 150, 0.6, 4.5, 16);
-      pushToast('Жаровня Предтеч зажжена', `Зажжено ${state.litBraziers.length} из 3`, '#38bdf8', '🔥');
-      if (state.litBraziers.length >= 3) {
-        sound.play('levelup');
-        pushToast('Монолит пробудился!', 'Тайный сундук у подножия Монолита открыт!', '#fbbf24', '🌙');
-      }
-      return { action: 'brazier_lit' };
-    }
-
-    if (inter.type === 'locked_monolith') {
-      pushToast('Сундук запечатан', `Зажгите все 3 древние жаровни рядом с Монолитом (${state.litBraziers.length}/3)`, '#38bdf8', '🔒');
-      return { action: 'locked' };
-    }
-
-    if (inter.type === 'campfire') {
-      const camp = inter.target;
-      if (!state.unlockedCampfires.includes(camp.id)) {
-        state.unlockedCampfires.push(camp.id);
-        pushToast('Костёр открыт!', `${camp.name} доступен для быстрого перемещения`, '#fb923c', '🔥');
-      }
-      state.respawnCampId = camp.id;
-      syncPlayerVitals(true);
-      state.player.satiety = Math.max(state.player.satiety, 85);
-      sound.play('potion');
-      spawnParticles(camp.x, camp.y, 22, '#fb923c', 140, 0.65, 4.5, 14);
-      addFloatingText(state.player.x, state.player.y - 30, 'Силы восстановлены!', '#4ade80', 15);
-      checkQuests();
-      checkAchievements();
-      saveGame();
-      return { action: 'campfire_rest', camp };
-    }
-
-    if (inter.type === 'npc') {
-      const npc = inter.target;
-      sound.play('ui');
-      if (npc.action === 'quest_heal') {
-        syncPlayerVitals(true);
-      }
-      return { action: 'npc_talk', npc };
-    }
-
-    if (inter.type === 'resummon_boss') {
-      spawnBoss(inter.target.id);
-      return { action: 'boss_spawned' };
-    }
-
-    return null;
-  }
-
-  // ── Прокачка, Ремесло, Заточка, Экипировка, Перемещение ──────────────
-  function allocateStat(attr) {
-    const p = state.player;
-    if (p.statPoints <= 0 || !(attr in p.attributes)) return false;
-    p.statPoints -= 1;
-    p.attributes[attr] += 1;
-    syncPlayerVitals(false);
-    if (attr === 'vitality') p.hp = Math.min(p.maxHp, p.hp + 22);
-    sound.play('ui');
-    saveGame();
-    return true;
-  }
-
-  function upgradeSkill(skillId) {
-    if (!(skillId in SKILLS)) return false;
-    const cur = state.skillRanks[skillId] || 0;
-    if (cur >= 5) return false;
-    const soulCost = cur === 0 ? 1 : cur * 2;
-    if (state.player.skillPoints <= 0 && (state.inventory.resources.soul || 0) < soulCost) {
-      return false;
-    }
-    if (state.player.skillPoints > 0) {
-      state.player.skillPoints -= 1;
-    } else {
-      state.inventory.resources.soul -= soulCost;
-    }
-    state.skillRanks[skillId] = cur + 1;
-    sound.play('levelup');
-    saveGame();
-    return true;
-  }
-
-  function upgradeWeapon(weaponId) {
-    if (!state.inventory.weapons.includes(weaponId)) return false;
-    const cur = state.weaponUpgrades[weaponId] || 0;
-    if (cur >= 10) return false;
-    const goldCost = 45 + cur * 45;
-    const resKey = cur < 4 ? 'iron' : cur < 7 ? 'mithril' : 'crystal';
-    const resCost = 2 + Math.floor(cur / 2);
-
-    if (state.player.gold < goldCost || (state.inventory.resources[resKey] || 0) < resCost) {
-      return false;
-    }
-    state.player.gold -= goldCost;
-    state.inventory.resources[resKey] -= resCost;
-    state.weaponUpgrades[weaponId] = cur + 1;
-    state.questProgress.craft_or_upgrade += 1;
-    sound.play('chest');
-    checkQuests();
-    checkAchievements();
-    saveGame();
-    return true;
-  }
-
-  function craftRecipe(recipeId) {
-    const rec = RECIPES.find(r => r.id === recipeId);
-    if (!rec) return false;
-    if (state.player.gold < rec.costGold) return false;
-    for (const [resId, need] of Object.entries(rec.ingredients)) {
-      if ((state.inventory.resources[resId] || 0) < need) return false;
-    }
-    // Если оружие/броня/реликвия уже созданы — не тратим ресурсы впустую
-    if (rec.resultType === 'weapon' && state.inventory.weapons.includes(rec.resultId)) return false;
-    if (rec.resultType === 'armor' && state.inventory.armors.includes(rec.resultId)) return false;
-    if (rec.resultType === 'relic' && state.inventory.relics.includes(rec.resultId)) return false;
-
-    state.player.gold -= rec.costGold;
-    for (const [resId, need] of Object.entries(rec.ingredients)) {
-      state.inventory.resources[resId] -= need;
-    }
-    grantRewardItem({ type: rec.resultType, id: rec.resultId, count: rec.resultCount || 1 }, false);
-    state.stats.totalCrafted += 1;
-    state.questProgress.craft_or_upgrade += 1;
-    sound.play('chest');
-    checkQuests();
-    checkAchievements();
-    saveGame();
-    return true;
-  }
-
-  function equipItem(slotType, itemId, relicSlot = 0) {
-    const p = state.player;
-    if (slotType === 'weapon' && state.inventory.weapons.includes(itemId)) {
-      p.equippedWeapon = itemId;
-    } else if (slotType === 'armor' && state.inventory.armors.includes(itemId)) {
-      p.equippedArmor = itemId;
-    } else if (slotType === 'relic' && state.inventory.relics.includes(itemId)) {
-      const otherSlot = relicSlot === 0 ? 1 : 0;
-      if (p.equippedRelics[otherSlot] === itemId) p.equippedRelics[otherSlot] = null;
-      p.equippedRelics[relicSlot] = itemId;
-    } else if (slotType === 'consumable' && CONSUMABLES[itemId]) {
-      p.quickConsumable = itemId;
-    } else {
-      return false;
-    }
-    syncPlayerVitals(false);
-    sound.play('ui');
-    saveGame();
-    return true;
-  }
-
-  function fastTravel(campId) {
-    if (!state.unlockedCampfires.includes(campId)) return false;
-    const camp = CAMPFIRES.find(c => c.id === campId);
-    if (!camp) return false;
-    state.player.x = camp.x;
-    state.player.y = camp.y + 42;
-    state.player.z = 0;
-    state.player.vz = 0;
-    state.activeBoss = null;
-    sound.setBossMode(false);
-    revealFogAround(camp.x, camp.y, 4);
-    sound.play('skill_shield');
-    spawnParticles(state.player.x, state.player.y, 24, '#38bdf8', 160, 0.6, 4.5, 14);
-    pushToast('Быстрое перемещение', camp.name, '#38bdf8', '🧭');
-    return true;
-  }
-
-  // ── Спавн врагов и боссов + ИИ ───────────────────────────────────────
-  function spawnBoss(bossId) {
-    const def = BOSSES[bossId];
-    if (!def) return;
-    state.activeBoss = {
-      ...def,
-      isBoss: true,
-      maxHp: def.hp,
-      hp: def.hp,
-      x: def.x,
-      y: def.y,
-      z: 0,
-      vz: 0,
-      vx: 0,
-      vy: 0,
-      phase: 1,
-      actionTimer: 1.6,
-      patternStep: 0,
-      dashTimer: 0,
-      dashVx: 0,
-      dashVy: 0,
-      hitFlash: 0,
-      burnTimer: 0,
-      burnDps: 0
-    };
-    sound.setBossMode(true);
-    sound.play('boss_roar');
-    addScreenShake(10);
-    pushToast(`БОСС: ${def.name}`, def.title, '#f87171', '💀');
-  }
-
-  function updateSpawning() {
-    const p = state.player;
-    // Проверка входа на арену живого босса
-    if (!state.activeBoss) {
-      for (const b of Object.values(BOSSES)) {
-        if (state.defeatedBosses.includes(b.id)) continue;
-        if (Math.hypot(p.x - b.x, p.y - b.y) < b.arenaRadius + 95) {
-          spawnBoss(b.id);
-          break;
-        }
-      }
-    } else {
-      // Если игрок убежал очень далеко от арены — босс возвращается на пост
-      const b = state.activeBoss;
-      if (Math.hypot(p.x - b.x, p.y - b.y) > 950) {
-        state.activeBoss = null;
-        sound.setBossMode(false);
-      }
-    }
-
-    // Удаляем слишком далёких обычных врагов
-    for (let i = state.enemies.length - 1; i >= 0; i--) {
-      const e = state.enemies[i];
-      if (dist2(e.x, e.y, p.x, p.y) > 1180 * 1180) {
-        state.enemies.splice(i, 1);
-      }
-    }
-
-    const maxEnemies = state.settings.quality === 'low' ? 14 : state.settings.quality === 'high' ? 24 : 18;
-    if (state.enemies.length >= maxEnemies) return;
-
-    const ang = Math.random() * Math.PI * 2;
-    const dist = 480 + Math.random() * 340;
-    const sx = p.x + Math.cos(ang) * dist;
-    const sy = p.y + Math.sin(ang) * dist;
-    if (sx < 120 || sx > world.width - 120 || sy < 120 || sy > world.height - 120) return;
-
-    // Не спавнить в мирном Лагере Рубежа и у костров
-    if (dist2(sx, sy, 2400, 2380) < 420 * 420) return;
+  spawnEnemyAt(x, y, forcedKind = null) {
     for (const c of CAMPFIRES) {
-      if (dist2(sx, sy, c.x, c.y) < 190 * 190) return;
+      if (dist2(x, y, c.x, c.y) < 250 * 250) return null;
     }
-
-    const biomeId = getBiomeIdAt(sx, sy);
+    const biomeId = getBiomeIdAt(x, y);
     const pool = BIOMES[biomeId].enemies;
-    const enemyKey = pool[Math.floor(Math.random() * pool.length)];
-    const def = ENEMIES[enemyKey];
-    if (!def) return;
+    const isNight = this.isNightTime();
+    let kind = forcedKind || pool[Math.floor(Math.random() * pool.length)];
+    if (!forcedKind && isNight && biomeId === 'forest' && Math.random() < 0.35) {
+      kind = 'infected_runner';
+    }
+    const tpl = ENEMIES[kind] || ENEMIES.zombie;
+    const nightBoost = isNight ? 1.15 : 1.0;
 
-    const nightBuff = isNightTime() ? 1.18 : 1.0;
-    state.enemies.push({
-      uid: Math.random().toString(36).slice(2),
-      ...def,
-      maxHp: Math.round(def.hp * nightBuff),
-      hp: Math.round(def.hp * nightBuff),
-      damage: Math.round(def.damage * nightBuff),
-      x: sx,
-      y: sy,
+    const e = {
+      id: `en_${Math.random().toString(36).slice(2, 9)}`,
+      kind,
+      sprite: tpl.sprite,
+      name: tpl.name,
+      biome: biomeId,
+      x,
+      y,
       z: 0,
       vz: 0,
       vx: 0,
       vy: 0,
-      attackTimer: 0.7 + Math.random() * 0.9,
-      specialTimer: 2.2 + Math.random() * 1.8,
+      radius: tpl.radius,
+      hp: Math.round(tpl.hp * nightBoost),
+      maxHp: Math.round(tpl.hp * nightBoost),
+      damage: Math.round(tpl.damage * nightBoost),
+      speed: tpl.speed,
+      behavior: tpl.behavior,
+      attackRange: tpl.attackRange || 44,
+      projSpeed: tpl.projSpeed || 420,
+      xp: Math.round(tpl.xp * (isNight ? 1.25 : 1)),
+      coins: tpl.coins,
+      drops: tpl.drops || [],
+      attackCd: randRange(0.4, 1.3),
+      burstLeft: 0,
+      burstTimer: 0,
+      wanderAngle: Math.random() * Math.PI * 2,
+      wanderTimer: randRange(1, 3),
       stunTimer: 0,
       hitFlash: 0,
-      burnTimer: 0,
-      burnDps: 0
+      animTime: Math.random() * 5
+    };
+    this.enemies.push(e);
+    return e;
+  }
+
+  isNightTime() {
+    return this.timeOfDay < 0.20 || this.timeOfDay > 0.80;
+  }
+
+  spawnSpriteEffect(kind, x, y, scale = 1.0, fps = 16) {
+    const cap = this.settings.quality === 'low' ? 18 : 42;
+    if (this.spriteEffects.length >= cap) this.spriteEffects.shift();
+    const framesMap = { explosion: 6, muzzle: 4, magic: 6, hit: 4, smoke: 5, water: 4 };
+    this.spriteEffects.push({
+      kind,
+      x,
+      y,
+      scale,
+      frame: 0,
+      totalFrames: framesMap[kind] || 4,
+      fps,
+      age: 0
     });
   }
 
-  // ── Главный цикл обновления физики и логики (dt в секундах) ──────────
-  let spawnAccum = 0;
-  let fogAccum = 0;
-  let autosaveAccum = 0;
+  // ── Главный цикл обновления ──────────────────────────────────────────
+  update(dt, inputState) {
+    if (this.paused) return;
+    dt = Math.min(dt, 0.05);
 
-  function update(dt, inputState = { moveX: 0, moveY: 0, attackHeld: false }) {
-    if (state.paused || state.gameOver) return;
-    const clampedDt = Math.min(0.05, Math.max(0.001, dt));
-    const p = state.player;
-    const cs = getComputedStats();
-
-    state.playTime += clampedDt;
-    // Полный цикл суток ~ 4.5 минуты
-    state.dayTime = (state.dayTime + clampedDt / 270) % 1;
-    state.currentBiome = getBiomeIdAt(p.x, p.y);
-
-    // Таймеры кулдаунов игрока
-    if (p.attackCooldown > 0) p.attackCooldown = Math.max(0, p.attackCooldown - clampedDt);
-    if (p.swingTimer > 0) p.swingTimer = Math.max(0, p.swingTimer - clampedDt);
-    if (p.invulnTimer > 0) p.invulnTimer = Math.max(0, p.invulnTimer - clampedDt);
-    if (p.hitFlash > 0) p.hitFlash = Math.max(0, p.hitFlash - clampedDt);
-    if (p.consumableCooldown > 0) p.consumableCooldown = Math.max(0, p.consumableCooldown - clampedDt);
-    if (p.phoenixCooldown > 0) p.phoenixCooldown = Math.max(0, p.phoenixCooldown - clampedDt);
-    if (p.regenTimer > 0) p.regenTimer = Math.max(0, p.regenTimer - clampedDt);
-    if (p.rageTimer > 0) p.rageTimer = Math.max(0, p.rageTimer - clampedDt);
-    if (p.aegisTimer > 0) p.aegisTimer = Math.max(0, p.aegisTimer - clampedDt);
-    if (p.comboResetTimer > 0) {
-      p.comboResetTimer -= clampedDt;
-      if (p.comboResetTimer <= 0) p.comboStep = 0;
+    this.stats.playTime += dt;
+    this.autosaveTimer += dt;
+    if (this.autosaveTimer >= 20) {
+      this.autosaveTimer = 0;
+      this.saveGame(true);
     }
 
-    for (const sk of Object.keys(state.skillCooldowns)) {
-      if (state.skillCooldowns[sk] > 0) {
-        state.skillCooldowns[sk] = Math.max(0, state.skillCooldowns[sk] - clampedDt);
+    // Суточный цикл (полные сутки ~ 4 минуты)
+    const prevDay = this.timeOfDay;
+    this.timeOfDay = (this.timeOfDay + dt / 240) % 1;
+    if (this.timeOfDay < prevDay) this.dayCount++;
+
+    // Потребление сытости и пассивная регенерация
+    const p = this.player;
+    if (!p.dead) {
+      p.hunger = Math.max(0, p.hunger - dt * 0.26);
+      if (p.hunger > 65 && p.hp < p.maxHp) {
+        p.hp = Math.min(p.maxHp, p.hp + dt * (1.6 + p.stats.vitality * 0.35));
+      }
+      if (p.foodRegenTimer > 0) {
+        p.foodRegenTimer -= dt;
+        p.hp = Math.min(p.maxHp, p.hp + dt * 7);
       }
     }
 
-    // Регенерация выносливости, сытости и здоровья
-    p.stamina = Math.min(cs.maxStamina, p.stamina + cs.staminaRegen * clampedDt);
-    p.satiety = Math.max(0, p.satiety - clampedDt * 0.22);
-    // У костра в Лагере Рубежа здоровье плавно восстанавливается
-    const nearHaven = dist2(p.x, p.y, 2400, 2350) < 260 * 260;
-    const totalRegen = cs.hpRegen + (nearHaven ? 8 : 0);
-    if (totalRegen > 0 && p.hp < cs.maxHp) {
-      p.hp = Math.min(cs.maxHp, p.hp + totalRegen * clampedDt);
+    // Дым из трубы Завода в Пустыне
+    if (Math.random() < dt * 2.2) {
+      for (const bld of this.world.buildings) {
+        if (bld.smokes && dist2(p.x, p.y, bld.x, bld.y) < 950 * 950) {
+          this.spawnSpriteEffect('smoke', bld.x + 28, bld.y - bld.spriteH + 8, 1.1, 8);
+        }
+      }
     }
 
-    // ── Передвижение и Громовой Прыжок ─────────────────────────────────
-    if (p.thunderLeap) {
-      const tl = p.thunderLeap;
-      tl.timer += clampedDt;
-      const t = Math.min(1, tl.timer / tl.duration);
-      p.x = tl.startX + (tl.targetX - tl.startX) * t;
-      p.y = tl.startY + (tl.targetY - tl.startY) * t;
-      p.z = Math.sin(t * Math.PI) * 92;
-      if (t >= 1) {
+    this.updatePlayer(dt, inputState);
+    this.updateVehicles(dt);
+    this.updateNodes(dt);
+    this.updateEnemies(dt);
+    this.updateBosses(dt);
+    this.updateProjectiles(dt);
+    this.updateThrownGrenades(dt);
+    this.updateDrops(dt);
+    this.updateEffects(dt);
+    this.checkWorldInteractions();
+
+    // Поддержание живой плотности врагов вокруг героя
+    this.spawnTimer -= dt;
+    const maxEnemies = this.settings.quality === 'low' ? 24 : 36;
+    if (this.spawnTimer <= 0) {
+      this.spawnTimer = 1.9;
+      this.enemies = this.enemies.filter(e => dist2(e.x, e.y, p.x, p.y) < 1750 * 1750);
+      if (this.enemies.length < maxEnemies) {
+        const ang = Math.random() * Math.PI * 2;
+        const dist = randRange(540, 960);
+        const sx = clamp(p.x + Math.cos(ang) * dist, 150, this.world.width - 150);
+        const sy = clamp(p.y + Math.sin(ang) * dist, 150, this.world.height - 150);
+        this.spawnEnemyAt(sx, sy);
+      }
+    }
+
+    // Плавная камера без размытия пикселей
+    this.camera.x += (p.x - this.camera.x) * Math.min(1, dt * 11);
+    this.camera.y += (p.y - this.camera.y) * Math.min(1, dt * 11);
+    if (this.camera.shake > 0) {
+      this.camera.shake = Math.max(0, this.camera.shake - dt * 28);
+    }
+  }
+
+  updateFacingFromAngle(angle) {
+    const p = this.player;
+    p.facing = angle;
+    const ax = Math.cos(angle);
+    const ay = Math.sin(angle);
+    if (Math.abs(ax) > Math.abs(ay)) {
+      p.facingDir = ax >= 0 ? 'right' : 'left';
+    } else {
+      p.facingDir = ay >= 0 ? 'down' : 'up';
+    }
+  }
+
+  updatePlayer(dt, input) {
+    const p = this.player;
+    if (p.dead) return;
+
+    p.attackTimer = Math.max(0, p.attackTimer - dt);
+    p.attackAnimTimer = Math.max(0, p.attackAnimTimer - dt);
+    p.hurtAnimTimer = Math.max(0, p.hurtAnimTimer - dt);
+    p.grenadeTimer = Math.max(0, p.grenadeTimer - dt);
+    p.dashTimer = Math.max(0, p.dashTimer - dt);
+    p.invulnTimer = Math.max(0, p.invulnTimer - dt);
+    p.shieldBuffTimer = Math.max(0, p.shieldBuffTimer - dt);
+
+    if (p.comboTimer > 0) {
+      p.comboTimer -= dt;
+      if (p.comboTimer <= 0) p.comboCount = 0;
+    }
+
+    for (const sk of Object.values(this.skills)) {
+      if (sk.cd > 0) sk.cd = Math.max(0, sk.cd - dt);
+    }
+
+    // Спринт (Shift или полный наклон мобильного джойстика > 94%)
+    const moveX = input?.moveX || 0;
+    const moveY = input?.moveY || 0;
+    const mag = Math.hypot(moveX, moveY);
+    const wantsSprint = !!input?.sprintHeld;
+    p.sprinting = wantsSprint && mag > 0.2 && !p.vehicleId && p.stamina > 6;
+
+    if (p.sprinting) {
+      p.stamina = Math.max(0, p.stamina - dt * 11);
+    } else {
+      const stamRegen = (24 + p.stats.agility * 2.5) * (p.hunger > 30 ? 1 : 0.72);
+      p.stamina = Math.min(p.maxStamina, p.stamina + stamRegen * dt);
+    }
+
+    // Прыжок по оси Z
+    if (p.z > 0 || p.vz !== 0) {
+      p.z += p.vz * dt;
+      p.vz -= 980 * dt;
+      if (p.z <= 0) {
         p.z = 0;
         p.vz = 0;
-        p.thunderLeap = null;
-        sound.play('slam');
-        addScreenShake(11);
-        spawnParticles(p.x, p.y, 32, '#38bdf8', 240, 0.65, 5, 10);
-        state.shockwaves.push({
-          x: p.x, y: p.y, radius: 16, maxRadius: tl.radius,
-          speed: 480, color: '#38bdf8', friendly: true, damage: 0
-        });
-        const targets = state.activeBoss ? [state.activeBoss, ...state.enemies] : state.enemies;
-        for (const e of targets) {
-          if (!e || e.hp <= 0) continue;
-          if (Math.hypot(e.x - p.x, e.y - p.y) <= tl.radius + e.radius) {
-            damageEnemy(e, tl.damage, cs.critChance + 0.15, Math.atan2(e.y - p.y, e.x - p.x), 300, 1.8);
+        this.spawnDust(p.x, p.y, '#cbd5e1', 5);
+      }
+    }
+
+    // Перемещение (пешком, рывок или за рулём транспорта!)
+    if (p.vehicleId) {
+      const veh = this.world.vehicles.find(v => v.id === p.vehicleId);
+      if (!veh) {
+        p.vehicleId = null;
+      } else {
+        if (mag > 0.06) {
+          const nx = moveX / mag;
+          const ny = moveY / mag;
+          veh.vx = nx * veh.maxSpeed;
+          veh.vy = ny * veh.maxSpeed;
+          veh.angle = Math.atan2(ny, nx);
+          this.updateFacingFromAngle(veh.angle);
+          if (Math.random() < dt * 9) {
+            this.spawnSpriteEffect('smoke', veh.x - nx * 20, veh.y - ny * 12, 0.7, 14);
           }
+        } else {
+          veh.vx *= 0.84;
+          veh.vy *= 0.84;
         }
-        for (const node of world.nodes) {
-          if (node.respawnTimer <= 0 && node.hp > 0 && Math.hypot(node.x - p.x, node.y - p.y) <= tl.radius + node.radius) {
-            hitResourceNode(node, tl.damage);
+        veh.x = clamp(veh.x + veh.vx * dt, 64, this.world.width - 64);
+        veh.y = clamp(veh.y + veh.vy * dt, 64, this.world.height - 64);
+        this.resolveEntityObstacles(veh, false);
+        p.x = veh.x;
+        p.y = veh.y;
+
+        // Таран врагов на скорости!
+        const speedNow = Math.hypot(veh.vx, veh.vy);
+        if (speedNow > 180) {
+          for (let i = this.enemies.length - 1; i >= 0; i--) {
+            const e = this.enemies[i];
+            if (dist2(veh.x, veh.y, e.x, e.y) < (veh.radius + e.radius + 4) ** 2 && e.stunTimer <= 0) {
+              e.stunTimer = 0.7;
+              e.vx = (veh.vx / speedNow) * 320;
+              e.vy = (veh.vy / speedNow) * 320;
+              this.damageEnemy(e, 34 + p.level * 4, true, '#fbbf24');
+            }
           }
         }
       }
+    } else if (p.dashActive > 0) {
+      p.dashActive -= dt;
+      const dashSpeed = 540;
+      p.vx = p.dashDirX * dashSpeed;
+      p.vy = p.dashDirY * dashSpeed;
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+      this.resolveEntityObstacles(p, p.z > 14);
     } else {
-      let mx = inputState.moveX || 0;
-      let my = inputState.moveY || 0;
-      const mLen = Math.hypot(mx, my);
-      if (mLen > 1) {
-        mx /= mLen;
-        my /= mLen;
-      }
-      if (mLen > 0.08) {
-        p.facingX = mx / (mLen || 1);
-        p.facingY = my / (mLen || 1);
-        if (p.swingTimer <= 0) {
-          p.facingAngle = Math.atan2(p.facingY, p.facingX);
+      if (mag > 0.05) {
+        const spd = this.getMoveSpeed() * Math.min(1, mag);
+        const nx = moveX / mag;
+        const ny = moveY / mag;
+        p.vx = nx * spd;
+        p.vy = ny * spd;
+        if (p.attackAnimTimer <= 0) {
+          this.updateFacingFromAngle(Math.atan2(ny, nx));
         }
-        p.walkCycle += clampedDt * 11 * Math.min(1, mLen);
-      }
-
-      const targetVx = mx * cs.moveSpeed;
-      const targetVy = my * cs.moveSpeed;
-      const accel = 14;
-      p.vx += (targetVx - p.vx) * Math.min(1, accel * clampedDt);
-      p.vy += (targetVy - p.vy) * Math.min(1, accel * clampedDt);
-
-      p.x += p.vx * clampedDt;
-      p.y += p.vy * clampedDt;
-
-      // Физика вертикального прыжка по оси Z
-      if (p.z > 0 || p.vz !== 0) {
-        p.z += p.vz * clampedDt;
-        p.vz -= 940 * clampedDt;
-        if (p.z <= 0) {
-          p.z = 0;
-          p.vz = 0;
+        p.x += p.vx * dt;
+        p.y += p.vy * dt;
+        this.resolveEntityObstacles(p, p.z > 14);
+        if (p.sprinting && p.z === 0 && Math.random() < dt * 8) {
+          this.spawnDust(p.x, p.y + 8, '#cbd5e1', 2);
         }
-      }
-
-      resolveEntityWorldCollisions(p, true);
-    }
-
-    // Удержание кнопки атаки для непрерывного боя на сенсоре
-    if (inputState.attackHeld && p.attackCooldown <= 0) {
-      triggerAttack();
-    }
-
-    // Вращающиеся эфирные клинки (способность 3)
-    if (p.aegisTimer > 0) {
-      updateOrbitingBlades(clampedDt, cs);
-    }
-
-    // ── Обновление ресурсов мира ───────────────────────────────────────
-    for (const node of world.nodes) {
-      if (node.hitFlash > 0) node.hitFlash = Math.max(0, node.hitFlash - clampedDt);
-      if (node.respawnTimer > 0 && !node.permanentBreak) {
-        node.respawnTimer -= clampedDt;
-        if (node.respawnTimer <= 0) {
-          node.respawnTimer = 0;
-          node.hp = node.maxHp;
-        }
+      } else {
+        p.vx = 0;
+        p.vy = 0;
       }
     }
 
-    // ── Опасности мира (шипы, кислота, лава, водная преграда острова) ──
-    updateHazards(clampedDt);
+    p.x = clamp(p.x, 48, this.world.width - 48);
+    p.y = clamp(p.y, 48, this.world.height - 48);
 
-    // ── Снаряды, ударные волны, телеграфы ──────────────────────────────
-    updateProjectiles(clampedDt);
-    updateShockwaves(clampedDt);
-    updateTelegraphs(clampedDt);
-
-    // ── Враги и Босс ───────────────────────────────────────────────────
-    updateEnemies(clampedDt);
-    if (state.activeBoss) updateBoss(clampedDt);
-
-    // ── Сбор трофеев с магнитом ────────────────────────────────────────
-    updateLoot(clampedDt, cs);
-
-    // ── Всплывающие тексты, частицы, уведомления ───────────────────────
-    for (let i = floatingTexts.length - 1; i >= 0; i--) {
-      const ft = floatingTexts[i];
-      ft.y += ft.vy * clampedDt;
-      ft.vy *= 0.92;
-      ft.life -= clampedDt;
-      if (ft.life <= 0) floatingTexts.splice(i, 1);
-    }
-    for (let i = 0; i < particles.length; i++) {
-      const pt = particles[i];
-      if (!pt.active) continue;
-      pt.x += pt.vx * clampedDt;
-      pt.y += pt.vy * clampedDt;
-      pt.z = Math.max(0, pt.z + pt.vz * clampedDt);
-      pt.vz -= 260 * clampedDt;
-      pt.life -= clampedDt;
-      if (pt.life <= 0) pt.active = false;
-    }
-    for (let i = toasts.length - 1; i >= 0; i--) {
-      toasts[i].timer -= clampedDt;
-      if (toasts[i].timer <= 0) toasts.splice(i, 1);
-    }
-
-    // Камера плавно следует за героем
-    state.camera.x += (p.x - state.camera.x) * Math.min(1, 10 * clampedDt);
-    state.camera.y += (p.y - state.camera.y) * Math.min(1, 10 * clampedDt);
-    if (state.camera.shake > 0) {
-      state.camera.shake = Math.max(0, state.camera.shake - clampedDt * 28);
-    }
-
-    state.nearbyInteractable = findNearbyInteractable();
-
-    spawnAccum += clampedDt;
-    if (spawnAccum >= 0.9) {
-      spawnAccum = 0;
-      updateSpawning();
-    }
-
-    fogAccum += clampedDt;
-    if (fogAccum >= 0.4) {
-      fogAccum = 0;
-      revealFogAround(p.x, p.y, 3);
-    }
-
-    autosaveAccum += clampedDt;
-    if (autosaveAccum >= 15) {
-      autosaveAccum = 0;
-      saveGame();
-    }
-  }
-
-  let aegisHitTick = 0;
-  function updateOrbitingBlades(dt, cs) {
-    aegisHitTick -= dt;
-    if (aegisHitTick > 0) return;
-    aegisHitTick = 0.28;
-    const p = state.player;
-    const rank = state.skillRanks.aegis_pulse || 1;
-    const bladeDmg = Math.max(6, Math.round(cs.weaponDamage * (0.48 + rank * 0.08) * cs.skillMult));
-    const orbitR = 72;
-    for (let b = 0; b < 3; b++) {
-      const ang = state.playTime * 4.5 + (b * Math.PI * 2) / 3;
-      const bx = p.x + Math.cos(ang) * orbitR;
-      const by = p.y + Math.sin(ang) * orbitR;
-      const targets = state.activeBoss ? [state.activeBoss, ...state.enemies] : state.enemies;
-      for (const e of targets) {
-        if (!e || e.hp <= 0) continue;
-        if (Math.hypot(e.x - bx, e.y - by) <= e.radius + 22) {
-          damageEnemy(e, bladeDmg, cs.critChance, ang, 70, 0);
-        }
-      }
-    }
-  }
-
-  function resolveEntityWorldCollisions(ent, isPlayer = false) {
-    ent.x = Math.max(48, Math.min(world.width - 48, ent.x));
-    ent.y = Math.max(48, Math.min(world.height - 48, ent.y));
-
-    const nearObs = world.queryObstaclesNear(ent.x, ent.y);
-    for (let i = 0; i < nearObs.length; i++) {
-      const o = nearObs[i];
-      const dx = ent.x - o.x;
-      const dy = ent.y - o.y;
-      const minD = ent.radius + o.radius;
-      const d2 = dx * dx + dy * dy;
-      if (d2 < minD * minD && d2 > 0.0001) {
-        const d = Math.sqrt(d2);
-        const push = minD - d;
-        ent.x += (dx / d) * push;
-        ent.y += (dy / d) * push;
-      }
-    }
-
-    // Столкновение с неразрушенными жилами/деревьями/рунной стеной
-    for (let i = 0; i < world.nodes.length; i++) {
-      const n = world.nodes[i];
-      if (n.respawnTimer > 0 || n.hp <= 0 || n.kind === 'herb') continue;
-      const dx = ent.x - n.x;
-      const dy = ent.y - n.y;
-      const minD = ent.radius + n.radius * 0.85;
-      const d2 = dx * dx + dy * dy;
-      if (d2 < minD * minD && d2 > 0.0001) {
-        const d = Math.sqrt(d2);
-        const push = minD - d;
-        ent.x += (dx / d) * push;
-        ent.y += (dy / d) * push;
-      }
-    }
-
-    if (!isPlayer) {
-      // Враги не заходят внутрь мирного святилища Лагеря Рубежа
-      const dx = ent.x - 2400;
-      const dy = ent.y - 2380;
-      const d = Math.hypot(dx, dy);
-      if (d < 340 && d > 0.01) {
-        ent.x = 2400 + (dx / d) * 340;
-        ent.y = 2380 + (dy / d) * 340;
-      }
-    }
-  }
-
-  function updateHazards(dt) {
-    const p = state.player;
-    for (const h of world.hazards) {
-      if (h.kind === 'water_moat') {
-        const dx = p.x - h.x;
-        const dy = p.y - h.y;
-        const d = Math.hypot(dx, dy);
-        if (d > h.innerRadius && d < h.outerRadius && p.z <= 6) {
-          // Проверяем, стоит ли игрок на каменной плите-островке
+    // Водная преграда вокруг Острова Контрабандистов
+    if (p.z <= 8 && !p.vehicleId) {
+      for (const hz of this.world.hazards) {
+        const d2 = dist2(p.x, p.y, hz.x, hz.y);
+        if (d2 > hz.innerRadius * hz.innerRadius && d2 < hz.outerRadius * hz.outerRadius) {
           let onStone = false;
-          for (const st of world.steppingStones) {
-            if (Math.hypot(p.x - st.x, p.y - st.y) <= st.radius + 8) {
+          for (const st of this.world.steppingStones) {
+            if (dist2(p.x, p.y, st.x, st.y) <= (st.radius + 10) ** 2) {
               onStone = true;
               break;
             }
           }
           if (!onStone) {
-            // Мягко выталкиваем на ближайший берег или плиту с брызгами (без застревания!)
-            const targetR = d < (h.innerRadius + h.outerRadius) * 0.5 ? h.innerRadius - 8 : h.outerRadius + 8;
-            const ang = Math.atan2(dy, dx);
-            p.x = h.x + Math.cos(ang) * targetR;
-            p.y = h.y + Math.sin(ang) * targetR;
-            spawnParticles(p.x, p.y, 10, '#38bdf8', 110, 0.4, 4, 8);
-            addFloatingText(p.x, p.y - 24, 'Прыгай по плитам!', '#38bdf8', 13);
+            // Глубокая вода отталкивает на берег и показывает анимацию брызг воды!
+            const ang = Math.atan2(p.y - hz.y, p.x - hz.x);
+            const mid = (hz.innerRadius + hz.outerRadius) * 0.5;
+            const d = Math.sqrt(d2);
+            const targetR = d < mid ? hz.innerRadius - 6 : hz.outerRadius + 6;
+            p.x = hz.x + Math.cos(ang) * targetR;
+            p.y = hz.y + Math.sin(ang) * targetR;
+            this.waterSplashTimer -= dt;
+            if (this.waterSplashTimer <= 0) {
+              this.waterSplashTimer = 0.35;
+              this.spawnSpriteEffect('water', p.x, p.y, 1.15, 12);
+              this.pushToast('💧 Глубокая река! Перепрыгни по каменным плитам (ПРЫЖОК)', '#38bdf8');
+            }
           }
         }
-        continue;
-      }
-
-      if (p.z > 10) continue; // В прыжке игрок перелетает ловушки!
-      const d = Math.hypot(p.x - h.x, p.y - h.y);
-      if (d > h.radius + p.radius * 0.5) continue;
-
-      if (h.kind === 'spikes') {
-        const cycle = (state.playTime + (h.phase || 0)) % 3.2;
-        if (cycle > 1.9 && cycle < 2.9) {
-          damagePlayer(16, h.x, h.y);
-        }
-      } else if (h.kind === 'acid') {
-        damagePlayer(14, h.x, h.y);
-      } else if (h.kind === 'lava') {
-        damagePlayer(24, h.x, h.y);
       }
     }
-    void dt;
+
+    // Состояние анимации героя для hero_sheet.png
+    const moving = Math.hypot(p.vx, p.vy) > 12;
+    if (p.hurtAnimTimer > 0) {
+      p.animState = 'hurt';
+    } else if (p.z > 4) {
+      p.animState = 'jump';
+    } else if (p.attackAnimTimer > 0) {
+      p.animState = 'attack';
+    } else if (moving && p.sprinting) {
+      p.animState = 'run';
+    } else if (moving) {
+      p.animState = 'walk';
+    } else {
+      p.animState = 'idle';
+    }
+    p.animTime += dt * (p.sprinting ? 12 : 8.5);
+
+    if (input?.attackHeld && !p.vehicleId) {
+      this.performAttack();
+    }
   }
 
-  function damagePlayer(rawAmount, srcX = null, srcY = null) {
-    const p = state.player;
-    if (p.invulnTimer > 0 || state.gameOver) return;
-    const cs = getComputedStats();
-    let dmg = Math.max(2, Math.round(rawAmount - cs.defense * 0.55));
-    if (p.aegisTimer > 0) dmg = Math.max(1, Math.round(dmg * 0.60));
+  updateVehicles(dt) {
+    for (const v of this.world.vehicles) {
+      if (this.player.vehicleId === v.id) continue;
+      v.vx *= Math.pow(0.05, dt);
+      v.vy *= Math.pow(0.05, dt);
+      if (Math.hypot(v.vx, v.vy) > 4) {
+        v.x = clamp(v.x + v.vx * dt, 64, this.world.width - 64);
+        v.y = clamp(v.y + v.vy * dt, 64, this.world.height - 64);
+      }
+    }
+  }
 
-    p.hp -= dmg;
-    p.invulnTimer = 0.52;
-    p.hitFlash = 0.22;
-    sound.play('hurt');
-    addScreenShake(6);
-    addFloatingText(p.x, p.y - 26, `-${dmg}`, '#fb7185', 16);
-    spawnParticles(p.x, p.y, 10, '#fb7185', 140, 0.4, 4, 10);
-
-    if (srcX !== null && srcY !== null) {
-      const ang = Math.atan2(p.y - srcY, p.x - srcX);
-      p.vx += Math.cos(ang) * 165;
-      p.vy += Math.sin(ang) * 165;
+  // Точные коллизии сущности со зданиями (AABB), пропами и деревьями/ящиками
+  resolveEntityObstacles(ent, jumping = false) {
+    // 1. Прямоугольные здания (даже в прыжке здания нельзя перелететь насквозь)
+    for (const bld of this.world.buildings) {
+      const halfW = bld.colW * 0.5;
+      const halfH = bld.colH * 0.5;
+      const rectCx = bld.x;
+      const rectCy = bld.y - halfH;
+      const dx = ent.x - rectCx;
+      const dy = ent.y - rectCy;
+      const nearX = clamp(dx, -halfW, halfW);
+      const nearY = clamp(dy, -halfH, halfH);
+      const distX = dx - nearX;
+      const distY = dy - nearY;
+      const d2 = distX * distX + distY * distY;
+      if (d2 < ent.radius * ent.radius) {
+        if (d2 > 0.0001) {
+          const d = Math.sqrt(d2);
+          const overlap = ent.radius - d;
+          ent.x += (distX / d) * overlap;
+          ent.y += (distY / d) * overlap;
+        } else {
+          ent.y = rectCy + halfH + ent.radius + 1;
+        }
+      }
     }
 
-    if (p.hp <= 0) {
-      if (cs.hasPhoenix && p.phoenixCooldown <= 0) {
-        p.phoenixCooldown = 90;
-        p.hp = Math.round(cs.maxHp * 0.55);
-        p.invulnTimer = 2.0;
-        sound.play('levelup');
-        spawnParticles(p.x, p.y, 34, '#fb923c', 220, 0.8, 5, 14);
-        pushToast('Перо Феникса!', 'Вы воскрешены пламенем феникса!', '#fb923c', '🔥');
+    if (jumping) return; // Камни, заборы, бочки и ящики можно перепрыгнуть!
+
+    // 2. Статические пропы по сетке O(1)
+    const nearProps = this.world.queryPropsNear(ent.x, ent.y);
+    for (let i = 0; i < nearProps.length; i++) {
+      const pr = nearProps[i];
+      const minD = ent.radius + pr.radius;
+      const dx = ent.x - pr.x;
+      const dy = ent.y - pr.y;
+      const d2 = dx * dx + dy * dy;
+      if (d2 > 0 && d2 < minD * minD) {
+        const d = Math.sqrt(d2);
+        const push = minD - d;
+        ent.x += (dx / d) * push;
+        ent.y += (dy / d) * push;
+      }
+    }
+
+    // 3. Активные деревья, ящики и бочки поблизости
+    for (let i = 0; i < this.world.nodes.length; i++) {
+      const nd = this.world.nodes[i];
+      if (!nd.solid || nd.respawnTimer > 0) continue;
+      if (Math.abs(ent.x - nd.x) > 48 || Math.abs(ent.y - nd.y) > 48) continue;
+      const minD = ent.radius + nd.radius;
+      const dx = ent.x - nd.x;
+      const dy = ent.y - nd.y;
+      const d2 = dx * dx + dy * dy;
+      if (d2 > 0 && d2 < minD * minD) {
+        const d = Math.sqrt(d2);
+        const push = minD - d;
+        ent.x += (dx / d) * push;
+        ent.y += (dy / d) * push;
+      }
+    }
+  }
+
+  // ── Прыжок, Рывок, Граната, Смена оружия, Атака и Навыки ─────────────
+  jump() {
+    const p = this.player;
+    if (p.dead) return false;
+    if (p.vehicleId) {
+      this.toggleVehicle(null);
+      return true;
+    }
+    if (p.z > 2 || p.stamina < 12) return false;
+    p.stamina -= 12;
+    p.vz = 385;
+    p.z = 1;
+    this.sound.play('jump');
+    this.spawnDust(p.x, p.y, '#e2e8f0', 6);
+    return true;
+  }
+
+  dash() {
+    const p = this.player;
+    if (p.dead || p.vehicleId || p.dashTimer > 0 || p.stamina < 18) return false;
+    p.stamina -= 18;
+    p.dashTimer = 0.85;
+    p.dashActive = 0.19;
+    p.invulnTimer = 0.28;
+    p.dashDirX = Math.cos(p.facing);
+    p.dashDirY = Math.sin(p.facing);
+    this.sound.play('dash');
+    this.spawnDust(p.x, p.y, '#38bdf8', 8);
+    return true;
+  }
+
+  cycleWeapon() {
+    const list = this.inventory.weapons;
+    if (list.length <= 1) return;
+    const idx = list.indexOf(this.inventory.equippedWeapon);
+    const next = list[(idx + 1) % list.length];
+    this.equipWeapon(next);
+    const w = WEAPONS[next];
+    this.pushToast(`🔫 Экипировано: ${w.name}`, RARITIES[w.rarity].color);
+  }
+
+  findAimAngle(maxRange) {
+    const p = this.player;
+    if (!this.settings.autoAim) return p.facing;
+    let best = null;
+    let bestD2 = (maxRange + 55) ** 2;
+    for (const b of this.bossEntities) {
+      const d2 = dist2(p.x, p.y, b.x, b.y);
+      if (d2 < bestD2) { bestD2 = d2; best = b; }
+    }
+    for (const e of this.enemies) {
+      const d2 = dist2(p.x, p.y, e.x, e.y);
+      if (d2 < bestD2) { bestD2 = d2; best = e; }
+    }
+    if (!best) {
+      // Наводимся также на взрывные бочки и ящики вблизи!
+      for (const nd of this.world.nodes) {
+        if (nd.respawnTimer > 0) continue;
+        const d2 = dist2(p.x, p.y, nd.x, nd.y);
+        if (d2 < Math.min(bestD2, 130 * 130)) { bestD2 = d2; best = nd; }
+      }
+    }
+    return best ? Math.atan2(best.y - p.y, best.x - p.x) : p.facing;
+  }
+
+  performAttack() {
+    const p = this.player;
+    if (p.dead || p.vehicleId || p.attackTimer > 0) return false;
+
+    let weapon = WEAPONS[this.inventory.equippedWeapon] || WEAPONS.knife;
+
+    // Проверка патронов для огнестрела
+    if (weapon.ammoCost > 0 && this.inventory.ammo < weapon.ammoCost) {
+      // Автоматически переключаемся на оружие без патронов, чтобы игрок никогда не остался безоружным!
+      const fallback = this.inventory.weapons.find(id => (WEAPONS[id]?.ammoCost || 0) === 0);
+      if (fallback) {
+        this.inventory.equippedWeapon = fallback;
+        weapon = WEAPONS[fallback];
+        this.pushToast(`⚠️ Патроны кончились! В руках: ${weapon.name}`, '#f59e0b');
+      } else {
+        p.attackTimer = 0.35;
+        this.pushToast('⚠️ Нет патронов! Подбери ящики или купи в SHOP', '#ef4444');
+        return false;
+      }
+    }
+
+    const speedMult = (1 + p.stats.agility * 0.025) * (p.shieldBuffTimer > 0 ? 1.25 : 1);
+    p.attackTimer = weapon.cooldown / speedMult;
+    p.attackAnimTimer = Math.min(0.24, p.attackTimer * 0.85);
+
+    const aim = this.findAimAngle(weapon.range);
+    this.updateFacingFromAngle(aim);
+
+    const baseDmg = this.getWeaponDamage(weapon.id);
+    const critChance = this.getCritChance(weapon.id);
+
+    if (weapon.ammoCost > 0) {
+      this.inventory.ammo = Math.max(0, this.inventory.ammo - weapon.ammoCost);
+    }
+
+    if (weapon.category === 'melee') {
+      this.sound.play('swing');
+      this.slashes.push({
+        x: p.x,
+        y: p.y - p.z * 0.5,
+        angle: aim,
+        arc: weapon.arc,
+        range: weapon.range,
+        color: RARITIES[weapon.rarity].color,
+        life: 0.16,
+        maxLife: 0.16
+      });
+      this.applyMeleeHit(aim, weapon.range, weapon.arc, baseDmg, critChance, weapon.knockback);
+    } else if (weapon.category === 'gun') {
+      this.sound.play(weapon.id === 'shotgun' ? 'shotgun' : 'gun');
+      // Пиксельная вспышка выстрела у дула оружия
+      const muzzleX = p.x + Math.cos(aim) * 24;
+      const muzzleY = p.y - 6 + Math.sin(aim) * 24;
+      this.spawnSpriteEffect('muzzle', muzzleX, muzzleY, weapon.id === 'shotgun' ? 1.25 : 0.95, 22);
+
+      const pellets = weapon.pellets || 1;
+      for (let i = 0; i < pellets; i++) {
+        const offset = pellets > 1
+          ? ((i / (pellets - 1)) - 0.5) * weapon.spread + randRange(-0.04, 0.04)
+          : randRange(-(weapon.spread || 0.02), weapon.spread || 0.02);
+        const shotAngle = aim + offset;
+        const isCrit = Math.random() < critChance;
+        const dmg = Math.round(baseDmg * (isCrit ? 1.75 : 1) * randRange(0.92, 1.08));
+        this.projectiles.push({
+          fromPlayer: true,
+          kind: 'bullet',
+          x: muzzleX,
+          y: muzzleY,
+          vx: Math.cos(shotAngle) * weapon.projSpeed,
+          vy: Math.sin(shotAngle) * weapon.projSpeed,
+          radius: weapon.id === 'sniper' ? 5 : 4,
+          damage: dmg,
+          isCrit,
+          pierce: weapon.pierce || 0,
+          splashRadius: 0,
+          knockback: weapon.knockback || 100,
+          color: weapon.id === 'sniper' ? '#fde047' : '#fbbf24',
+          life: weapon.range / weapon.projSpeed
+        });
+      }
+      // Разрушение ящика/бочки прямо в упор при выстреле
+      this.damageNodesInCone(aim, 44, 1.1, baseDmg);
+    } else if (weapon.category === 'bow') {
+      this.sound.play('swing');
+      const isCrit = Math.random() < critChance;
+      const dmg = Math.round(baseDmg * (isCrit ? 1.75 : 1));
+      this.projectiles.push({
+        fromPlayer: true,
+        kind: 'arrow',
+        x: p.x + Math.cos(aim) * 18,
+        y: p.y - 6 + Math.sin(aim) * 18,
+        vx: Math.cos(aim) * weapon.projSpeed,
+        vy: Math.sin(aim) * weapon.projSpeed,
+        radius: 5,
+        damage: dmg,
+        isCrit,
+        pierce: weapon.pierce || 1,
+        splashRadius: 0,
+        knockback: weapon.knockback || 120,
+        color: '#a3e635',
+        life: weapon.range / weapon.projSpeed
+      });
+    } else if (weapon.category === 'magic') {
+      this.sound.play('skill');
+      const isCrit = Math.random() < critChance;
+      const dmg = Math.round(baseDmg * (isCrit ? 1.75 : 1));
+      this.spawnSpriteEffect('magic', p.x + Math.cos(aim) * 20, p.y - 8 + Math.sin(aim) * 20, 0.85, 18);
+      this.projectiles.push({
+        fromPlayer: true,
+        kind: 'magic',
+        homing: true,
+        x: p.x + Math.cos(aim) * 18,
+        y: p.y - 6 + Math.sin(aim) * 18,
+        vx: Math.cos(aim) * weapon.projSpeed,
+        vy: Math.sin(aim) * weapon.projSpeed,
+        radius: 8,
+        damage: dmg,
+        isCrit,
+        pierce: 0,
+        splashRadius: weapon.splashRadius || 72,
+        knockback: weapon.knockback || 160,
+        color: '#38bdf8',
+        life: weapon.range / weapon.projSpeed
+      });
+    }
+    return true;
+  }
+
+  throwGrenade() {
+    const p = this.player;
+    if (p.dead || p.grenadeTimer > 0) return false;
+    if ((this.inventory.consumables.grenade || 0) <= 0) {
+      this.pushToast('💣 Гранаты закончились! Скрафти или купи в Магазине', '#f59e0b');
+      return false;
+    }
+    this.inventory.consumables.grenade--;
+    p.grenadeTimer = 0.65;
+    const aim = this.findAimAngle(300);
+    this.updateFacingFromAngle(aim);
+
+    // Находим дистанцию до ближайшего врага (или 210 пикселей вперёд)
+    let throwDist = 205;
+    for (const e of [...this.bossEntities, ...this.enemies]) {
+      const d = Math.hypot(e.x - p.x, e.y - p.y);
+      if (d < 290 && d > 50) {
+        const angDiff = Math.abs(Math.atan2(Math.sin(Math.atan2(e.y - p.y, e.x - p.x) - aim), Math.cos(Math.atan2(e.y - p.y, e.x - p.x) - aim)));
+        if (angDiff < 0.45) { throwDist = d; break; }
+      }
+    }
+
+    const flightTime = 0.56;
+    this.thrownGrenades.push({
+      x: p.x,
+      y: p.y,
+      z: 14,
+      vx: (Math.cos(aim) * throwDist) / flightTime,
+      vy: (Math.sin(aim) * throwDist) / flightTime,
+      vz: 210,
+      life: flightTime,
+      damage: Math.round(95 + p.level * 18 + p.stats.power * 12)
+    });
+    this.sound.play('swing');
+    return true;
+  }
+
+  updateThrownGrenades(dt) {
+    for (let i = this.thrownGrenades.length - 1; i >= 0; i--) {
+      const g = this.thrownGrenades[i];
+      g.life -= dt;
+      g.x += g.vx * dt;
+      g.y += g.vy * dt;
+      g.z = Math.max(0, g.z + g.vz * dt);
+      g.vz -= 740 * dt;
+      if (g.life <= 0) {
+        this.thrownGrenades.splice(i, 1);
+        this.triggerExplosion(g.x, g.y, 118, g.damage, true);
+      }
+    }
+  }
+
+  triggerExplosion(x, y, radius, damage, friendlyFireSafe = true) {
+    this.sound.play('explosion');
+    this.camera.shake = Math.max(this.camera.shake, 11);
+    this.stats.explosionsTriggered = (this.stats.explosionsTriggered || 0) + 1;
+
+    this.spawnSpriteEffect('explosion', x, y, 1.55, 15);
+    this.spawnSpriteEffect('smoke', x - 16, y - 12, 1.2, 10);
+    this.spawnSpriteEffect('smoke', x + 16, y - 8, 1.1, 10);
+    this.shockwaves.push({
+      x, y, radius: 14, maxRadius: radius, color: '#fb923c', friendly: true, damage: 0
+    });
+
+    // Урон врагам и боссам
+    const r2 = radius * radius;
+    for (let i = this.enemies.length - 1; i >= 0; i--) {
+      const e = this.enemies[i];
+      const d2 = dist2(x, y, e.x, e.y);
+      if (d2 <= (radius + e.radius) ** 2) {
+        const ang = Math.atan2(e.y - y, e.x - x);
+        e.vx = Math.cos(ang) * 280;
+        e.vy = Math.sin(ang) * 280;
+        e.stunTimer = Math.max(e.stunTimer, 0.45);
+        this.damageEnemy(e, damage, true, '#fb923c');
+      }
+    }
+    for (let i = this.bossEntities.length - 1; i >= 0; i--) {
+      const b = this.bossEntities[i];
+      if (dist2(x, y, b.x, b.y) <= (radius + b.radius) ** 2) {
+        this.damageBoss(b, damage, true);
+      }
+    }
+
+    // Урон игроку, если это взрыв босса или красной бочки совсем рядом
+    if (!friendlyFireSafe && dist2(x, y, this.player.x, this.player.y) <= (radius * 0.72) ** 2) {
+      this.damagePlayer(Math.round(damage * 0.45));
+    }
+
+    // Разрушение ящиков и цепная детонация красных бочек!
+    for (const nd of this.world.nodes) {
+      if (nd.respawnTimer > 0) continue;
+      if (dist2(x, y, nd.x, nd.y) <= r2) {
+        this.damageNode(nd, 999);
+      }
+    }
+
+    this.checkAchievements();
+  }
+
+  applyMeleeHit(angle, range, arc, baseDmg, critChance, knockback) {
+    const p = this.player;
+    let hitAny = false;
+
+    const inCone = (tx, ty, tr) => {
+      const dx = tx - p.x;
+      const dy = ty - p.y;
+      const d = Math.hypot(dx, dy);
+      if (d > range + tr) return false;
+      const a = Math.atan2(dy, dx);
+      const diff = Math.atan2(Math.sin(a - angle), Math.cos(a - angle));
+      return Math.abs(diff) <= arc * 0.56 || d < 30 + tr;
+    };
+
+    for (let i = this.enemies.length - 1; i >= 0; i--) {
+      const e = this.enemies[i];
+      if (inCone(e.x, e.y, e.radius)) {
+        const isCrit = Math.random() < critChance;
+        const dmg = Math.round(baseDmg * (isCrit ? 1.8 : 1) * randRange(0.92, 1.08));
+        const ka = Math.atan2(e.y - p.y, e.x - p.x);
+        e.vx += Math.cos(ka) * knockback;
+        e.vy += Math.sin(ka) * knockback;
+        this.damageEnemy(e, dmg, isCrit);
+        hitAny = true;
+      }
+    }
+
+    for (let i = this.bossEntities.length - 1; i >= 0; i--) {
+      const b = this.bossEntities[i];
+      if (inCone(b.x, b.y, b.radius)) {
+        const isCrit = Math.random() < critChance;
+        const dmg = Math.round(baseDmg * (isCrit ? 1.8 : 1) * randRange(0.92, 1.08));
+        this.damageBoss(b, dmg, isCrit);
+        hitAny = true;
+      }
+    }
+
+    this.damageNodesInCone(angle, range, arc, Math.max(18, Math.round(baseDmg * 0.75)));
+    if (hitAny) this.bumpCombo();
+  }
+
+  damageNodesInCone(angle, range, arc, dmg) {
+    const p = this.player;
+    for (const nd of this.world.nodes) {
+      if (nd.respawnTimer > 0) continue;
+      const dx = nd.x - p.x;
+      const dy = nd.y - p.y;
+      const d = Math.hypot(dx, dy);
+      if (d > range + nd.radius) continue;
+      const a = Math.atan2(dy, dx);
+      const diff = Math.abs(Math.atan2(Math.sin(a - angle), Math.cos(a - angle)));
+      if (diff <= arc * 0.6 || d < 34) {
+        this.damageNode(nd, dmg);
+      }
+    }
+  }
+
+  bumpCombo() {
+    this.player.comboCount++;
+    this.player.comboTimer = 3.5;
+  }
+
+  useSkill(skillId) {
+    const p = this.player;
+    if (p.dead) return false;
+    const skState = this.skills[skillId];
+    const skDef = SKILLS[skillId];
+    if (!skState || !skDef) return false;
+    if (skState.level <= 0) {
+      this.pushToast(`🔒 Изучи «${skDef.name}» во вкладке Герой`, '#94a3b8');
+      return false;
+    }
+    if (skState.cd > 0) return false;
+    if (p.stamina < skDef.staminaCost) {
+      this.pushToast('⚡ Недостаточно энергии!', '#f59e0b');
+      return false;
+    }
+
+    p.stamina -= skDef.staminaCost;
+    const cdMult = Math.max(0.65, 1 - (skState.level - 1) * 0.08);
+    skState.cd = skDef.baseCooldown * cdMult;
+    this.sound.play('skill');
+
+    const baseDmg = this.getWeaponDamage();
+    const skillMult = (skDef.baseDamageMult || 2) * (1 + (skState.level - 1) * 0.25);
+
+    if (skillId === 'slash_wave') {
+      const r = skDef.radius;
+      this.shockwaves.push({ x: p.x, y: p.y, radius: 18, maxRadius: r, color: '#f97316', friendly: true, damage: 0 });
+      this.slashes.push({ x: p.x, y: p.y, angle: 0, arc: Math.PI * 2, range: r, color: '#fb923c', life: 0.24, maxLife: 0.24 });
+      const dmg = Math.round(baseDmg * skillMult);
+      for (let i = this.enemies.length - 1; i >= 0; i--) {
+        const e = this.enemies[i];
+        if (dist2(p.x, p.y, e.x, e.y) <= (r + e.radius) ** 2) {
+          const ka = Math.atan2(e.y - p.y, e.x - p.x);
+          e.vx = Math.cos(ka) * 280;
+          e.vy = Math.sin(ka) * 280;
+          this.damageEnemy(e, dmg, true, '#fb923c');
+        }
+      }
+      for (let i = this.bossEntities.length - 1; i >= 0; i--) {
+        const b = this.bossEntities[i];
+        if (dist2(p.x, p.y, b.x, b.y) <= (r + b.radius) ** 2) {
+          this.damageBoss(b, dmg, true);
+        }
+      }
+      for (const nd of this.world.nodes) {
+        if (nd.respawnTimer <= 0 && dist2(p.x, p.y, nd.x, nd.y) <= r * r) {
+          this.damageNode(nd, 45);
+        }
+      }
+      this.camera.shake = 6;
+    } else if (skillId === 'magic_nova') {
+      const r = skDef.radius;
+      this.spawnSpriteEffect('magic', p.x, p.y, 1.9, 15);
+      this.shockwaves.push({ x: p.x, y: p.y, radius: 16, maxRadius: r, color: '#38bdf8', friendly: true, damage: 0 });
+      const dmg = Math.round(baseDmg * skillMult);
+      for (let i = this.enemies.length - 1; i >= 0; i--) {
+        const e = this.enemies[i];
+        if (dist2(p.x, p.y, e.x, e.y) <= (r + e.radius) ** 2) {
+          e.stunTimer = 1.9;
+          this.damageEnemy(e, dmg, true, '#38bdf8');
+        }
+      }
+      for (let i = this.bossEntities.length - 1; i >= 0; i--) {
+        const b = this.bossEntities[i];
+        if (dist2(p.x, p.y, b.x, b.y) <= (r + b.radius) ** 2) {
+          b.stunTimer = 1.1;
+          this.damageBoss(b, dmg, true);
+        }
+      }
+      this.camera.shake = 8;
+    } else if (skillId === 'adrenaline') {
+      const healAmt = Math.round(p.maxHp * (0.25 + (skState.level - 1) * 0.05));
+      p.hp = Math.min(p.maxHp, p.hp + healAmt);
+      p.shieldBuffTimer = skDef.duration + (skState.level - 1) * 1.5;
+      this.addFloatingText(p.x, p.y - 28, `+${healAmt} HP · ЩИТ`, '#4ade80', true);
+      this.spawnSpriteEffect('magic', p.x, p.y, 1.35, 16);
+    }
+    return true;
+  }
+
+  useConsumable(itemId) {
+    const p = this.player;
+    if (p.dead) return false;
+    if (itemId === 'grenade') return this.throwGrenade();
+
+    const count = this.inventory.consumables[itemId] || 0;
+    if (count <= 0) {
+      this.pushToast(`Нет предмета «${ITEMS[itemId]?.name || itemId}»`, '#f59e0b');
+      return false;
+    }
+
+    if (itemId === 'medkit') {
+      if (p.hp >= p.maxHp) {
+        this.pushToast('Здоровье уже полное!', '#4ade80');
+        return false;
+      }
+      this.inventory.consumables.medkit--;
+      const heal = Math.round(p.maxHp * 0.55);
+      p.hp = Math.min(p.maxHp, p.hp + heal);
+      this.sound.play('heal');
+      this.addFloatingText(p.x, p.y - 26, `+${heal} HP`, '#4ade80', true);
+      return true;
+    }
+
+    if (itemId === 'food') {
+      this.inventory.consumables.food--;
+      p.hunger = Math.min(p.maxHunger, p.hunger + 60);
+      const heal = Math.round(p.maxHp * 0.22);
+      p.hp = Math.min(p.maxHp, p.hp + heal);
+      p.foodRegenTimer = 10;
+      this.sound.play('heal');
+      this.addFloatingText(p.x, p.y - 26, `+60 Сытость · +${heal} HP`, '#fbbf24', true);
+      return true;
+    }
+
+    if (itemId === 'potion') {
+      this.inventory.consumables.potion--;
+      const heal = Math.round(p.maxHp * 0.35);
+      p.hp = Math.min(p.maxHp, p.hp + heal);
+      p.stamina = p.maxStamina;
+      p.shieldBuffTimer = Math.max(p.shieldBuffTimer, 12);
+      this.sound.play('skill');
+      this.spawnSpriteEffect('magic', p.x, p.y, 1.3, 16);
+      this.addFloatingText(p.x, p.y - 26, `+${heal} HP · Энергощит!`, '#38bdf8', true);
+      return true;
+    }
+
+    return false;
+  }
+
+  grantItem(itemId, count = 1) {
+    if (itemId === 'ammo') {
+      const added = count > 5 ? count : count * 18;
+      this.inventory.ammo = Math.min(this.getMaxAmmo(), this.inventory.ammo + added);
+      return added;
+    }
+    if (itemId === 'coin') {
+      this.inventory.coins += count;
+      return count;
+    }
+    if (itemId === 'backpack') {
+      if (this.inventory.backpackLevel < 4) {
+        this.inventory.backpackLevel++;
+        this.recalcDerivedStats(false);
+        this.pushToast(`🎒 Рюкзак улучшен (ур. ${this.inventory.backpackLevel})! Макс. патронов: ${this.getMaxAmmo()}`, '#c084fc');
+      } else {
+        this.inventory.coins += 120;
+      }
+      return 1;
+    }
+    this.inventory.consumables[itemId] = (this.inventory.consumables[itemId] || 0) + count;
+    return count;
+  }
+
+  // ── Разрушаемые объекты (деревья, кусты, ящики, деревянные и красные бочки) ──
+  damageNode(nd, dmg) {
+    nd.hp -= dmg;
+    nd.hitFlash = 0.14;
+    this.sound.play('hit');
+
+    if (nd.hp <= 0) {
+      nd.respawnTimer = 42;
+      this.stats.resourcesGathered++;
+      this.advanceQuest('gather', 1);
+
+      if (nd.explosive) {
+        // Красная взрывная бочка детонирует!
+        this.triggerExplosion(nd.x, nd.y, 128, 125 + this.player.level * 15, false);
         return;
       }
-      p.hp = 0;
-      state.gameOver = true;
-      state.stats.deaths += 1;
-      sound.setBossMode(false);
-      saveGame();
+
+      if (nd.dropType === 'crates' || nd.dropType === 'barrel') {
+        // Из ящиков и бочек падают патроны, монеты, аптечки, гранаты, еда и металлолом!
+        this.drops.push({ x: nd.x - 10, y: nd.y, kind: 'ammo', amount: randInt(12, 24), life: 60 });
+        this.drops.push({ x: nd.x + 10, y: nd.y, kind: 'coin', amount: randInt(8, 18), life: 60 });
+        this.drops.push({ x: nd.x, y: nd.y + 8, kind: 'resource', resId: 'scrap', amount: randInt(1, 3), life: 60 });
+        const roll = Math.random();
+        if (roll < 0.30) this.drops.push({ x: nd.x, y: nd.y - 8, kind: 'item', itemId: 'medkit', amount: 1, life: 60 });
+        else if (roll < 0.52) this.drops.push({ x: nd.x, y: nd.y - 8, kind: 'item', itemId: 'grenade', amount: 1, life: 60 });
+        else if (roll < 0.72) this.drops.push({ x: nd.x, y: nd.y - 8, kind: 'item', itemId: 'food', amount: 1, life: 60 });
+        else if (roll < 0.79) this.drops.push({ x: nd.x, y: nd.y - 8, kind: 'item', itemId: 'key', amount: 1, life: 60 });
+      } else {
+        const amt = randInt(nd.dropAmount[0], nd.dropAmount[1]);
+        this.drops.push({ x: nd.x, y: nd.y, kind: 'resource', resId: nd.dropType, amount: amt, life: 60 });
+        if (nd.kind === 'bush' && Math.random() < 0.35) {
+          this.drops.push({ x: nd.x + 10, y: nd.y, kind: 'item', itemId: 'food', amount: 1, life: 60 });
+        }
+      }
+      this.spawnDust(nd.x, nd.y, '#d6b27c', 7);
     }
   }
 
-  function respawnPlayer() {
-    const camp = CAMPFIRES.find(c => c.id === state.respawnCampId) || CAMPFIRES[0];
-    state.gameOver = false;
-    state.activeBoss = null;
-    state.projectiles.length = 0;
-    state.shockwaves.length = 0;
-    state.telegraphs.length = 0;
-    state.player.x = camp.x;
-    state.player.y = camp.y + 42;
-    state.player.z = 0;
-    state.player.vz = 0;
-    state.player.satiety = Math.max(70, state.player.satiety);
-    syncPlayerVitals(true);
-    state.player.invulnTimer = 1.5;
-    sound.setBossMode(false);
-    sound.play('skill_shield');
-    saveGame();
+  updateNodes(dt) {
+    for (const nd of this.world.nodes) {
+      if (nd.hitFlash > 0) nd.hitFlash = Math.max(0, nd.hitFlash - dt);
+      if (nd.respawnTimer > 0) {
+        nd.respawnTimer -= dt;
+        if (nd.respawnTimer <= 0) {
+          nd.respawnTimer = 0;
+          nd.hp = nd.maxHp;
+        }
+      }
+    }
   }
 
-  // ── ИИ обычных врагов ────────────────────────────────────────────────
-  function updateEnemies(dt) {
-    const p = state.player;
-    for (let i = state.enemies.length - 1; i >= 0; i--) {
-      const e = state.enemies[i];
-      if (!e || e.hp <= 0) continue;
-
+  // ── ИИ врагов ────────────────────────────────────────────────────────
+  updateEnemies(dt) {
+    const p = this.player;
+    for (let i = this.enemies.length - 1; i >= 0; i--) {
+      const e = this.enemies[i];
+      e.animTime += dt * 7;
       if (e.hitFlash > 0) e.hitFlash = Math.max(0, e.hitFlash - dt);
-      if (e.burnTimer > 0) {
-        e.burnTimer -= dt;
-        e.hp -= e.burnDps * dt;
-        if (Math.random() < 0.25) spawnParticles(e.x, e.y, 1, '#f97316', 50, 0.25, 3, 10);
-        if (e.hp <= 0) {
-          handleEnemyDeath(e);
-          continue;
-        }
+      if (e.z > 0 || e.vz !== 0) {
+        e.z = Math.max(0, e.z + e.vz * dt);
+        e.vz -= 900 * dt;
+        if (e.z <= 0) { e.z = 0; e.vz = 0; }
       }
 
       if (e.stunTimer > 0) {
         e.stunTimer -= dt;
-        e.vx *= 0.85;
-        e.vy *= 0.85;
         e.x += e.vx * dt;
         e.y += e.vy * dt;
+        e.vx *= 0.85;
+        e.vy *= 0.85;
+        continue;
+      }
+
+      // Не заходить внутрь безопасной зоны Лагеря Выживших
+      const dCamp2 = dist2(e.x, e.y, 2360, 2380);
+      if (dCamp2 < 235 * 235) {
+        const ang = Math.atan2(e.y - 2380, e.x - 2360);
+        e.x += Math.cos(ang) * 140 * dt;
+        e.y += Math.sin(ang) * 140 * dt;
         continue;
       }
 
       const dx = p.x - e.x;
       const dy = p.y - e.y;
-      const d = Math.hypot(dx, dy) || 1;
-      const ang = Math.atan2(dy, dx);
+      const d = Math.hypot(dx, dy);
+      e.attackCd = Math.max(0, e.attackCd - dt);
 
-      e.attackTimer -= dt;
-      e.specialTimer -= dt;
-
-      if (e.z > 0 || e.vz !== 0) {
-        e.z += e.vz * dt;
-        e.vz -= 780 * dt;
-        if (e.z <= 0) {
-          e.z = 0;
-          e.vz = 0;
-          if (e.behavior === 'jumper' && d < 95 && p.z < 12) {
-            damagePlayer(e.damage, e.x, e.y);
-          }
-          spawnParticles(e.x, e.y, 8, e.color, 110, 0.35, 3.5, 4);
+      // Очередь выстрелов для солдат спецотряда
+      if (e.burstLeft > 0) {
+        e.burstTimer -= dt;
+        if (e.burstTimer <= 0 && !p.dead) {
+          e.burstLeft--;
+          e.burstTimer = 0.14;
+          const aim = Math.atan2(dy, dx) + randRange(-0.07, 0.07);
+          this.spawnSpriteEffect('muzzle', e.x + Math.cos(aim) * 16, e.y - 6 + Math.sin(aim) * 16, 0.75, 22);
+          this.projectiles.push({
+            fromPlayer: false,
+            kind: 'bullet',
+            x: e.x + Math.cos(aim) * 16,
+            y: e.y - 6 + Math.sin(aim) * 16,
+            vx: Math.cos(aim) * e.projSpeed,
+            vy: Math.sin(aim) * e.projSpeed,
+            radius: 5,
+            damage: Math.round(e.damage * 0.72),
+            color: '#ef4444',
+            life: 1.35
+          });
         }
       }
 
-      if (e.behavior === 'ranged' || e.behavior === 'ranged_acid' || e.behavior === 'ranged_spread') {
-        const pref = e.attackRange || 280;
-        let moveFactor = 0;
-        if (d > pref) moveFactor = 1;
-        else if (d < pref * 0.55) moveFactor = -0.7;
+      if (!p.dead && d < 460) {
+        const nx = dx / (d || 1);
+        const ny = dy / (d || 1);
 
-        e.vx += (Math.cos(ang) * e.speed * moveFactor - e.vx) * Math.min(1, 6 * dt);
-        e.vy += (Math.sin(ang) * e.speed * moveFactor - e.vy) * Math.min(1, 6 * dt);
-
-        if (e.attackTimer <= 0 && d < pref + 75) {
-          e.attackTimer = 1.9 + Math.random() * 0.6;
-          const angles = e.behavior === 'ranged_spread' ? [ang - 0.22, ang, ang + 0.22] : [ang];
-          for (const a of angles) {
-            state.projectiles.push({
-              x: e.x + Math.cos(a) * 16,
-              y: e.y + Math.sin(a) * 16,
-              vx: Math.cos(a) * (e.projSpeed || 340),
-              vy: Math.sin(a) * (e.projSpeed || 340),
-              radius: 7,
-              damage: e.damage,
-              color: e.projColor || '#fb7185',
-              friendly: false,
-              life: 1.6
-            });
+        if (e.behavior === 'shooter' || e.behavior === 'burst_shooter') {
+          if (d > e.attackRange * 0.8) {
+            e.vx += (nx * e.speed - e.vx) * Math.min(1, dt * 6);
+            e.vy += (ny * e.speed - e.vy) * Math.min(1, dt * 6);
+          } else if (d < 135) {
+            e.vx += (-nx * e.speed * 0.75 - e.vx) * Math.min(1, dt * 6);
+            e.vy += (-ny * e.speed * 0.75 - e.vy) * Math.min(1, dt * 6);
+          } else {
+            e.vx *= 0.85;
+            e.vy *= 0.85;
           }
-        }
-      } else if (e.behavior === 'jumper') {
-        if (e.specialTimer <= 0 && d < 280 && e.z === 0) {
-          e.specialTimer = 2.6;
-          e.vz = 290;
+
+          if (d <= e.attackRange && e.attackCd <= 0) {
+            if (e.behavior === 'burst_shooter') {
+              e.attackCd = 2.1;
+              e.burstLeft = 3;
+              e.burstTimer = 0;
+            } else {
+              e.attackCd = 1.65;
+              this.spawnSpriteEffect('muzzle', e.x + nx * 16, e.y - 6 + ny * 16, 0.8, 22);
+              this.projectiles.push({
+                fromPlayer: false,
+                kind: 'bullet',
+                x: e.x + nx * 16,
+                y: e.y - 6 + ny * 16,
+                vx: nx * e.projSpeed,
+                vy: ny * e.projSpeed,
+                radius: 5,
+                damage: e.damage,
+                color: '#f97316',
+                life: 1.4
+              });
+            }
+          }
+        } else if (e.behavior === 'pouncer' && d < 210 && d > 75 && e.attackCd <= 0) {
+          // Мутант-зверь прыгает на игрока!
+          e.attackCd = 2.3;
+          e.vz = 280;
           e.z = 2;
-          e.vx = Math.cos(ang) * (e.speed * 1.95);
-          e.vy = Math.sin(ang) * (e.speed * 1.95);
-        } else if (e.z === 0) {
-          e.vx += (Math.cos(ang) * e.speed - e.vx) * Math.min(1, 6 * dt);
-          e.vy += (Math.sin(ang) * e.speed - e.vy) * Math.min(1, 6 * dt);
-        }
-      } else if (e.behavior === 'blinker') {
-        if (e.specialTimer <= 0 && d < 320 && d > 85) {
-          e.specialTimer = 3.4;
-          spawnParticles(e.x, e.y, 10, '#a855f7', 110, 0.3, 3.5, 10);
-          e.x = p.x - Math.cos(ang) * 58;
-          e.y = p.y - Math.sin(ang) * 58;
-          spawnParticles(e.x, e.y, 10, '#34d399', 110, 0.3, 3.5, 10);
-        }
-        e.vx += (Math.cos(ang) * e.speed - e.vx) * Math.min(1, 8 * dt);
-        e.vy += (Math.sin(ang) * e.speed - e.vy) * Math.min(1, 8 * dt);
-      } else if (e.behavior === 'dasher') {
-        if (e.specialTimer <= 0 && d < 230) {
-          e.specialTimer = 2.8;
-          e.vx = Math.cos(ang) * e.speed * 2.25;
-          e.vy = Math.sin(ang) * e.speed * 2.25;
+          e.vx = nx * 360;
+          e.vy = ny * 360;
+        } else if (e.behavior === 'dasher' && d < 185 && d > 65 && e.attackCd <= 0) {
+          e.attackCd = 2.4;
+          e.vx = nx * 340;
+          e.vy = ny * 340;
         } else {
-          e.vx += (Math.cos(ang) * e.speed - e.vx) * Math.min(1, 5.5 * dt);
-          e.vy += (Math.sin(ang) * e.speed - e.vy) * Math.min(1, 5.5 * dt);
+          e.vx += (nx * e.speed - e.vx) * Math.min(1, dt * 6);
+          e.vy += (ny * e.speed - e.vy) * Math.min(1, dt * 6);
         }
-      } else if (e.behavior === 'heavy_slam') {
-        if (e.specialTimer <= 0 && d < 120) {
-          e.specialTimer = 3.5;
-          state.telegraphs.push({
-            x: e.x, y: e.y, radius: 92, timer: 0.75, maxTimer: 0.75,
-            damage: Math.round(e.damage * 1.25), color: '#38bdf8'
-          });
+
+        if (d < e.radius + p.radius + 7 && e.attackCd <= 0 && p.z < 18 && !p.vehicleId) {
+          e.attackCd = 1.0;
+          this.damagePlayer(e.damage);
         }
-        e.vx += (Math.cos(ang) * e.speed - e.vx) * Math.min(1, 5 * dt);
-        e.vy += (Math.sin(ang) * e.speed - e.vy) * Math.min(1, 5 * dt);
       } else {
-        e.vx += (Math.cos(ang) * e.speed - e.vx) * Math.min(1, 7 * dt);
-        e.vy += (Math.sin(ang) * e.speed - e.vy) * Math.min(1, 7 * dt);
+        e.wanderTimer -= dt;
+        if (e.wanderTimer <= 0) {
+          e.wanderTimer = randRange(1.5, 3.8);
+          e.wanderAngle += randRange(-1.4, 1.4);
+        }
+        e.vx = Math.cos(e.wanderAngle) * e.speed * 0.35;
+        e.vy = Math.sin(e.wanderAngle) * e.speed * 0.35;
       }
 
-      e.x += e.vx * dt;
-      e.y += e.vy * dt;
-      resolveEntityWorldCollisions(e, false);
-
-      // Контактный урон вблизи (если игрок не высоко в прыжке)
-      if (d < e.radius + p.radius + 4 && p.z < 16 && e.attackTimer <= 0) {
-        e.attackTimer = 0.85;
-        damagePlayer(e.damage, e.x, e.y);
-      }
+      e.x = clamp(e.x + e.vx * dt, 60, this.world.width - 60);
+      e.y = clamp(e.y + e.vy * dt, 60, this.world.height - 60);
+      this.resolveEntityObstacles(e, e.z > 10);
     }
   }
 
-  // ── Уникальные паттерны 4 Боссов ─────────────────────────────────────
-  function updateBoss(dt) {
-    const b = state.activeBoss;
-    if (!b || b.hp <= 0) return;
-    const p = state.player;
+  // ── 4 Босса мира с фазами и спецприёмами ─────────────────────────────
+  updateBosses(dt) {
+    const p = this.player;
+    for (let i = this.bossEntities.length - 1; i >= 0; i--) {
+      const b = this.bossEntities[i];
+      b.animTime += dt * 6.5;
+      if (b.hitFlash > 0) b.hitFlash = Math.max(0, b.hitFlash - dt);
 
-    if (b.hitFlash > 0) b.hitFlash = Math.max(0, b.hitFlash - dt);
-    if (b.burnTimer > 0) {
-      b.burnTimer -= dt;
-      b.hp -= b.burnDps * dt;
-      if (b.hp <= 0) {
-        handleEnemyDeath(b);
-        return;
-      }
-    }
-
-    const enraged = b.hp < b.maxHp * 0.5;
-    b.phase = enraged ? 2 : 1;
-
-    const dx = p.x - b.x;
-    const dy = p.y - b.y;
-    const d = Math.hypot(dx, dy) || 1;
-    const ang = Math.atan2(dy, dx);
-
-    if (b.z > 0 || b.vz !== 0) {
-      b.z += b.vz * dt;
-      b.vz -= 820 * dt;
-      if (b.z <= 0) {
-        b.z = 0;
-        b.vz = 0;
-        sound.play('slam');
-        addScreenShake(9);
-        state.shockwaves.push({
-          x: b.x, y: b.y, radius: 22, maxRadius: 250, speed: 290,
-          color: b.color, friendly: false, damage: b.damage, jumpable: true
-        });
-      }
-    }
-
-    if (b.dashTimer > 0) {
-      b.dashTimer -= dt;
-      b.x += b.dashVx * dt;
-      b.y += b.dashVy * dt;
-      if (Math.random() < 0.5) spawnParticles(b.x, b.y, 2, b.accent, 60, 0.3, 4, 8);
-    } else if (b.z === 0) {
-      const spd = b.speed * (enraged ? 1.18 : 1.0);
-      b.vx += (Math.cos(ang) * spd - b.vx) * Math.min(1, 5 * dt);
-      b.vy += (Math.sin(ang) * spd - b.vy) * Math.min(1, 5 * dt);
-      b.x += b.vx * dt;
-      b.y += b.vy * dt;
-    }
-
-    resolveEntityWorldCollisions(b, false);
-
-    if (d < b.radius + p.radius + 4 && p.z < 18) {
-      damagePlayer(b.damage, b.x, b.y);
-    }
-
-    b.actionTimer -= dt * (enraged ? 1.25 : 1.0);
-    if (b.actionTimer > 0) return;
-
-    b.patternStep = (b.patternStep + 1) % 3;
-    b.actionTimer = 2.4;
-
-    if (b.id === 'morgrath') {
-      if (b.patternStep === 0) {
-        // Огненный рывок
-        b.dashTimer = 0.42;
-        b.dashVx = Math.cos(ang) * 440;
-        b.dashVy = Math.sin(ang) * 440;
-        sound.play('skill_fire');
-      } else if (b.patternStep === 1) {
-        // Взрывное кольцо по земле (перепрыгивается!)
-        sound.play('slam');
-        state.shockwaves.push({
-          x: b.x, y: b.y, radius: 24, maxRadius: 290, speed: 270,
-          color: '#fb923c', friendly: false, damage: b.damage, jumpable: true
-        });
-      } else {
-        // Огненные столбы под игроком с предупреждением
-        const pillars = enraged ? 4 : 2;
-        for (let k = 0; k < pillars; k++) {
-          const ox = k === 0 ? 0 : (Math.random() - 0.5) * 210;
-          const oy = k === 0 ? 0 : (Math.random() - 0.5) * 210;
-          state.telegraphs.push({
-            x: p.x + ox, y: p.y + oy, radius: 66, timer: 0.95, maxTimer: 0.95,
-            damage: Math.round(b.damage * 1.15), color: '#ef4444'
+      if (b.z > 0 || b.vz !== 0) {
+        b.z = Math.max(0, b.z + b.vz * dt);
+        b.vz -= 880 * dt;
+        if (b.z <= 0) {
+          b.z = 0;
+          b.vz = 0;
+          // Приземление босса после прыжка рождает ударную волну!
+          this.shockwaves.push({
+            x: b.x, y: b.y, radius: 22, maxRadius: 210,
+            color: '#ef4444', friendly: false, damage: Math.round(b.damage * 1.15), hitPlayer: false
           });
+          this.camera.shake = 10;
+          this.sound.play('explosion');
         }
       }
-    } else if (b.id === 'xylla') {
-      if (b.patternStep === 0) {
-        // Веер кислотных плевков
-        const count = enraged ? 7 : 5;
-        for (let k = 0; k < count; k++) {
-          const a = ang + (k - (count - 1) / 2) * 0.22;
-          state.projectiles.push({
-            x: b.x, y: b.y, vx: Math.cos(a) * 350, vy: Math.sin(a) * 350,
-            radius: 9, damage: b.damage, color: '#a3e635', friendly: false, life: 1.7
-          });
-        }
-      } else if (b.patternStep === 1) {
-        // Прыжок хищницы с ядовитым кольцом при приземлении
-        b.vz = 350;
-        b.z = 4;
-        b.vx = Math.cos(ang) * 320;
-        b.vy = Math.sin(ang) * 320;
-      } else {
-        // Призыв 2 миньонов роя (если их мало рядом)
-        if (state.enemies.length < 16) {
-          for (let s = 0; s < 2; s++) {
-            const sa = ang + (s === 0 ? -0.9 : 0.9);
-            const slimeDef = ENEMIES.slime;
-            state.enemies.push({
-              uid: Math.random().toString(36).slice(2),
-              ...slimeDef,
-              name: 'Личинка Роя',
-              hp: 95, maxHp: 95, damage: 22, speed: 150,
-              color: '#84cc16',
-              x: b.x + Math.cos(sa) * 65,
-              y: b.y + Math.sin(sa) * 65,
-              z: 0, vz: 0, vx: 0, vy: 0,
-              attackTimer: 0.6, specialTimer: 2, stunTimer: 0, hitFlash: 0
-            });
-          }
-        }
-      }
-    } else if (b.id === 'valkor') {
-      if (b.patternStep === 0) {
-        // Круговая ледяная нова из 10 осколков
-        const count = enraged ? 12 : 8;
-        for (let k = 0; k < count; k++) {
-          const a = (k / count) * Math.PI * 2 + state.playTime;
-          state.projectiles.push({
-            x: b.x, y: b.y, vx: Math.cos(a) * 330, vy: Math.sin(a) * 330,
-            radius: 9, damage: b.damage, color: '#38bdf8', friendly: false, life: 1.8
-          });
-        }
-      } else if (b.patternStep === 1) {
-        // Ледяной буран (зоны обрушения сосулек)
-        const count = enraged ? 5 : 3;
-        for (let k = 0; k < count; k++) {
-          state.telegraphs.push({
-            x: p.x + (Math.random() - 0.5) * 230,
-            y: p.y + (Math.random() - 0.5) * 230,
-            radius: 74, timer: 1.0, maxTimer: 1.0,
-            damage: Math.round(b.damage * 1.2), color: '#38bdf8'
-          });
-        }
-      } else {
-        b.dashTimer = 0.38;
-        b.dashVx = Math.cos(ang) * 460;
-        b.dashVy = Math.sin(ang) * 460;
-      }
-    } else if (b.id === 'azariel') {
-      if (b.patternStep === 0) {
-        // Телепорт Бездны + спираль сфер Разлома
-        spawnParticles(b.x, b.y, 18, '#c084fc', 160, 0.4, 4, 12);
-        b.x = Math.max(200, Math.min(world.width - 200, p.x - Math.cos(ang) * 185));
-        b.y = Math.max(200, Math.min(world.height - 200, p.y - Math.sin(ang) * 185));
-        const count = enraged ? 12 : 9;
-        for (let k = 0; k < count; k++) {
-          const a = (k / count) * Math.PI * 2;
-          state.projectiles.push({
-            x: b.x, y: b.y, vx: Math.cos(a) * 370, vy: Math.sin(a) * 370,
-            radius: 10, damage: b.damage, color: '#e879f9', friendly: false, life: 1.9
-          });
-        }
-      } else if (b.patternStep === 1) {
-        // Метеоритный шторм Горизонта
-        const count = enraged ? 6 : 4;
-        for (let k = 0; k < count; k++) {
-          state.telegraphs.push({
-            x: p.x + (Math.random() - 0.5) * 260,
-            y: p.y + (Math.random() - 0.5) * 260,
-            radius: 78, timer: 0.92, maxTimer: 0.92,
-            damage: Math.round(b.damage * 1.25), color: '#fb7185'
-          });
-        }
-      } else {
-        // Волна Бездны (перепрыгивается!)
-        sound.play('slam');
-        state.shockwaves.push({
-          x: b.x, y: b.y, radius: 24, maxRadius: 340, speed: 300,
-          color: '#c084fc', friendly: false, damage: b.damage, jumpable: true
-        });
-      }
-    }
-  }
 
-  // ── Снаряды, Волны и Зоны Телеграфов ─────────────────────────────────
-  function updateProjectiles(dt) {
-    const p = state.player;
-    const cs = getComputedStats();
-
-    for (let i = state.projectiles.length - 1; i >= 0; i--) {
-      const pr = state.projectiles[i];
-      pr.life -= dt;
-      if (pr.life <= 0) {
-        state.projectiles.splice(i, 1);
+      if (b.stunTimer > 0) {
+        b.stunTimer -= dt;
         continue;
       }
 
-      // Мягкое самонаведение для посоха Звёздного Пламени
-      if (pr.friendly && pr.homing) {
-        const targets = state.activeBoss ? [state.activeBoss, ...state.enemies] : state.enemies;
-        let nearest = null;
-        let bestD = 260;
-        for (const e of targets) {
-          if (!e || e.hp <= 0) continue;
-          const d = Math.hypot(e.x - pr.x, e.y - pr.y);
-          if (d < bestD) { bestD = d; nearest = e; }
+      const dHome = Math.hypot(p.x - b.homeX, p.y - b.homeY);
+      if (p.dead || dHome > b.arenaRadius + 240) {
+        b.x += (b.homeX - b.x) * Math.min(1, dt * 2);
+        b.y += (b.homeY - b.y) * Math.min(1, dt * 2);
+        b.hp = Math.min(b.maxHp, b.hp + b.maxHp * 0.04 * dt);
+        continue;
+      }
+
+      b.phase = b.hp < b.maxHp * 0.5 ? 2 : 1;
+      const dx = p.x - b.x;
+      const dy = p.y - b.y;
+      const d = Math.hypot(dx, dy) || 1;
+      const nx = dx / d;
+      const ny = dy / d;
+
+      if (b.dashActive > 0) {
+        b.dashActive -= dt;
+        b.x += b.dashVx * dt;
+        b.y += b.dashVy * dt;
+        if (d < b.radius + p.radius + 10 && p.z < 18) {
+          this.damagePlayer(Math.round(b.damage * 1.2));
         }
-        if (nearest) {
-          const desired = Math.atan2(nearest.y - pr.y, nearest.x - pr.x);
-          const spd = Math.hypot(pr.vx, pr.vy);
+        continue;
+      }
+
+      const spd = b.speed * (b.phase === 2 ? 1.22 : 1.0);
+      b.x += nx * spd * dt;
+      b.y += ny * spd * dt;
+
+      if (d < b.radius + p.radius + 8 && p.z < 18 && !p.vehicleId) {
+        this.damagePlayer(b.damage);
+      }
+
+      b.actionTimer -= dt * (b.phase === 2 ? 1.3 : 1.0);
+      if (b.actionTimer <= 0) {
+        b.actionTimer = 3.1;
+        this.executeBossSkill(b, nx, ny);
+      }
+    }
+  }
+
+  executeBossSkill(b, nx, ny) {
+    this.sound.play('skill');
+    if (b.bossId === 'boss_city') {
+      // Ударная волна (можно перепрыгнуть ПРЫЖКОМ!) + подкрепление зомби
+      this.shockwaves.push({
+        x: b.x, y: b.y, radius: 24, maxRadius: 235,
+        color: '#ef4444', friendly: false, damage: Math.round(b.damage * 1.2), hitPlayer: false
+      });
+      this.camera.shake = 8;
+      if (this.enemies.length < 30) {
+        this.spawnEnemyAt(b.x + 85, b.y, 'infected_runner');
+      }
+    } else if (b.bossId === 'boss_factory') {
+      // Веер зажигательных снарядов + рывок
+      for (let k = -2; k <= 2; k++) {
+        const ang = Math.atan2(ny, nx) + k * 0.24;
+        this.projectiles.push({
+          fromPlayer: false,
+          kind: 'magic',
+          x: b.x, y: b.y,
+          vx: Math.cos(ang) * 360,
+          vy: Math.sin(ang) * 360,
+          radius: 9,
+          damage: b.damage,
+          splashRadius: 55,
+          color: '#f97316',
+          life: 1.7
+        });
+      }
+      b.dashActive = 0.35;
+      b.dashVx = nx * 420;
+      b.dashVy = ny * 420;
+    } else if (b.bossId === 'boss_bunker') {
+      // Гигантский прыжок босса сверху + круговой залп
+      b.vz = 390;
+      b.z = 4;
+      b.dashActive = 0.42;
+      b.dashVx = nx * 380;
+      b.dashVy = ny * 380;
+      for (let k = 0; k < 10; k++) {
+        const ang = (k / 10) * Math.PI * 2;
+        this.projectiles.push({
+          fromPlayer: false,
+          kind: 'bullet',
+          x: b.x, y: b.y,
+          vx: Math.cos(ang) * 350,
+          vy: Math.sin(ang) * 350,
+          radius: 6,
+          damage: Math.round(b.damage * 0.85),
+          color: '#a855f7',
+          life: 1.5
+        });
+      }
+    } else {
+      // Финальный босс Проект «ГОРИЗОНТ»: спиральный обстрел + ударная волна + миномётный взрыв!
+      const count = b.phase === 2 ? 14 : 10;
+      for (let k = 0; k < count; k++) {
+        const ang = (k / count) * Math.PI * 2 + b.animTime;
+        this.projectiles.push({
+          fromPlayer: false,
+          kind: 'bullet',
+          x: b.x, y: b.y,
+          vx: Math.cos(ang) * 370,
+          vy: Math.sin(ang) * 370,
+          radius: 7,
+          damage: b.damage,
+          color: '#ef4444',
+          life: 1.8
+        });
+      }
+      this.shockwaves.push({
+        x: b.x, y: b.y, radius: 26, maxRadius: 270,
+        color: '#f59e0b', friendly: false, damage: b.damage, hitPlayer: false
+      });
+      b.dashActive = 0.34;
+      b.dashVx = nx * 450;
+      b.dashVy = ny * 450;
+    }
+  }
+
+  // ── Урон, опыт, уровни и трофеи ──────────────────────────────────────
+  damageEnemy(e, dmg, isCrit = false, customColor = null) {
+    e.hp -= dmg;
+    e.hitFlash = 0.14;
+    this.sound.play(isCrit ? 'crit' : 'hit');
+    this.spawnSpriteEffect('hit', e.x, e.y - 10, isCrit ? 1.15 : 0.85, 20);
+    this.addFloatingText(
+      e.x + randRange(-8, 8),
+      e.y - 22,
+      isCrit ? `${dmg}!` : `${dmg}`,
+      customColor || (isCrit ? '#fbbf24' : '#f8fafc'),
+      isCrit
+    );
+
+    if (e.hp <= 0) {
+      const idx = this.enemies.indexOf(e);
+      if (idx !== -1) this.enemies.splice(idx, 1);
+      this.onEnemyKilled(e);
+    }
+  }
+
+  onEnemyKilled(e) {
+    const lootMult = this.getLootMultiplier();
+    const coins = Math.round(randInt(e.coins[0], e.coins[1]) * lootMult);
+    this.drops.push({ x: e.x - 6, y: e.y, kind: 'coin', amount: coins, life: 60 });
+
+    for (const dr of e.drops) {
+      if (Math.random() < dr.chance * lootMult) {
+        if (dr.id === 'ammo') {
+          this.drops.push({ x: e.x + 8, y: e.y, kind: 'ammo', amount: randInt(10, 20), life: 60 });
+        } else if (dr.id) {
+          this.drops.push({ x: e.x + 8, y: e.y, kind: 'item', itemId: dr.id, amount: 1, life: 60 });
+        } else if (dr.res) {
+          this.drops.push({ x: e.x + 8, y: e.y, kind: 'resource', resId: dr.res, amount: randInt(1, 2), life: 60 });
+        }
+      }
+    }
+
+    this.stats.totalKills++;
+    this.stats.biomeKills[e.biome] = (this.stats.biomeKills[e.biome] || 0) + 1;
+    this.advanceQuest('kills', 1);
+    this.advanceQuest('biome_kills', 1, { biome: e.biome });
+    this.gainXp(e.xp);
+    this.checkAchievements();
+  }
+
+  damageBoss(b, dmg, isCrit = false) {
+    b.hp -= dmg;
+    b.hitFlash = 0.12;
+    this.sound.play(isCrit ? 'crit' : 'hit');
+    this.spawnSpriteEffect('hit', b.x + randRange(-10, 10), b.y - 16, 1.25, 20);
+    this.addFloatingText(
+      b.x + randRange(-14, 14),
+      b.y - 38,
+      isCrit ? `${dmg}!` : `${dmg}`,
+      isCrit ? '#fbbf24' : '#fda4af',
+      isCrit
+    );
+
+    if (b.hp <= 0) {
+      const idx = this.bossEntities.indexOf(b);
+      if (idx !== -1) this.bossEntities.splice(idx, 1);
+      if (!this.defeatedBosses.includes(b.bossId)) {
+        this.defeatedBosses.push(b.bossId);
+      }
+      this.spawnSpriteEffect('explosion', b.x, b.y, 2.2, 12);
+      this.inventory.coins += b.coins;
+      this.gainXp(b.xp);
+      this.grantWeapon(b.rewardWeapon);
+      for (const it of b.rewardItems) {
+        this.grantItem(it.id, it.count);
+      }
+      this.camera.shake = 14;
+      this.sound.play('levelup');
+      this.pushToast(`🏆 БОСС ПОВЕРЖЕН: ${b.name}! Получено: ${WEAPONS[b.rewardWeapon]?.name}`, '#fbbf24');
+      this.advanceQuest('boss', 1, { bossId: b.bossId });
+      this.checkAchievements();
+      this.saveGame(true);
+    }
+  }
+
+  damagePlayer(rawDmg) {
+    const p = this.player;
+    if (p.dead || p.invulnTimer > 0) return;
+
+    // Если игрок в машине — часть урона гасит кузов
+    let mult = p.shieldBuffTimer > 0 ? 0.58 : 1.0;
+    if (p.vehicleId) mult *= 0.65;
+    const dmg = Math.max(1, Math.round(rawDmg * mult));
+    p.hp -= dmg;
+    p.invulnTimer = 0.46;
+    p.hurtAnimTimer = 0.28;
+    this.camera.shake = 7;
+    this.sound.play('playerHit');
+    this.spawnSpriteEffect('hit', p.x, p.y - 10, 1.0, 20);
+    this.addFloatingText(p.x, p.y - 26, `-${dmg}`, '#ef4444', true);
+
+    if (p.hp <= 0) {
+      p.hp = 0;
+      p.dead = true;
+      p.vehicleId = null;
+      this.pushToast('💀 Герой пал в бою! Эвакуация в ближайший лагерь...', '#ef4444');
+    }
+  }
+
+  respawnPlayer() {
+    const p = this.player;
+    let bestCamp = CAMPFIRES[0];
+    let bestD2 = Infinity;
+    for (const c of CAMPFIRES) {
+      if (!this.unlockedCamps.includes(c.id)) continue;
+      const d2 = dist2(p.x, p.y, c.x, c.y);
+      if (d2 < bestD2) { bestD2 = d2; bestCamp = c; }
+    }
+    p.x = bestCamp.x;
+    p.y = bestCamp.y + 42;
+    p.z = 0;
+    p.vz = 0;
+    p.hp = p.maxHp;
+    p.stamina = p.maxStamina;
+    p.hunger = Math.max(70, p.hunger);
+    p.dead = false;
+    p.vehicleId = null;
+    p.invulnTimer = 2.0;
+    this.projectiles = [];
+    this.sound.play('heal');
+    this.pushToast(`🔥 Возрождение: ${bestCamp.name}`, '#4ade80');
+  }
+
+  gainXp(amount) {
+    const p = this.player;
+    p.xp += amount;
+    while (p.xp >= p.xpNext) {
+      p.xp -= p.xpNext;
+      p.level++;
+      p.xpNext = Math.round(100 * Math.pow(1.26, p.level - 1));
+      p.statPoints += 3;
+      p.skillPoints += 1;
+      this.recalcDerivedStats(true);
+      this.sound.play('levelup');
+      this.spawnSpriteEffect('magic', p.x, p.y, 1.6, 14);
+      this.addFloatingText(p.x, p.y - 40, `УРОВЕНЬ ${p.level}!`, '#fde047', true);
+      this.pushToast(`⭐ Уровень ${p.level}! +3 очка характеристик и +1 очко навыка`, '#fbbf24');
+      this.checkAchievements();
+    }
+  }
+
+  grantWeapon(weaponId) {
+    if (!WEAPONS[weaponId]) return;
+    if (!this.inventory.weapons.includes(weaponId)) {
+      this.inventory.weapons.push(weaponId);
+      this.weaponUpgrades[weaponId] = this.weaponUpgrades[weaponId] || 0;
+      this.pushToast(`🔫 Новое оружие: ${WEAPONS[weaponId].name}!`, RARITIES[WEAPONS[weaponId].rarity].color);
+    } else {
+      this.weaponUpgrades[weaponId] = Math.min(10, (this.weaponUpgrades[weaponId] || 0) + 1);
+      this.pushToast(`⬆️ ${WEAPONS[weaponId].name} усилено до +${this.weaponUpgrades[weaponId]}!`, '#38bdf8');
+    }
+    this.checkAchievements();
+  }
+
+  // ── Снаряды, трофеи и эффекты ────────────────────────────────────────
+  updateProjectiles(dt) {
+    for (let i = this.projectiles.length - 1; i >= 0; i--) {
+      const pr = this.projectiles[i];
+      pr.life -= dt;
+      if (pr.life <= 0) {
+        this.projectiles.splice(i, 1);
+        continue;
+      }
+
+      if (pr.fromPlayer && pr.homing) {
+        let target = this.bossEntities[0] || null;
+        let bestD2 = target ? dist2(pr.x, pr.y, target.x, target.y) : 260 * 260;
+        for (const e of this.enemies) {
+          const d2 = dist2(pr.x, pr.y, e.x, e.y);
+          if (d2 < bestD2) { bestD2 = d2; target = e; }
+        }
+        if (target) {
+          const spd = Math.hypot(pr.vx, pr.vy) || 520;
+          const desired = Math.atan2(target.y - pr.y, target.x - pr.x);
           const cur = Math.atan2(pr.vy, pr.vx);
-          let diff = ((desired - cur + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
-          const nextAng = cur + Math.max(-5 * dt, Math.min(5 * dt, diff));
-          pr.vx = Math.cos(nextAng) * spd;
-          pr.vy = Math.sin(nextAng) * spd;
+          const diff = Math.atan2(Math.sin(desired - cur), Math.cos(desired - cur));
+          const next = cur + clamp(diff, -dt * 5.5, dt * 5.5);
+          pr.vx = Math.cos(next) * spd;
+          pr.vy = Math.sin(next) * spd;
         }
       }
 
       pr.x += pr.vx * dt;
       pr.y += pr.vy * dt;
 
-      if (pr.friendly) {
-        let consumed = false;
-        const targets = state.activeBoss ? [state.activeBoss, ...state.enemies] : state.enemies;
-        for (const e of targets) {
-          if (!e || e.hp <= 0) continue;
-          if (pr.hitSet && pr.hitSet.has(e)) continue;
-          if (Math.hypot(e.x - pr.x, e.y - pr.y) <= e.radius + pr.radius) {
-            if (!pr.hitSet) pr.hitSet = new Set();
-            pr.hitSet.add(e);
-
-            if (pr.splashRadius) {
-              spawnParticles(pr.x, pr.y, 16, pr.color, 175, 0.45, 4.2, 10);
-              for (const sub of targets) {
-                if (sub && sub.hp > 0 && Math.hypot(sub.x - pr.x, sub.y - pr.y) <= pr.splashRadius + sub.radius) {
-                  damageEnemy(sub, pr.damage, cs.critChance, Math.atan2(sub.y - pr.y, sub.x - pr.x), pr.knockback || 120);
-                }
-              }
-            } else {
-              damageEnemy(e, pr.damage, cs.critChance, Math.atan2(pr.vy, pr.vx), pr.knockback || 110);
-            }
-
-            if ((pr.pierce || 0) > 0) {
-              pr.pierce -= 1;
-            } else {
-              consumed = true;
-              break;
-            }
-          }
-        }
-        // Попадание по ресурсным узлам/ящикам
-        if (!consumed) {
-          for (const node of world.nodes) {
-            if (node.respawnTimer <= 0 && node.hp > 0 && Math.hypot(node.x - pr.x, node.y - pr.y) <= node.radius + pr.radius) {
-              hitResourceNode(node, pr.damage);
-              consumed = true;
-              break;
-            }
-          }
-        }
-        if (consumed) state.projectiles.splice(i, 1);
-      } else {
-        // Вражеский снаряд (можно перепрыгнуть при высоком прыжке!)
-        if (p.z < 18 && Math.hypot(p.x - pr.x, p.y - pr.y) <= p.radius + pr.radius) {
-          damagePlayer(pr.damage, pr.x, pr.y);
-          state.projectiles.splice(i, 1);
+      // Попадание пуль в стены зданий или во взрывные красные бочки!
+      let hitObstacle = false;
+      for (const bld of this.world.buildings) {
+        if (Math.abs(pr.x - bld.x) < bld.colW * 0.5 && Math.abs(pr.y - (bld.y - bld.colH * 0.5)) < bld.colH * 0.5) {
+          hitObstacle = true;
+          break;
         }
       }
-    }
-  }
-
-  function updateShockwaves(dt) {
-    const p = state.player;
-    for (let i = state.shockwaves.length - 1; i >= 0; i--) {
-      const sw = state.shockwaves[i];
-      sw.radius += sw.speed * dt;
-      if (sw.friendly && sw.damage > 0) {
-        const targets = state.activeBoss ? [state.activeBoss, ...state.enemies] : state.enemies;
-        for (const e of targets) {
-          if (!e || e.hp <= 0 || (sw.hitIds && sw.hitIds.has(e))) continue;
-          const d = Math.hypot(e.x - sw.x, e.y - sw.y);
-          if (Math.abs(d - sw.radius) <= 22 + e.radius) {
-            if (sw.hitIds) sw.hitIds.add(e);
-            damageEnemy(e, sw.damage, 0.1, Math.atan2(e.y - sw.y, e.x - sw.x), 200, 0.35);
-          }
-        }
-      } else if (!sw.friendly && sw.damage > 0 && !sw.hitPlayer) {
-        const d = Math.hypot(p.x - sw.x, p.y - sw.y);
-        if (Math.abs(d - sw.radius) <= 18 + p.radius) {
-          // Если игрок подпрыгнул (z > 14), он перепрыгивает ударную волну без урона!
-          if (sw.jumpable && p.z > 14) {
-            sw.hitPlayer = true;
-            addFloatingText(p.x, p.y - 30, 'ПРЫЖОК!', '#38bdf8', 13);
-          } else {
-            sw.hitPlayer = true;
-            damagePlayer(sw.damage, sw.x, sw.y);
+      if (!hitObstacle && pr.fromPlayer) {
+        for (const nd of this.world.nodes) {
+          if (nd.respawnTimer > 0 || (!nd.explosive && nd.kind !== 'crates' && nd.kind !== 'barrel')) continue;
+          if (dist2(pr.x, pr.y, nd.x, nd.y) <= (pr.radius + nd.radius) ** 2) {
+            this.damageNode(nd, pr.damage);
+            hitObstacle = true;
+            break;
           }
         }
       }
-      if (sw.radius >= sw.maxRadius) state.shockwaves.splice(i, 1);
-    }
-  }
-
-  function updateTelegraphs(dt) {
-    const p = state.player;
-    for (let i = state.telegraphs.length - 1; i >= 0; i--) {
-      const tg = state.telegraphs[i];
-      tg.timer -= dt;
-      if (tg.timer <= 0) {
-        sound.play('slam');
-        spawnParticles(tg.x, tg.y, 18, tg.color, 185, 0.5, 4.5, 10);
-        if (Math.hypot(p.x - tg.x, p.y - tg.y) <= tg.radius + p.radius * 0.5) {
-          damagePlayer(tg.damage, tg.x, tg.y);
-        }
-        state.telegraphs.splice(i, 1);
-      }
-    }
-  }
-
-  function updateLoot(dt, cs) {
-    const p = state.player;
-    for (let i = state.lootDrops.length - 1; i >= 0; i--) {
-      const lt = state.lootDrops[i];
-      lt.life -= dt;
-      if (lt.life <= 0) {
-        state.lootDrops.splice(i, 1);
+      if (hitObstacle) {
+        this.projectiles.splice(i, 1);
         continue;
       }
-      const dx = p.x - lt.x;
-      const dy = p.y - lt.y;
-      const d = Math.hypot(dx, dy);
-      if (d < cs.magnetRadius && d > 1) {
-        const pull = 360 * dt;
-        lt.x += (dx / d) * pull;
-        lt.y += (dy / d) * pull;
-      }
-      if (d <= 24) {
-        if (lt.type === 'gold') {
-          sound.play('gold');
-          grantRewardItem({ type: 'gold', amount: lt.amount }, false);
-        } else {
-          sound.play('pickup');
-          grantRewardItem({ type: lt.type, id: lt.itemId, count: lt.count || 1 }, false);
+
+      if (pr.fromPlayer) {
+        let consumed = false;
+        for (let j = this.enemies.length - 1; j >= 0; j--) {
+          const e = this.enemies[j];
+          if (dist2(pr.x, pr.y, e.x, e.y) <= (pr.radius + e.radius) ** 2) {
+            this.onPlayerProjHit(pr, e, false);
+            if (pr.pierce > 0) pr.pierce--;
+            else { consumed = true; break; }
+          }
         }
-        state.lootDrops.splice(i, 1);
-      }
-    }
-  }
-
-  // ── Сохранение и Загрузка прогресса ──────────────────────────────────
-  function serializeSave() {
-    return {
-      version: 1,
-      savedAt: Date.now(),
-      playTime: state.playTime,
-      dayTime: state.dayTime,
-      settings: state.settings,
-      player: {
-        x: Math.round(state.player.x),
-        y: Math.round(state.player.y),
-        level: state.player.level,
-        xp: state.player.xp,
-        xpNext: state.player.xpNext,
-        statPoints: state.player.statPoints,
-        skillPoints: state.player.skillPoints,
-        gold: state.player.gold,
-        attributes: state.player.attributes,
-        permanentBonusHp: state.player.permanentBonusHp,
-        hp: Math.round(state.player.hp),
-        stamina: Math.round(state.player.stamina),
-        satiety: Math.round(state.player.satiety),
-        equippedWeapon: state.player.equippedWeapon,
-        equippedArmor: state.player.equippedArmor,
-        equippedRelics: state.player.equippedRelics,
-        quickConsumable: state.player.quickConsumable
-      },
-      skillRanks: state.skillRanks,
-      inventory: state.inventory,
-      weaponUpgrades: state.weaponUpgrades,
-      unlockedCampfires: state.unlockedCampfires,
-      respawnCampId: state.respawnCampId,
-      discoveredSecrets: state.discoveredSecrets,
-      openedChests: state.openedChests,
-      brokenPermanentNodes: state.brokenPermanentNodes,
-      litBraziers: state.litBraziers,
-      defeatedBosses: state.defeatedBosses,
-      activeQuestIndex: state.activeQuestIndex,
-      completedQuests: state.completedQuests,
-      questProgress: state.questProgress,
-      bounty: state.bounty,
-      unlockedAchievements: state.unlockedAchievements,
-      stats: state.stats,
-      fog: state.fog
-    };
-  }
-
-  function saveGame() {
-    try {
-      if (typeof localStorage !== 'undefined') {
-        localStorage.setItem(SAVE_KEY, JSON.stringify(serializeSave()));
-      }
-      return true;
-    } catch (_e) {
-      return false;
-    }
-  }
-
-  function loadGame(rawObj = null) {
-    try {
-      let data = rawObj;
-      if (!data && typeof localStorage !== 'undefined') {
-        const str = localStorage.getItem(SAVE_KEY);
-        if (!str) return false;
-        data = JSON.parse(str);
-      }
-      if (!data || !data.player) return false;
-
-      state.playTime = data.playTime || 0;
-      state.dayTime = typeof data.dayTime === 'number' ? data.dayTime : 0.28;
-      if (data.settings) Object.assign(state.settings, data.settings);
-      Object.assign(state.player, data.player);
-      state.player.z = 0;
-      state.player.vz = 0;
-      state.player.thunderLeap = null;
-
-      if (data.skillRanks) Object.assign(state.skillRanks, data.skillRanks);
-      if (data.inventory) {
-        state.inventory.weapons = data.inventory.weapons || ['sword_iron'];
-        state.inventory.armors = data.inventory.armors || ['armor_tunic'];
-        state.inventory.relics = data.inventory.relics || [];
-        Object.assign(state.inventory.resources, data.inventory.resources || {});
-        Object.assign(state.inventory.consumables, data.inventory.consumables || {});
-      }
-      if (data.weaponUpgrades) Object.assign(state.weaponUpgrades, data.weaponUpgrades);
-      state.unlockedCampfires = data.unlockedCampfires || ['camp_haven'];
-      state.respawnCampId = data.respawnCampId || 'camp_haven';
-      state.discoveredSecrets = data.discoveredSecrets || [];
-      state.openedChests = data.openedChests || [];
-      state.brokenPermanentNodes = data.brokenPermanentNodes || [];
-      state.litBraziers = data.litBraziers || [];
-      state.defeatedBosses = data.defeatedBosses || [];
-      state.activeQuestIndex = data.activeQuestIndex || 0;
-      state.completedQuests = data.completedQuests || [];
-      if (data.questProgress) {
-        Object.assign(state.questProgress, data.questProgress);
-        state.questProgress.biomeKills = Object.assign(
-          { meadow: 0, ruins: 0, mire: 0, frost: 0, rift: 0 },
-          data.questProgress.biomeKills || {}
-        );
-      }
-      if (data.bounty) Object.assign(state.bounty, data.bounty);
-      state.unlockedAchievements = data.unlockedAchievements || [];
-      if (data.stats) Object.assign(state.stats, data.stats);
-      if (Array.isArray(data.fog) && data.fog.length === FOG_GRID * FOG_GRID) {
-        state.fog = data.fog;
-      }
-
-      // Применяем открытые сундуки, разрушенные печати и жаровни к миру
-      for (const ch of world.chests) {
-        ch.opened = state.openedChests.includes(ch.id);
-      }
-      for (const nd of world.nodes) {
-        if (state.brokenPermanentNodes.includes(nd.id)) {
-          nd.hp = 0;
-          nd.respawnTimer = 999999;
+        if (!consumed) {
+          for (let j = this.bossEntities.length - 1; j >= 0; j--) {
+            const b = this.bossEntities[j];
+            if (dist2(pr.x, pr.y, b.x, b.y) <= (pr.radius + b.radius) ** 2) {
+              this.onPlayerProjHit(pr, b, true);
+              consumed = true;
+              break;
+            }
+          }
+        }
+        if (consumed) this.projectiles.splice(i, 1);
+      } else {
+        const p = this.player;
+        if (!p.dead && p.z < 18 && dist2(pr.x, pr.y, p.x, p.y) <= (pr.radius + p.radius) ** 2) {
+          if (pr.splashRadius) {
+            this.spawnSpriteEffect('explosion', pr.x, pr.y, 1.1, 16);
+          }
+          this.damagePlayer(pr.damage);
+          this.projectiles.splice(i, 1);
         }
       }
-      for (const br of world.braziers) {
-        br.lit = state.litBraziers.includes(br.id);
+    }
+  }
+
+  onPlayerProjHit(pr, target, isBoss) {
+    this.bumpCombo();
+    if (pr.splashRadius > 0) {
+      this.spawnSpriteEffect('magic', pr.x, pr.y, 1.35, 16);
+      this.shockwaves.push({
+        x: pr.x, y: pr.y, radius: 10, maxRadius: pr.splashRadius,
+        color: pr.color, friendly: true, damage: 0
+      });
+      for (let k = this.enemies.length - 1; k >= 0; k--) {
+        const other = this.enemies[k];
+        if (other !== target && dist2(pr.x, pr.y, other.x, other.y) <= (pr.splashRadius + other.radius) ** 2) {
+          this.damageEnemy(other, Math.round(pr.damage * 0.65), false, pr.color);
+        }
       }
+    }
+    if (isBoss) this.damageBoss(target, pr.damage, pr.isCrit);
+    else this.damageEnemy(target, pr.damage, pr.isCrit);
+  }
 
-      state.camera.x = state.player.x;
-      state.camera.y = state.player.y;
-      state.gameOver = false;
-      syncPlayerVitals(false);
-      sound.setSettings(state.settings);
+  updateDrops(dt) {
+    const p = this.player;
+    const magnetR2 = 128 * 128;
+    for (let i = this.drops.length - 1; i >= 0; i--) {
+      const d = this.drops[i];
+      d.life -= dt;
+      if (d.life <= 0) {
+        this.drops.splice(i, 1);
+        continue;
+      }
+      const d2 = dist2(d.x, d.y, p.x, p.y);
+      if (d2 < magnetR2) {
+        const dist = Math.sqrt(d2) || 1;
+        d.x += ((p.x - d.x) / dist) * 320 * dt;
+        d.y += ((p.y - d.y) / dist) * 320 * dt;
+        if (dist < 24) {
+          this.sound.play('pickup');
+          if (d.kind === 'coin') {
+            this.inventory.coins += d.amount;
+            this.addFloatingText(p.x, p.y - 20, `+${d.amount} 🪙`, '#fbbf24');
+          } else if (d.kind === 'ammo') {
+            this.inventory.ammo = Math.min(this.getMaxAmmo(), this.inventory.ammo + d.amount);
+            this.addFloatingText(p.x, p.y - 20, `+${d.amount} патронов`, '#fde047');
+          } else if (d.kind === 'item') {
+            this.grantItem(d.itemId, d.amount);
+            this.addFloatingText(p.x, p.y - 20, `+${d.amount} ${ITEMS[d.itemId]?.name || ''}`, '#4ade80');
+          } else if (d.kind === 'resource') {
+            this.inventory.resources[d.resId] = (this.inventory.resources[d.resId] || 0) + d.amount;
+            this.addFloatingText(p.x, p.y - 20, `+${d.amount} ${RESOURCES[d.resId].emoji}`, '#38bdf8');
+          }
+          this.drops.splice(i, 1);
+        }
+      }
+    }
+  }
+
+  updateEffects(dt) {
+    for (let i = this.spriteEffects.length - 1; i >= 0; i--) {
+      const fx = this.spriteEffects[i];
+      fx.age += dt;
+      fx.frame = Math.floor(fx.age * fx.fps);
+      if (fx.frame >= fx.totalFrames) {
+        this.spriteEffects.splice(i, 1);
+      }
+    }
+
+    for (let i = this.particles.length - 1; i >= 0; i--) {
+      const pt = this.particles[i];
+      pt.life -= dt;
+      if (pt.life <= 0) { this.particles.splice(i, 1); continue; }
+      pt.x += pt.vx * dt;
+      pt.y += pt.vy * dt;
+      pt.vx *= 0.90;
+      pt.vy *= 0.90;
+    }
+
+    for (let i = this.slashes.length - 1; i >= 0; i--) {
+      this.slashes[i].life -= dt;
+      if (this.slashes[i].life <= 0) this.slashes.splice(i, 1);
+    }
+
+    for (let i = this.shockwaves.length - 1; i >= 0; i--) {
+      const sw = this.shockwaves[i];
+      sw.radius += 360 * dt;
+      if (!sw.friendly && !sw.hitPlayer && !this.player.dead && this.player.z < 14) {
+        const d = Math.hypot(this.player.x - sw.x, this.player.y - sw.y);
+        if (Math.abs(d - sw.radius) < 22) {
+          sw.hitPlayer = true;
+          this.damagePlayer(sw.damage);
+        }
+      }
+      if (sw.radius >= sw.maxRadius) this.shockwaves.splice(i, 1);
+    }
+
+    for (let i = this.floatingTexts.length - 1; i >= 0; i--) {
+      const ft = this.floatingTexts[i];
+      ft.life -= dt;
+      ft.y -= 32 * dt;
+      if (ft.life <= 0) this.floatingTexts.splice(i, 1);
+    }
+
+    for (let i = this.toasts.length - 1; i >= 0; i--) {
+      this.toasts[i].life -= dt;
+      if (this.toasts[i].life <= 0) this.toasts.splice(i, 1);
+    }
+  }
+
+  // ── Интерактивные объекты: костры, NPC, транспорт, двери зданий и бункеры ──
+  checkWorldInteractions() {
+    const p = this.player;
+    for (const c of CAMPFIRES) {
+      if (!this.unlockedCamps.includes(c.id) && dist2(p.x, p.y, c.x, c.y) < 120 * 120) {
+        this.unlockedCamps.push(c.id);
+        this.sound.play('levelup');
+        this.pushToast(`🔥 Открыта точка перемещения: ${c.name}`, '#fb923c');
+        this.advanceQuest('campfire', 1, { campId: c.id });
+      }
+    }
+  }
+
+  getNearbyInteractable() {
+    const p = this.player;
+    if (p.vehicleId) {
+      const v = this.world.vehicles.find(vh => vh.id === p.vehicleId);
+      return { type: 'vehicle_exit', target: v, label: `🚗 Выйти из транспорта` };
+    }
+
+    for (const npc of NPCS) {
+      if (dist2(p.x, p.y, npc.x, npc.y) < 88 * 88) {
+        return { type: 'npc', target: npc, label: `Поговорить: ${npc.name}` };
+      }
+    }
+
+    for (const v of this.world.vehicles) {
+      if (v.drivable && dist2(p.x, p.y, v.x, v.y) < 76 * 76) {
+        return { type: 'vehicle', target: v, label: `🚗 Сесть за руль: ${v.name}` };
+      }
+    }
+
+    // Двери зданий (вход расположен по центру фасада `bld.x, bld.y + 12`)
+    for (const bld of this.world.buildings) {
+      if (!bld.interactType) continue;
+      const doorX = bld.x;
+      const doorY = bld.y + 14;
+      if (dist2(p.x, p.y, doorX, doorY) < 78 * 78) {
+        if (bld.interactType === 'shop') {
+          return { type: 'building_shop', target: bld, label: `🏪 Войти в ${bld.name}` };
+        }
+        if (bld.interactType === 'heal') {
+          return { type: 'building_heal', target: bld, label: `🏥 Медпомощь: ${bld.name}` };
+        }
+        if (bld.interactType === 'secret_vault') {
+          if (this.discoveredSecrets.includes(bld.secretId)) continue;
+          const sec = SECRETS.find(s => s.id === bld.secretId);
+          const keyNote = sec?.requiresKey ? ' (нужен Ключ 🗝️)' : '';
+          return { type: 'secret_vault', target: { bld, sec }, label: `🗝️ Открыть: ${bld.name}${keyNote}` };
+        }
+        if (bld.interactType === 'loot_once' && !bld.looted) {
+          return { type: 'building_loot', target: bld, label: `📦 Обыскать: ${bld.name}` };
+        }
+      }
+    }
+
+    for (const c of CAMPFIRES) {
+      if (dist2(p.x, p.y, c.x, c.y) < 92 * 92) {
+        return { type: 'campfire', target: c, label: `🔥 Отдохнуть у костра` };
+      }
+    }
+    return null;
+  }
+
+  toggleVehicle(veh) {
+    const p = this.player;
+    if (p.vehicleId) {
+      const cur = this.world.vehicles.find(v => v.id === p.vehicleId);
+      p.vehicleId = null;
+      if (cur) {
+        cur.vx = 0;
+        cur.vy = 0;
+        p.x = cur.x;
+        p.y = cur.y + cur.radius + 18;
+      }
+      this.sound.play('ui');
+      return { type: 'vehicle_exit' };
+    }
+    if (veh && veh.drivable) {
+      p.vehicleId = veh.id;
+      p.x = veh.x;
+      p.y = veh.y;
+      this.stats.droveVehicle = (this.stats.droveVehicle || 0) + 1;
+      this.sound.play('vehicle');
+      this.pushToast(`🚗 Вы за рулём: ${veh.name}! Тараньте врагов на скорости!`, '#38bdf8');
+      this.checkAchievements();
+      return { type: 'vehicle_enter', vehicle: veh };
+    }
+    return null;
+  }
+
+  interact() {
+    const inter = this.getNearbyInteractable();
+    if (!inter) return null;
+
+    if (inter.type === 'vehicle_exit') return this.toggleVehicle(null);
+    if (inter.type === 'vehicle') return this.toggleVehicle(inter.target);
+
+    if (inter.type === 'campfire') {
+      this.player.hp = this.player.maxHp;
+      this.player.stamina = this.player.maxStamina;
+      this.sound.play('heal');
+      this.saveGame(true);
+      this.pushToast(`🔥 Здоровье и силы восстановлены (${inter.target.name})`, '#4ade80');
+      return inter;
+    }
+
+    if (inter.type === 'building_shop') {
+      this.sound.play('ui');
+      return { type: 'open_shop', target: inter.target };
+    }
+
+    if (inter.type === 'building_heal') {
+      this.player.hp = this.player.maxHp;
+      this.player.hunger = Math.max(85, this.player.hunger);
+      this.sound.play('heal');
+      this.spawnSpriteEffect('magic', this.player.x, this.player.y, 1.3, 15);
+      this.pushToast('🏥 Врачи Больницы полностью восстановили ваше здоровье!', '#4ade80');
+      return inter;
+    }
+
+    if (inter.type === 'building_loot') {
+      const bld = inter.target;
+      bld.looted = true;
+      if (!this.lootedBuildings.includes(bld.id)) this.lootedBuildings.push(bld.id);
+      const coins = randInt(35, 75);
+      const ammo = randInt(18, 36);
+      this.inventory.coins += coins;
+      this.grantItem('ammo', ammo);
+      this.grantItem('medkit', 1);
+      if (bld.kind === 'police' || bld.kind === 'base' || Math.random() < 0.35) {
+        this.grantItem('key', 1);
+        this.grantItem('grenade', 2);
+        this.pushToast(`📦 Найдено в «${bld.name}»: +${coins}🪙, +${ammo} патр., Аптечка, 2 Гранаты и Ключ!`, '#fbbf24');
+      } else {
+        this.pushToast(`📦 Обыскано «${bld.name}»: +${coins}🪙, +${ammo} патронов и Аптечка!`, '#4ade80');
+      }
+      this.sound.play('unlock');
+      return inter;
+    }
+
+    if (inter.type === 'secret_vault') {
+      const { bld, sec } = inter.target;
+      if (!sec) return null;
+      if (sec.requiresKey && (this.inventory.consumables.key || 0) <= 0) {
+        this.pushToast('🔒 Заперто! Нужен Серебряный Ключ (ищи в Полиции, у боссов или купи в SHOP)', '#f59e0b');
+        return null;
+      }
+      if (sec.requiresKey) {
+        this.inventory.consumables.key--;
+      }
+      this.discoveredSecrets.push(sec.id);
+      bld.looted = true;
+      this.inventory.coins += sec.coins;
+      this.grantWeapon(sec.rewardWeapon);
+      for (const it of sec.rewardItems || []) {
+        this.grantItem(it.id, it.count);
+      }
+      this.sound.play('unlock');
+      this.spawnSpriteEffect('magic', bld.x, bld.y, 1.6, 14);
+      this.pushToast(`🗝️ ОТКРЫТО: ${sec.name}! Получено: ${WEAPONS[sec.rewardWeapon]?.name} и +${sec.coins}🪙!`, '#fbbf24');
+      this.advanceQuest('secret', 1);
+      this.checkAchievements();
+      this.saveGame(true);
+      return inter;
+    }
+
+    if (inter.type === 'npc') {
+      const npc = inter.target;
+      if (npc.action === 'heal_medic') {
+        this.player.hp = this.player.maxHp;
+        this.sound.play('heal');
+      } else if (npc.action === 'farmer_food') {
+        if ((this.inventory.consumables.food || 0) < 3) {
+          this.grantItem('food', 1);
+        }
+        this.player.hunger = this.player.maxHunger;
+        this.sound.play('pickup');
+      } else {
+        this.sound.play('ui');
+      }
+      return inter;
+    }
+    return null;
+  }
+
+  fastTravel(campId) {
+    if (!this.unlockedCamps.includes(campId)) return false;
+    const camp = CAMPFIRES.find(c => c.id === campId);
+    if (!camp) return false;
+    this.player.vehicleId = null;
+    this.player.x = camp.x;
+    this.player.y = camp.y + 42;
+    this.player.z = 0;
+    this.camera.x = this.player.x;
+    this.camera.y = this.player.y;
+    this.sound.play('skill');
+    this.pushToast(`🧭 Перемещение: ${camp.name}`, '#38bdf8');
+    return true;
+  }
+
+  // ── Торговля в SHOP, Ремесло, Прокачка оружия и Характеристик ────────
+  buyShopItem(kind, id) {
+    if (kind === 'item') {
+      const item = ITEMS[id];
+      if (!item) return false;
+      if (this.inventory.coins < item.price) {
+        this.pushToast('Недостаточно монет!', '#ef4444');
+        return false;
+      }
+      if (id === 'ammo' && this.inventory.ammo >= this.getMaxAmmo()) {
+        this.pushToast('Подсумки патронов полны! Купи Рюкзак для расширения', '#f59e0b');
+        return false;
+      }
+      if (id === 'backpack' && this.inventory.backpackLevel >= 4) {
+        this.pushToast('У вас уже максимальный Рюкзак 4-го уровня!', '#4ade80');
+        return false;
+      }
+      this.inventory.coins -= item.price;
+      this.grantItem(id, 1);
+      this.sound.play('pickup');
+      this.pushToast(`🏪 Куплено: ${item.name}`, '#4ade80');
       return true;
-    } catch (_e) {
+    }
+
+    if (kind === 'weapon') {
+      const w = WEAPONS[id];
+      if (!w || this.inventory.weapons.includes(id)) return false;
+      if (this.inventory.coins < w.price) {
+        this.pushToast('Недостаточно монет!', '#ef4444');
+        return false;
+      }
+      this.inventory.coins -= w.price;
+      this.grantWeapon(id);
+      this.equipWeapon(id);
+      this.sound.play('levelup');
+      return true;
+    }
+    return false;
+  }
+
+  equipWeapon(weaponId) {
+    if (!this.inventory.weapons.includes(weaponId)) return false;
+    this.inventory.equippedWeapon = weaponId;
+    this.sound.play('ui');
+    return true;
+  }
+
+  upgradeWeapon(weaponId) {
+    if (!this.inventory.weapons.includes(weaponId)) return false;
+    const cur = this.weaponUpgrades[weaponId] || 0;
+    if (cur >= 10) return false;
+    const costCoins = 45 + cur * 40;
+    const costScrap = 1 + Math.floor(cur / 2);
+    if (this.inventory.coins < costCoins || (this.inventory.resources.scrap || 0) < costScrap) {
+      this.pushToast('Нужно больше монет и металлолома (⚙️)!', '#f59e0b');
       return false;
     }
+    this.inventory.coins -= costCoins;
+    this.inventory.resources.scrap -= costScrap;
+    this.weaponUpgrades[weaponId] = cur + 1;
+    this.sound.play('levelup');
+    this.pushToast(`⚙️ ${WEAPONS[weaponId].name} улучшено до +${cur + 1}!`, '#4ade80');
+    this.checkAchievements();
+    return true;
   }
 
-  function resetNewGame() {
-    const keptSettings = { ...state.settings };
-    const fresh = createInitialState();
-    Object.assign(state, fresh);
-    state.settings = keptSettings;
-    for (const ch of world.chests) ch.opened = false;
-    for (const nd of world.nodes) {
-      nd.hp = nd.maxHp;
-      nd.respawnTimer = 0;
-    }
-    for (const br of world.braziers) br.lit = false;
-    revealFogAround(WORLD_CONFIG.spawnX, WORLD_CONFIG.spawnY, 4);
-    syncPlayerVitals(true);
-    sound.setBossMode(false);
-    saveGame();
-  }
-
-  function hasSavedGame() {
-    try {
-      return typeof localStorage !== 'undefined' && !!localStorage.getItem(SAVE_KEY);
-    } catch (_e) {
+  craftRecipe(recipeId) {
+    const rec = RECIPES.find(r => r.id === recipeId);
+    if (!rec) return false;
+    if (rec.weaponId && this.inventory.weapons.includes(rec.weaponId)) {
+      this.pushToast('Это оружие уже собрано!', '#94a3b8');
       return false;
     }
+    if (this.inventory.coins < rec.costCoins) {
+      this.pushToast('Недостаточно монет!', '#ef4444');
+      return false;
+    }
+    for (const [resId, need] of Object.entries(rec.ingredients)) {
+      if ((this.inventory.resources[resId] || 0) < need) {
+        this.pushToast(`Не хватает ресурса: ${RESOURCES[resId].name}`, '#f59e0b');
+        return false;
+      }
+    }
+
+    this.inventory.coins -= rec.costCoins;
+    for (const [resId, need] of Object.entries(rec.ingredients)) {
+      this.inventory.resources[resId] -= need;
+    }
+
+    if (rec.weaponId) {
+      this.grantWeapon(rec.weaponId);
+      this.equipWeapon(rec.weaponId);
+    } else if (rec.resultId === 'ammo') {
+      this.inventory.ammo = Math.min(this.getMaxAmmo(), this.inventory.ammo + rec.amount);
+      this.pushToast(`🛠️ Создано: +${rec.amount} патронов`, '#4ade80');
+    } else if (rec.resultId) {
+      this.grantItem(rec.resultId, rec.amount);
+      this.pushToast(`🛠️ Создано: ${ITEMS[rec.resultId]?.name} ×${rec.amount}`, '#4ade80');
+    }
+
+    this.stats.totalCrafted++;
+    this.sound.play('pickup');
+    this.checkAchievements();
+    return true;
   }
 
-  function getSavedPreview() {
-    try {
-      if (typeof localStorage === 'undefined') return null;
-      const raw = localStorage.getItem(SAVE_KEY);
-      if (!raw) return null;
-      const d = JSON.parse(raw);
-      const bId = getBiomeIdAt(d.player?.x || 2400, d.player?.y || 2400);
-      return {
-        level: d.player?.level || 1,
-        gold: d.player?.gold || 0,
-        biomeName: BIOMES[bId]?.name || 'Изумрудная Пустошь',
-        playTime: d.playTime || 0
-      };
-    } catch (_e) {
-      return null;
+  allocateStat(statKey) {
+    if (this.player.statPoints <= 0) return false;
+    if (!(statKey in this.player.stats)) return false;
+    this.player.statPoints--;
+    this.player.stats[statKey]++;
+    this.recalcDerivedStats(false);
+    this.sound.play('ui');
+    return true;
+  }
+
+  upgradeSkill(skillId) {
+    const sk = this.skills[skillId];
+    const def = SKILLS[skillId];
+    if (!sk || !def) return false;
+    if (this.player.skillPoints <= 0) return false;
+    if (this.player.level < def.unlockLevel) {
+      this.pushToast(`Требуется уровень ${def.unlockLevel}`, '#f59e0b');
+      return false;
+    }
+    if (sk.level >= 5) return false;
+    this.player.skillPoints--;
+    sk.level++;
+    this.sound.play('levelup');
+    this.pushToast(`✨ Навык «${def.name}» повышен до ур. ${sk.level}`, '#38bdf8');
+    return true;
+  }
+
+  // ── Квесты и Достижения ──────────────────────────────────────────────
+  getActiveQuest() {
+    return QUESTS[this.questIndex] || null;
+  }
+
+  advanceQuest(kind, amount = 1, meta = {}) {
+    const q = this.getActiveQuest();
+    if (!q) return;
+
+    let completedAll = true;
+    for (let idx = 0; idx < q.goals.length; idx++) {
+      const g = q.goals[idx];
+      const key = `${q.id}_${idx}`;
+      if (g.kind === kind) {
+        const matchBiome = !g.biome || g.biome === meta.biome;
+        const matchCamp = !g.campId || g.campId === meta.campId;
+        const matchBoss = !g.bossId || g.bossId === meta.bossId;
+        if (matchBiome && matchCamp && matchBoss) {
+          this.questProgress[key] = Math.min(g.target, (this.questProgress[key] || 0) + amount);
+        }
+      }
+      // Синхронизация уже открытых лагерей/бункеров/боссов
+      if (g.kind === 'campfire' && this.unlockedCamps.includes(g.campId)) {
+        this.questProgress[key] = 1;
+      }
+      if (g.kind === 'secret' && this.discoveredSecrets.length >= g.target) {
+        this.questProgress[key] = g.target;
+      }
+      if (g.kind === 'boss' && this.defeatedBosses.includes(g.bossId)) {
+        this.questProgress[key] = 1;
+      }
+      if ((this.questProgress[key] || 0) < g.target) completedAll = false;
+    }
+
+    if (completedAll) {
+      this.inventory.coins += q.rewards.coins || 0;
+      if (q.rewards.xp) this.gainXp(q.rewards.xp);
+      for (const it of q.rewards.items || []) {
+        this.grantItem(it.id, it.count);
+      }
+      this.sound.play('levelup');
+      this.pushToast(`📜 КВЕСТ ВЫПОЛНЕН: «${q.title}» (+${q.rewards.coins}🪙)`, '#4ade80');
+      this.questIndex++;
+      this.advanceQuest('sync', 0);
     }
   }
 
-  syncPlayerVitals(true);
+  checkAchievements() {
+    for (const ach of ACHIEVEMENTS) {
+      if (this.unlockedAchievements.includes(ach.id)) continue;
+      if (ach.check(this)) {
+        this.unlockedAchievements.push(ach.id);
+        this.inventory.coins += ach.reward;
+        this.pushToast(`🏅 Достижение «${ach.name}»! +${ach.reward}🪙`, '#fbbf24');
+      }
+    }
+  }
 
-  return {
-    world,
-    state,
-    particles,
-    floatingTexts,
-    toasts,
-    FOG_GRID,
-    getComputedStats,
-    getCurrentQuest,
-    getQuestStatus,
-    isNightTime,
-    update,
-    triggerAttack,
-    triggerJump,
-    triggerSkill,
-    useQuickConsumable,
-    interact,
-    allocateStat,
-    upgradeSkill,
-    upgradeWeapon,
-    craftRecipe,
-    equipItem,
-    fastTravel,
-    respawnPlayer,
-    saveGame,
-    loadGame,
-    serializeSave,
-    resetNewGame,
-    hasSavedGame,
-    getSavedPreview,
-    pushToast
-  };
+  spawnDust(x, y, color, count = 6) {
+    const cap = this.settings.quality === 'low' ? 35 : 90;
+    if (this.particles.length > cap) return;
+    for (let i = 0; i < count; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const s = randRange(25, 110);
+      this.particles.push({
+        x, y,
+        vx: Math.cos(a) * s,
+        vy: Math.sin(a) * s,
+        size: randRange(2, 4),
+        color,
+        life: randRange(0.2, 0.42),
+        maxLife: 0.42
+      });
+    }
+  }
+
+  addFloatingText(x, y, text, color = '#ffffff', big = false) {
+    if (this.floatingTexts.length > 26) this.floatingTexts.shift();
+    this.floatingTexts.push({ x, y, text, color, big, life: 0.85 });
+  }
+
+  pushToast(text, color = '#f8fafc') {
+    this.toasts.unshift({ text, color, life: 3.6 });
+    if (this.toasts.length > 4) this.toasts.pop();
+  }
 }

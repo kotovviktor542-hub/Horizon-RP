@@ -1,147 +1,135 @@
-// Надёжное мультитач-управление для Android (виртуальный джойстик + кнопки действий)
-// и полная поддержка клавиатуры/мыши для ПК и браузерного превью.
+// Мобильный мультитач-ввод без залипаний + клавиатура для тестирования в браузере
+// Поддерживает джойстик (авто-бег при полном наклоне), стрельбу, гранату, прыжок, рывок и смену оружия
 
-import { sound } from './audio.js';
+export class InputController {
+  constructor(callbacks) {
+    this.cb = callbacks;
+    this.moveX = 0;
+    this.moveY = 0;
+    this.sprintHeld = false;
+    this.attackHeld = false;
 
-export function createInputController(engine, uiCallbacks) {
-  const keys = new Set();
-  const state = {
-    moveX: 0,
-    moveY: 0,
-    joyX: 0,
-    joyY: 0,
-    attackHeld: false
-  };
+    this.joyPointerId = null;
+    this.joyOriginX = 0;
+    this.joyOriginY = 0;
+    this.joyMaxRadius = 54;
 
-  let joyTouchId = null;
-  let joyPointerId = null;
-  let joyOriginX = 0;
-  let joyOriginY = 0;
-  const maxJoyRadius = 52;
+    this.keys = new Set();
 
-  const joyZone = document.getElementById('joystick-zone');
-  const joyBase = document.getElementById('joystick-base');
-  const joyKnob = document.getElementById('joystick-knob');
+    this.joyZone = document.getElementById('joystick-zone');
+    this.joyBase = document.getElementById('joystick-base');
+    this.joyKnob = document.getElementById('joystick-knob');
 
-  function updateJoyVisual(dx, dy, active) {
-    if (!joyBase || !joyKnob) return;
-    joyBase.classList.toggle('active', active);
-    joyKnob.style.transform = `translate(${dx.toFixed(1)}px, ${dy.toFixed(1)}px)`;
+    this.bindJoystick();
+    this.bindActionButtons();
+    this.bindKeyboard();
   }
 
-  function applyJoyDelta(clientX, clientY) {
-    const dx = clientX - joyOriginX;
-    const dy = clientY - joyOriginY;
-    const dist = Math.hypot(dx, dy);
-    const clamped = Math.min(maxJoyRadius, dist);
-    const ang = Math.atan2(dy, dx);
-    const kx = dist > 2 ? Math.cos(ang) * clamped : 0;
-    const ky = dist > 2 ? Math.sin(ang) * clamped : 0;
-
-    state.joyX = kx / maxJoyRadius;
-    state.joyY = ky / maxJoyRadius;
-    updateJoyVisual(kx, ky, true);
+  resetAll() {
+    this.moveX = 0;
+    this.moveY = 0;
+    this.sprintHeld = false;
+    this.attackHeld = false;
+    this.joyPointerId = null;
+    this.keys.clear();
+    if (this.joyKnob) this.joyKnob.style.transform = 'translate(0px, 0px)';
+    if (this.joyBase) this.joyBase.classList.remove('active');
   }
 
-  function resetJoystick() {
-    joyTouchId = null;
-    joyPointerId = null;
-    state.joyX = 0;
-    state.joyY = 0;
-    if (joyBase) {
-      joyBase.style.left = '';
-      joyBase.style.top = '';
-    }
-    updateJoyVisual(0, 0, false);
-  }
+  bindJoystick() {
+    if (!this.joyZone) return;
 
-  // ── Touch-события виртуального джойстика ─────────────────────────────
-  if (joyZone) {
-    joyZone.addEventListener('touchstart', (e) => {
-      sound.init();
-      if (joyTouchId !== null) return;
-      const t = e.changedTouches[0];
-      if (!t) return;
+    const onStart = (e) => {
       e.preventDefault();
-      joyTouchId = t.identifier;
-      const rect = joyZone.getBoundingClientRect();
+      this.cb.onUnlockAudio?.();
+      if (this.joyPointerId !== null) return;
+      const pt = e.changedTouches ? e.changedTouches[0] : e;
+      this.joyPointerId = e.changedTouches ? pt.identifier : 'mouse';
 
-      if (engine.state.settings.joystickMode === 'dynamic') {
-        joyOriginX = t.clientX;
-        joyOriginY = t.clientY;
-        if (joyBase) {
-          joyBase.style.left = `${t.clientX - rect.left - 62}px`;
-          joyBase.style.top = `${t.clientY - rect.top - 62}px`;
-        }
-      } else {
-        const bRect = joyBase.getBoundingClientRect();
-        joyOriginX = bRect.left + bRect.width * 0.5;
-        joyOriginY = bRect.top + bRect.height * 0.5;
-      }
-      applyJoyDelta(t.clientX, t.clientY);
-    }, { passive: false });
+      const rect = this.joyBase.getBoundingClientRect();
+      this.joyOriginX = rect.left + rect.width * 0.5;
+      this.joyOriginY = rect.top + rect.height * 0.5;
+      this.joyBase.classList.add('active');
+      this.updateJoystickFromPoint(pt.clientX, pt.clientY);
+    };
 
-    joyZone.addEventListener('touchmove', (e) => {
-      if (joyTouchId === null) return;
-      for (let i = 0; i < e.changedTouches.length; i++) {
-        const t = e.changedTouches[i];
-        if (t.identifier === joyTouchId) {
-          e.preventDefault();
-          applyJoyDelta(t.clientX, t.clientY);
-          break;
+    const onMove = (e) => {
+      if (this.joyPointerId === null) return;
+      if (e.changedTouches) {
+        for (let i = 0; i < e.changedTouches.length; i++) {
+          const t = e.changedTouches[i];
+          if (t.identifier === this.joyPointerId) {
+            e.preventDefault();
+            this.updateJoystickFromPoint(t.clientX, t.clientY);
+            break;
+          }
         }
-      }
-    }, { passive: false });
-
-    const endTouch = (e) => {
-      if (joyTouchId === null) return;
-      for (let i = 0; i < e.changedTouches.length; i++) {
-        if (e.changedTouches[i].identifier === joyTouchId) {
-          resetJoystick();
-          break;
-        }
+      } else if (this.joyPointerId === 'mouse') {
+        this.updateJoystickFromPoint(e.clientX, e.clientY);
       }
     };
-    joyZone.addEventListener('touchend', endTouch);
-    joyZone.addEventListener('touchcancel', endTouch);
 
-    // Поддержка мыши по джойстику для удобного теста в браузере
-    joyZone.addEventListener('mousedown', (e) => {
-      sound.init();
-      joyPointerId = 1;
-      const bRect = joyBase.getBoundingClientRect();
-      joyOriginX = bRect.left + bRect.width * 0.5;
-      joyOriginY = bRect.top + bRect.height * 0.5;
-      applyJoyDelta(e.clientX, e.clientY);
-    });
-    window.addEventListener('mousemove', (e) => {
-      if (joyPointerId !== null) applyJoyDelta(e.clientX, e.clientY);
-    });
-    window.addEventListener('mouseup', () => {
-      if (joyPointerId !== null) resetJoystick();
-      state.attackHeld = false;
+    const onEnd = (e) => {
+      if (this.joyPointerId === null) return;
+      if (e.changedTouches) {
+        let ended = false;
+        for (let i = 0; i < e.changedTouches.length; i++) {
+          if (e.changedTouches[i].identifier === this.joyPointerId) {
+            ended = true;
+            break;
+          }
+        }
+        if (!ended) return;
+      }
+      this.joyPointerId = null;
+      this.moveX = 0;
+      this.moveY = 0;
+      this.joyKnob.style.transform = 'translate(0px, 0px)';
+      this.joyBase.classList.remove('active');
+    };
+
+    this.joyZone.addEventListener('touchstart', onStart, { passive: false });
+    window.addEventListener('touchmove', onMove, { passive: false });
+    window.addEventListener('touchend', onEnd, { passive: true });
+    window.addEventListener('touchcancel', onEnd, { passive: true });
+
+    this.joyZone.addEventListener('mousedown', onStart);
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onEnd);
+    window.addEventListener('blur', () => this.resetAll());
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) this.resetAll();
     });
   }
 
-  // ── Кнопки действий (мультитач без задержки 300мс) ───────────────────
-  function bindActionButton(id, onPress, holdable = false) {
-    const el = document.getElementById(id);
-    if (!el) return;
+  updateJoystickFromPoint(cx, cy) {
+    const dx = cx - this.joyOriginX;
+    const dy = cy - this.joyOriginY;
+    const dist = Math.hypot(dx, dy);
+    const maxR = this.joyMaxRadius;
+    const clamped = Math.min(dist, maxR);
+    const nx = dist > 0.001 ? dx / dist : 0;
+    const ny = dist > 0.001 ? dy / dist : 0;
 
+    this.moveX = nx * (clamped / maxR);
+    this.moveY = ny * (clamped / maxR);
+    this.joyKnob.style.transform = `translate(${(nx * clamped).toFixed(1)}px, ${(ny * clamped).toFixed(1)}px)`;
+  }
+
+  bindHoldButton(el, onDown, onUp) {
+    if (!el) return;
     const start = (e) => {
       e.preventDefault();
       e.stopPropagation();
-      sound.init();
+      this.cb.onUnlockAudio?.();
       el.classList.add('pressed');
-      if (holdable) state.attackHeld = true;
-      onPress();
+      onDown();
     };
     const end = (e) => {
-      if (e) e.preventDefault();
+      e.preventDefault();
       el.classList.remove('pressed');
-      if (holdable) state.attackHeld = false;
+      onUp?.();
     };
-
     el.addEventListener('touchstart', start, { passive: false });
     el.addEventListener('touchend', end, { passive: false });
     el.addEventListener('touchcancel', end, { passive: false });
@@ -150,106 +138,80 @@ export function createInputController(engine, uiCallbacks) {
     el.addEventListener('mouseleave', end);
   }
 
-  bindActionButton('btn-attack', () => engine.triggerAttack(), true);
-  bindActionButton('btn-jump', () => engine.triggerJump(state.moveX, state.moveY), false);
-  bindActionButton('btn-skill-1', () => engine.triggerSkill('whirlwind'), false);
-  bindActionButton('btn-skill-2', () => engine.triggerSkill('thunder_slam'), false);
-  bindActionButton('btn-skill-3', () => engine.triggerSkill('aegis_pulse'), false);
-  bindActionButton('btn-potion', () => engine.useQuickConsumable(), false);
-  bindActionButton('btn-interact', () => uiCallbacks.onInteract(), false);
+  bindTapButton(id, fn) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    this.bindHoldButton(el, fn, null);
+  }
 
-  // Клик по игровому холсту на ПК тоже атакует
-  const canvas = document.getElementById('game-canvas');
-  if (canvas) {
-    canvas.addEventListener('mousedown', (e) => {
-      if (e.button !== 0 || uiCallbacks.isModalOpen()) return;
-      sound.init();
-      const rect = canvas.getBoundingClientRect();
-      const cx = rect.width * 0.5;
-      const cy = rect.height * 0.5;
-      const ang = Math.atan2(e.clientY - rect.top - cy, e.clientX - rect.left - cx);
-      engine.state.player.facingAngle = ang;
-      engine.state.player.facingX = Math.cos(ang);
-      engine.state.player.facingY = Math.sin(ang);
-      state.attackHeld = true;
-      engine.triggerAttack();
+  bindActionButtons() {
+    const atkBtn = document.getElementById('btn-attack');
+    this.bindHoldButton(
+      atkBtn,
+      () => { this.attackHeld = true; this.cb.onAttack?.(); },
+      () => { this.attackHeld = false; }
+    );
+
+    this.bindTapButton('btn-jump', () => this.cb.onJump?.());
+    this.bindTapButton('btn-dash', () => this.cb.onDash?.());
+    this.bindTapButton('btn-grenade', () => this.cb.onGrenade?.());
+    this.bindTapButton('btn-heal', () => this.cb.onQuickHeal?.());
+    this.bindTapButton('btn-interact', () => this.cb.onInteract?.());
+    this.bindTapButton('hud-weapon-switch', () => this.cb.onCycleWeapon?.());
+    this.bindTapButton('btn-skill-1', () => this.cb.onSkill?.('slash_wave'));
+    this.bindTapButton('btn-skill-2', () => this.cb.onSkill?.('magic_nova'));
+    this.bindTapButton('btn-skill-3', () => this.cb.onSkill?.('adrenaline'));
+  }
+
+  bindKeyboard() {
+    window.addEventListener('keydown', (e) => {
+      if (e.repeat) return;
+      const k = e.key.toLowerCase();
+      this.keys.add(k);
+      if (e.key === 'Shift') this.sprintHeld = true;
+      this.cb.onUnlockAudio?.();
+
+      if (k === ' ' || k === 'j') { this.attackHeld = true; this.cb.onAttack?.(); }
+      else if (k === 'k') this.cb.onJump?.();
+      else if (k === 'l') this.cb.onDash?.();
+      else if (k === 'g') this.cb.onGrenade?.();
+      else if (k === 'q') this.cb.onCycleWeapon?.();
+      else if (k === 'e' || k === 'f') this.cb.onInteract?.();
+      else if (k === 'h') this.cb.onQuickHeal?.();
+      else if (k === '1') this.cb.onSkill?.('slash_wave');
+      else if (k === '2') this.cb.onSkill?.('magic_nova');
+      else if (k === '3') this.cb.onSkill?.('adrenaline');
+      else if (k === 'i') this.cb.onOpenTab?.('inventory');
+      else if (k === 'm') this.cb.onOpenTab?.('map');
+      else if (e.key === 'Escape') this.cb.onEscape?.();
+    });
+
+    window.addEventListener('keyup', (e) => {
+      const k = e.key.toLowerCase();
+      this.keys.delete(k);
+      if (e.key === 'Shift') this.sprintHeld = false;
+      if (k === ' ' || k === 'j') this.attackHeld = false;
     });
   }
 
-  // ── Клавиатура (ПК) ──────────────────────────────────────────────────
-  window.addEventListener('keydown', (e) => {
-    sound.init();
-    const code = e.code;
-    keys.add(code);
-
-    if (code === 'Escape') {
-      uiCallbacks.onEscape();
-      return;
-    }
-    if (uiCallbacks.isModalOpen()) return;
-
-    if (code === 'Space') {
-      e.preventDefault();
-      engine.triggerJump(state.moveX, state.moveY);
-    } else if (code === 'KeyJ' || code === 'Enter') {
-      state.attackHeld = true;
-      engine.triggerAttack();
-    } else if (code === 'Digit1') {
-      engine.triggerSkill('whirlwind');
-    } else if (code === 'Digit2') {
-      engine.triggerSkill('thunder_slam');
-    } else if (code === 'Digit3') {
-      engine.triggerSkill('aegis_pulse');
-    } else if (code === 'KeyQ') {
-      engine.useQuickConsumable();
-    } else if (code === 'KeyE' || code === 'KeyF') {
-      uiCallbacks.onInteract();
-    } else if (code === 'KeyI' || code === 'Tab') {
-      e.preventDefault();
-      uiCallbacks.openTab('hero');
-    } else if (code === 'KeyM') {
-      uiCallbacks.openTab('map');
-    }
-  });
-
-  window.addEventListener('keyup', (e) => {
-    keys.delete(e.code);
-    if (e.code === 'KeyJ' || e.code === 'Enter') {
-      state.attackHeld = false;
-    }
-  });
-
-  const clearAll = () => {
-    keys.clear();
-    state.attackHeld = false;
-    resetJoystick();
-  };
-  window.addEventListener('blur', clearAll);
-  document.addEventListener('visibilitychange', () => {
-    if (document.hidden) clearAll();
-  });
-
-  function poll() {
+  getState() {
     let kx = 0;
     let ky = 0;
-    if (keys.has('KeyA') || keys.has('ArrowLeft')) kx -= 1;
-    if (keys.has('KeyD') || keys.has('ArrowRight')) kx += 1;
-    if (keys.has('KeyW') || keys.has('ArrowUp')) ky -= 1;
-    if (keys.has('KeyS') || keys.has('ArrowDown')) ky += 1;
+    if (this.keys.has('a') || this.keys.has('ф') || this.keys.has('arrowleft')) kx -= 1;
+    if (this.keys.has('d') || this.keys.has('в') || this.keys.has('arrowright')) kx += 1;
+    if (this.keys.has('w') || this.keys.has('ц') || this.keys.has('arrowup')) ky -= 1;
+    if (this.keys.has('s') || this.keys.has('ы') || this.keys.has('arrowdown')) ky += 1;
 
     if (kx !== 0 || ky !== 0) {
-      const l = Math.hypot(kx, ky);
-      state.moveX = kx / l;
-      state.moveY = ky / l;
-    } else {
-      state.moveX = state.joyX;
-      state.moveY = state.joyY;
+      const len = Math.hypot(kx, ky);
+      return { moveX: kx / len, moveY: ky / len, sprintHeld: this.sprintHeld, attackHeld: this.attackHeld };
     }
-    return state;
+    const joyMag = Math.hypot(this.moveX, this.moveY);
+    return {
+      moveX: this.moveX,
+      moveY: this.moveY,
+      sprintHeld: this.sprintHeld || joyMag > 0.94,
+      attackHeld: this.attackHeld
+    };
   }
-
-  return {
-    poll,
-    clearAll
-  };
 }
