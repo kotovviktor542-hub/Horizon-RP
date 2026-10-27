@@ -15,7 +15,7 @@ globalThis.window = { innerWidth: 844, innerHeight: 390, devicePixelRatio: 2 };
 
 const { GameEngine } = await import('../www/js/engine.js');
 const data = await import('../www/js/data.js');
-const { WEAPONS, WEAPON_MODS, BASE_ROOMS, ITEMS, SKILLS, SKILL_TREE, ENEMIES, BOSSES, QUESTS, SECRETS, NPCS, ACHIEVEMENTS, BIOMES, RESCUE_MISSIONS, UPDATE_ANNOUNCEMENT, GAME_TITLE, LOCATIONS, ARTIFACTS } = data;
+const { WEAPONS, WEAPON_MODS, BASE_ROOMS, ITEMS, SKILLS, SKILL_TREE, ENEMIES, BOSSES, QUESTS, SECRETS, NPCS, ACHIEVEMENTS, BIOMES, RESCUE_MISSIONS, UPDATE_ANNOUNCEMENT, GAME_TITLE, LOCATIONS, ARTIFACTS, FACTIONS, ARMORS, TRIALS } = data;
 const { getLocationIdAt } = await import('../www/js/world.js');
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -34,9 +34,9 @@ function killAll(eng, list) {
   for (const e of [...list]) eng.damageEnemy(e, 999999);
 }
 
-console.log('=== Проверка ОБНОВЛЕНИЕ VEXMORA — UPDATE 2.0: RISE OF THE ABYSS (v2.1) ===');
+console.log('=== Проверка VEXMORA: AGE OF THE FALLEN GODS — ОБНОВЛЕНИЕ 3.0 ===');
 assert.equal(GAME_TITLE, 'VEXMORA');
-assert.ok(UPDATE_ANNOUNCEMENT.title.includes('ОБНОВЛЕНИЕ VEXMORA — UPDATE 2.0: RISE OF THE ABYSS'));
+assert.ok(UPDATE_ANNOUNCEMENT.title.includes('AGE OF THE FALLEN GODS'));
 
 test('1. Все прозрачные пиксель-арт PNG и спрайт-листы существуют и валидны (108+ файлов)', () => {
   const spritesJs = fs.readFileSync(path.join(rootDir, 'www/js/sprites.js'), 'utf8');
@@ -73,8 +73,8 @@ test('2. Мир: 4 биома, 9 зданий, 6 транспортов, 8 NPC �
   const eng = new GameEngine(noopSound);
   assert.equal(Object.keys(BIOMES).length, 4);
   assert.equal(NPCS.length, 8);
-  assert.equal(eng.bossEntities.length, 15);
-  assert.equal(Object.keys(BOSSES).length, 15);
+  assert.equal(eng.bossEntities.length, 20);
+  assert.equal(Object.keys(BOSSES).length, 20);
   assert.equal(eng.rescueSites.length, 13);
   assert.equal(RESCUE_MISSIONS.length, 13);
   assert.equal(eng.world.modCaches.length, 3);
@@ -89,14 +89,14 @@ test('2. Мир: 4 биома, 9 зданий, 6 транспортов, 8 NPC �
   }
   // У каждого босса уникальный спрайт, арена и награда-оружие
   const bossSprites = new Set(Object.values(BOSSES).map(b => b.sprite));
-  assert.equal(bossSprites.size, 15);
+  assert.equal(bossSprites.size, 20);
   for (const b of Object.values(BOSSES)) assert.ok(WEAPONS[b.rewardWeapon], `Награда босса ${b.id}`);
 });
 
 test('3. Герой: 4 направления, бег, прыжок + все 30 оружий стреляют, магазины и перезарядка работают', () => {
-  assert.equal(Object.keys(WEAPONS).length, 30);
+  assert.equal(Object.keys(WEAPONS).length, 48);
   assert.equal(Object.keys(ITEMS).length, 8);
-  assert.equal(Object.keys(ENEMIES).length, 26);
+  assert.equal(Object.keys(ENEMIES).length, 40);
 
   const eng = new GameEngine(noopSound);
   for (const [mx, my, expectedDir] of [[1, 0, 'right'], [-1, 0, 'left'], [0, -1, 'up'], [0, 1, 'down']]) {
@@ -289,7 +289,7 @@ test('8. Спасение защитой и сопровождением, нап
   assert.equal(eng.getPerkRank('perk_kevlar'), 1);
 });
 
-test('9. 15 боссов: фазы, телеграфы/щиты/телепорты, награды, коллекция и открытие территорий', () => {
+test('9. 20 боссов: фазы, телеграфы/щиты/телепорты, награды, коллекция и открытие территорий', () => {
   const eng = new GameEngine(noopSound);
   eng.player.invulnTimer = 999;
   for (const bossId of Object.keys(BOSSES)) {
@@ -367,9 +367,9 @@ test('10. Секреты с модулями, гейтинг магазина, �
   for (const ach of ACHIEVEMENTS) assert.equal(typeof ach.check, 'function');
 });
 
-test('11. RISE: 3 локации (Руины, Лес Проклятых, Крепость Бездны), ловушки, сундуки, кристаллы и открытие локаций', () => {
+test('11. RISE+3.0: 8 регионов (Руины, Лес Проклятых, Крепость Бездны, Пепел, Затерянный лес, Стужа, Мёртвые, Небо, Подземелье, Боги), ловушки, сундуки, кристаллы и открытие локаций', () => {
   const eng = new GameEngine(noopSound);
-  assert.equal(Object.keys(LOCATIONS).length, 3);
+  assert.equal(Object.keys(LOCATIONS).length, 10);
   for (const loc of Object.values(LOCATIONS)) {
     assert.equal(getLocationIdAt(loc.x, loc.y), loc.id, `Центр локации ${loc.id}`);
     assert.ok(loc.enemies.length >= 4 && loc.enemies.every(k => ENEMIES[k]), `Пул врагов ${loc.id}`);
@@ -551,4 +551,126 @@ test('14. RISE: интро и награды новых боссов, Кузне
   assert.ok(eng3.discoveredLocations.includes('abyss_fortress'), 'Локации сохраняются');
 });
 
-console.log(`\nИТОГ: ${passed}/14 комплексных проверок VEXMORA — RISE OF THE ABYSS успешно пройдено!`);
+test('15. 3.0: 8 регионов мира, 14 новых врагов и музыкальные темы регионов', () => {
+  const eng = new GameEngine(noopSound);
+  const regionIds = ['ashlands', 'lost_forest', 'ice_wastes', 'kingdom_dead', 'sky_ruins', 'underground', 'fallen_gods'];
+  for (const id of regionIds) {
+    const loc = LOCATIONS[id];
+    assert.ok(loc, `Регион ${id}`);
+    assert.equal(getLocationIdAt(loc.x, loc.y), id);
+    assert.ok(loc.enemies.every(k => ENEMIES[k]), `Пул ${id} валиден`);
+  }
+  assert.equal(Object.keys(ENEMIES).length, 40);
+  const newKinds = ['ash_imp', 'goblin_shaman', 'wolf_mutant', 'cave_troll', 'harpy', 'cursed_knight', 'fire_elemental', 'ice_archer', 'shadow_killer', 'ancient_guard', 'root_druid', 'magma_golem', 'frost_giant', 'soul_wraith'];
+  eng.player.x = 1500; eng.player.y = 1500; eng.player.invulnTimer = 999;
+  for (const kind of newKinds) {
+    const e = eng.spawnEnemyAt(1400 + Math.random() * 200, 1400 + Math.random() * 200, kind, true);
+    assert.ok(e && e.sprite === ENEMIES[kind].sprite, `Враг ${kind} спавнится со своим спрайтом`);
+  }
+  for (let i = 0; i < 30; i++) eng.update(0.05, { moveX: 0, moveY: 0 });
+  // Открытие региона Пепельных земель
+  eng.player.x = 900; eng.player.y = 2900;
+  eng.checkWorldInteractions();
+  assert.ok(eng.discoveredLocations.includes('ashlands'), 'Пепельные земли открыты');
+  assert.equal(eng.musicTheme, 'boss', 'Рядом босс региона — тема босса');
+});
+
+test('16. 3.0: уязвимости стихий, перки 4 веток и легендарная броня', () => {
+  const eng = new GameEngine(noopSound);
+  eng.player.x = 2000; eng.player.y = 2000; eng.player.invulnTimer = 999;
+  // Скелет уязвим к огню: Шипастый Лук (burn) бьёт сильнее обычного урона
+  const sk = eng.spawnEnemyAt(2060, 2000, 'skeleton_warrior', true);
+  const hp0 = sk.hp;
+  eng.damageEnemy(sk, 100, false, null, { weaponId: 'thorn_bow' });
+  assert.ok(hp0 - sk.hp > 100, 'Уязвимость к огню даёт +35% урона');
+  // Перк Воина усиливает урон, Мага — магию, Ассасина — крит, Стража — HP
+  const dmg0 = eng.getWeaponDamage('pistol');
+  eng.skillTree.perk_warrior_might = 3;
+  assert.ok(eng.getWeaponDamage('pistol') > dmg0, 'Воин: +урон');
+  eng.grantWeapon('abyss_staff');
+  const mag0 = eng.getWeaponDamage('abyss_staff');
+  eng.skillTree.perk_mage_power = 3;
+  assert.ok(eng.getWeaponDamage('abyss_staff') > mag0, 'Маг: +урон магии');
+  const crit0 = eng.getCritChance('pistol');
+  eng.skillTree.perk_assassin_crit = 3;
+  assert.ok(eng.getCritChance('pistol') > crit0, 'Ассасин: +крит');
+  const hpMax0 = eng.player.maxHp;
+  eng.skillTree.perk_guardian_vit = 2;
+  eng.recalcDerivedStats(false);
+  assert.ok(eng.player.maxHp > hpMax0, 'Страж: +HP');
+  // Броня: покупка, ношение, снижение урона и сохранение
+  eng.inventory.coins = 5000;
+  assert.equal(eng.buyArmor('set_ice'), true);
+  assert.equal(eng.equippedArmor, 'set_ice');
+  eng.player.invulnTimer = 0;
+  const php = eng.player.hp;
+  eng.damagePlayer(100);
+  assert.ok(php - eng.player.hp < 80, 'Броня Ледяного Стража снижает урон');
+  eng.grantArmor('set_god');
+  assert.ok(eng.ownedArmors.includes('set_god'), 'Броня Павшего Бога получена');
+});
+
+test('17. 3.0: фракции, репутация, сюжетный выбор и фракционный магазин', () => {
+  const eng = new GameEngine(noopSound);
+  assert.equal(Object.keys(FACTIONS).length, 5);
+  assert.equal(eng.buyFactionItem('dawn'), false, 'Без репутации магазин закрыт');
+  eng.addFactionRep('dawn', 40);
+  eng.inventory.coins = 5000;
+  assert.equal(eng.buyFactionItem('dawn'), true, 'Фракционное оружие куплено');
+  assert.ok(eng.inventory.weapons.includes('king_slayer'));
+  // Сюжетный выбор: Ковен +30, Рассвет −15, повторно нельзя
+  assert.equal(eng.makeStoryChoice('side_coven'), true);
+  assert.ok(eng.factionRep.coven >= 30 && eng.factionRep.dawn <= 25, 'Развилка изменила репутации');
+  assert.equal(eng.makeStoryChoice('side_dawn'), false, 'Выбор делается один раз');
+  // Победа над боссом региона даёт репутацию его фракции
+  const eng2 = new GameEngine(noopSound);
+  const king = eng2.bossEntities.find(b => b.bossId === 'boss_ash_king');
+  king.hp = 5;
+  eng2.damageBoss(king, 50);
+  assert.ok((eng2.factionRep.dawn || 0) >= 40, 'Босс региона дал репутацию фракции');
+  assert.ok(eng2.ownedArmors.includes('set_ash'), 'Босс дал комплект брони');
+  assert.ok(eng2.inventory.weapons.includes('dragon_fang'), 'Босс дал легендарное оружие');
+});
+
+test('18. 3.0: испытания арен, Павший Бог, повышенная сложность и сохранение прогресса 3.0', () => {
+  const eng = new GameEngine(noopSound);
+  assert.equal(Object.keys(TRIALS).length, 3);
+  eng.player.x = 2000; eng.player.y = 2000; eng.player.invulnTimer = 999999;
+  assert.equal(eng.startTrial('trial_ash'), true);
+  assert.ok(eng.activeTrial && eng.enemies.some(e => e.trialId === 'trial_ash'), 'Волна испытания заспавнена');
+  // Проходим все волны, убивая врагов испытания
+  for (let w = 0; w < 5; w++) {
+    killAll(eng, eng.enemies.filter(e => e.trialId === 'trial_ash'));
+    eng.update(0.05, { moveX: 0, moveY: 0 });
+  }
+  assert.equal(eng.activeTrial, null, 'Испытание завершено');
+  assert.ok(eng.trialsDone.includes('trial_ash'), 'Испытание засчитано');
+  assert.ok(eng.inventory.weapons.includes('magma_rifle'), 'Награда испытания получена');
+  // Павший Бог: секретный финальный босс существует с интро
+  const god = eng.bossEntities.find(b => b.bossId === 'boss_fallen_god');
+  assert.ok(god && BOSSES.boss_fallen_god.secret === true && god.intro.length > 10);
+  assert.equal(eng.toggleHardMode(), false, 'Хардмод закрыт до победы над Богом');
+  god.hp = 5;
+  eng.damageBoss(god, 50);
+  assert.ok(eng.inventory.weapons.includes('god_blade'), 'Клинок Павшего Бога получен');
+  assert.ok(eng.ownedArmors.includes('set_god'), 'Облачение Павшего Бога получено');
+  assert.equal(eng.toggleHardMode(), true, 'Хардмод открыт после финала');
+  assert.equal(eng.hardMode, true);
+  const tough = eng.spawnEnemyAt(2400, 2000, 'zombie', true);
+  assert.ok(tough.maxHp > ENEMIES.zombie.hp * 1.4, 'Хардмод усиливает врагов');
+  // Сохранение 3.0 и совместимость: поля переживают загрузку, старое сохранение без них тоже грузится
+  eng.addFactionRep('kings', 55);
+  assert.equal(eng.saveGame(true), true);
+  const eng2 = new GameEngine(noopSound);
+  assert.equal(eng2.loadGame(), true);
+  assert.ok(eng2.factionRep.kings >= 55 && eng2.hardMode === true && eng2.ownedArmors.includes('set_god'), 'Прогресс 3.0 сохранён');
+  const raw = JSON.parse(storageMap.get('horizon_rp_save_v2'));
+  delete raw.factionRep; delete raw.ownedArmors; delete raw.trialsDone; delete raw.hardMode; delete raw.storyChoices;
+  storageMap.set('horizon_rp_save_v2', JSON.stringify(raw));
+  const engOld = new GameEngine(noopSound);
+  assert.equal(engOld.loadGame(), true, 'Сохранение 2.x загружается в 3.0');
+  assert.deepEqual(engOld.ownedArmors, []);
+  assert.equal(engOld.hardMode, false);
+});
+
+console.log(`\nИТОГ: ${passed}/18 комплексных проверок VEXMORA — AGE OF THE FALLEN GODS успешно пройдено!`);

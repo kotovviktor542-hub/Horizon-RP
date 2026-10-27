@@ -15,6 +15,14 @@ const ASSET_MANIFEST = {
   tile_ruins:   'assets/sprites/tiles/ruins.png',
   tile_cursed:  'assets/sprites/tiles/cursed.png',
   tile_abyss:   'assets/sprites/tiles/abyss.png',
+  // AGE OF THE FALLEN GODS: тайлы 7 новых регионов
+  tile_ash:        'assets/sprites/tiles/ash.png',
+  tile_lostforest: 'assets/sprites/tiles/lostforest.png',
+  tile_frost:      'assets/sprites/tiles/frost.png',
+  tile_dead:       'assets/sprites/tiles/dead.png',
+  tile_sky:        'assets/sprites/tiles/sky.png',
+  tile_under:      'assets/sprites/tiles/under.png',
+  tile_gods:       'assets/sprites/tiles/gods.png',
 
   // Спрайт-листы персонажей, врагов, босса и NPC
   hero_sheet:    'assets/sprites/characters/hero_sheet.png',
@@ -59,6 +67,22 @@ const ASSET_MANIFEST = {
   bone_hound_sheet:       'assets/sprites/characters/bone_hound_sheet.png',
   void_cultist_sheet:     'assets/sprites/characters/void_cultist_sheet.png',
 
+  // AGE OF THE FALLEN GODS: 14 новых врагов (6-кадровые спрайт-листы)
+  ash_imp_sheet:        'assets/sprites/characters/ash_imp_sheet.png',
+  goblin_shaman_sheet:  'assets/sprites/characters/goblin_shaman_sheet.png',
+  wolf_mutant_sheet:    'assets/sprites/characters/wolf_mutant_sheet.png',
+  cave_troll_sheet:     'assets/sprites/characters/cave_troll_sheet.png',
+  harpy_sheet:          'assets/sprites/characters/harpy_sheet.png',
+  cursed_knight_sheet:  'assets/sprites/characters/cursed_knight_sheet.png',
+  fire_elemental_sheet: 'assets/sprites/characters/fire_elemental_sheet.png',
+  ice_archer_sheet:     'assets/sprites/characters/ice_archer_sheet.png',
+  shadow_killer_sheet:  'assets/sprites/characters/shadow_killer_sheet.png',
+  ancient_guard_sheet:  'assets/sprites/characters/ancient_guard_sheet.png',
+  root_druid_sheet:     'assets/sprites/characters/root_druid_sheet.png',
+  magma_golem_sheet:    'assets/sprites/characters/magma_golem_sheet.png',
+  frost_giant_sheet:    'assets/sprites/characters/frost_giant_sheet.png',
+  soul_wraith_sheet:    'assets/sprites/characters/soul_wraith_sheet.png',
+
   // VEXMORA 2.0: 10 уникальных боссов (64x64 x 6 кадров)
   boss_mutant_king:    'assets/sprites/bosses/boss_mutant_king.png',
   boss_commander:      'assets/sprites/bosses/boss_commander.png',
@@ -77,6 +101,13 @@ const ASSET_MANIFEST = {
   boss_cursed_queen: 'assets/sprites/bosses/boss_cursed_queen.png',
   boss_abyss_warlord:'assets/sprites/bosses/boss_abyss_warlord.png',
   boss_abyss_heart:  'assets/sprites/bosses/boss_abyss_heart.png',
+
+  // AGE OF THE FALLEN GODS: 5 новых боссов (64x64 x 6 кадров)
+  boss_ash_king:     'assets/sprites/bosses/boss_ash_king.png',
+  boss_root_queen:   'assets/sprites/bosses/boss_root_queen.png',
+  boss_ice_colossus: 'assets/sprites/bosses/boss_ice_colossus.png',
+  boss_soul_eater:   'assets/sprites/bosses/boss_soul_eater.png',
+  boss_fallen_god:   'assets/sprites/bosses/boss_fallen_god.png',
 
   // Все 8 видов оружия
   wpn_pistol:      'assets/sprites/weapons/pistol.png',
@@ -113,6 +144,26 @@ const ASSET_MANIFEST = {
   wpn_thorn_bow:     'assets/sprites/weapons/thorn_bow.png',
   wpn_vex_blade:     'assets/sprites/weapons/vex_blade.png',
   wpn_phoenix_rifle: 'assets/sprites/weapons/phoenix_rifle.png',
+
+  // AGE OF THE FALLEN GODS: 18 новых видов оружия (итого арсенал 48)
+  wpn_ash_greatsword: 'assets/sprites/weapons/ash_greatsword.png',
+  wpn_king_slayer:    'assets/sprites/weapons/king_slayer.png',
+  wpn_frost_spear:    'assets/sprites/weapons/frost_spear.png',
+  wpn_ice_bow:        'assets/sprites/weapons/ice_bow.png',
+  wpn_dead_scythe:    'assets/sprites/weapons/dead_scythe.png',
+  wpn_soul_staff:     'assets/sprites/weapons/soul_staff.png',
+  wpn_root_bow:       'assets/sprites/weapons/root_bow.png',
+  wpn_vine_blade:     'assets/sprites/weapons/vine_blade.png',
+  wpn_sky_lance:      'assets/sprites/weapons/sky_lance.png',
+  wpn_storm_hammer:   'assets/sprites/weapons/storm_hammer.png',
+  wpn_under_rail:     'assets/sprites/weapons/under_rail.png',
+  wpn_magma_rifle:    'assets/sprites/weapons/magma_rifle.png',
+  wpn_god_blade:      'assets/sprites/weapons/god_blade.png',
+  wpn_dragon_fang:    'assets/sprites/weapons/dragon_fang.png',
+  wpn_queen_thorn:    'assets/sprites/weapons/queen_thorn.png',
+  wpn_colossus_maul:  'assets/sprites/weapons/colossus_maul.png',
+  wpn_soul_reaper:    'assets/sprites/weapons/soul_reaper.png',
+  wpn_rune_crossbow:  'assets/sprites/weapons/rune_crossbow.png',
 
   // Все 8 предметов
   itm_medkit:   'assets/sprites/items/medkit.png',
@@ -688,6 +739,16 @@ export class Renderer {
       ctx.restore();
     }
 
+    // RISE/3.0: фиолетовая аура элитных врагов
+    if (e.elite) {
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(sx, sy - 14, 24 + Math.sin(engine.elapsed * 5) * 3, 0, Math.PI * 2);
+      ctx.strokeStyle = 'rgba(192, 132, 252, 0.65)';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      ctx.restore();
+    }
     if (this.imgReady(sheetKey)) {
       const img = this.images[sheetKey];
       const fw = Math.floor(img.naturalWidth / 6);

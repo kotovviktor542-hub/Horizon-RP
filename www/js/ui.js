@@ -4,7 +4,7 @@
 import {
   RARITIES, BIOMES, CAMPFIRES, WEAPONS, WEAPON_MODS, BASE_ROOMS, ITEMS, RESOURCES, RECIPES,
   SKILLS, SKILL_TREE, BOSSES, SECRETS, QUESTS, ACHIEVEMENTS, RESCUE_MISSIONS, MISSION_TEMPLATES,
-  UPDATE_ANNOUNCEMENT, LOCATIONS, ARTIFACTS
+  UPDATE_ANNOUNCEMENT, LOCATIONS, ARTIFACTS, FACTIONS, ARMORS, TRIALS
 } from './data.js';
 import { getBiomeIdAt, dist2 } from './world.js';
 
@@ -405,6 +405,7 @@ export class UIManager {
       case 'rescue':       this.renderRescueTab(body); break;
       case 'map':          this.renderMapTab(body); break;
       case 'achievements': this.renderAchievementsTab(body); break;
+      case 'factions':     this.renderFactionsTab(body); break;
       case 'settings':     this.renderSettingsTab(body); break;
     }
   }
@@ -418,7 +419,7 @@ export class UIManager {
         <span class="res-pill"><img src="assets/sprites/items/ammo.png" class="px-icon" alt="" /> Патроны: ${inv.ammo}/${eng.getMaxAmmo()}</span>
         <span class="res-pill"><img src="assets/sprites/items/key.png" class="px-icon" alt="" /> Ключи: ${inv.consumables.key || 0}</span>
         <span class="res-pill"><img src="assets/sprites/items/backpack.png" class="px-icon" alt="" /> Рюкзак: ур. ${inv.backpackLevel || 0}/4</span>
-        <span class="res-pill">🆘 Спасено: ${eng.rescuedIds.length}/10</span>
+        <span class="res-pill">🆘 Спасено: ${eng.rescuedIds.length}/${RESCUE_MISSIONS.length}</span>
         <span class="res-pill">🏰 База: ${Object.values(eng.baseLevels).reduce((a, b) => a + b, 0)} ур.</span>
         ${Object.values(RESOURCES).map(r => `<span class="res-pill">${r.emoji} ${r.name}: ${inv.resources[r.id] || 0}</span>`).join('')}
       </div>
@@ -511,6 +512,14 @@ export class UIManager {
       ${this.renderResourceStrip()}
       <div class="section-title">🔫 Арсенал VEXMORA (${inv.weapons.length} из ${Object.keys(WEAPONS).length} видов оружия) · Модификации — во вкладке 🏰 База</div>
       <div class="grid-cards">${weaponsHtml}
+      <div class="section-title">🛡️ Легендарные комплекты брони (${(eng.ownedArmors || []).length}/${Object.keys(ARMORS).length})${eng.equippedArmor ? ` · Надето: ${ARMORS[eng.equippedArmor].icon} ${ARMORS[eng.equippedArmor].name}` : ''}</div>
+      <div class="grid-cards">
+        ${Object.values(ARMORS).map(a => {
+          const owned = eng.ownedArmors?.includes(a.id);
+          const equipped = eng.equippedArmor === a.id;
+          return `<div class="item-card ${equipped ? 'equipped' : ''}"><div class="card-head"><span class="card-title">${a.icon} ${a.name}</span><small style="color:${equipped ? '#4ade80' : '#94a3b8'}">${equipped ? 'Надето' : owned ? 'В коллекции' : `${a.price}🪙`}</small></div><div class="card-desc">${a.desc}</div><div class="card-actions"><button class="action-btn ${equipped ? '' : 'green'}" data-armor="${a.id}" ${equipped ? 'disabled' : ''}>${equipped ? '✓ Надето' : owned ? 'Надеть комплект' : `Купить за ${a.price}🪙`}</button></div></div>`;
+        }).join('')}
+      </div>
       <div class="section-title">✨ Артефакты Бездны (${(eng.artifacts || []).length}/${Object.keys(ARTIFACTS).length}) — постоянные усиления героя</div>
       <div class="grid-cards">${artifactsHtml}</div></div>
       <div class="section-title">🎒 Снаряжение и припасы</div>
@@ -523,6 +532,12 @@ export class UIManager {
     }));
     body.querySelectorAll('[data-upgrade]').forEach(b => b.addEventListener('click', () => {
       eng.upgradeWeapon(b.dataset.upgrade);
+      this.updateHud(true);
+      this.renderModalTab();
+    }));
+    body.querySelectorAll('[data-armor]').forEach(b => b.addEventListener('click', () => {
+      const id = b.dataset.armor;
+      if (eng.ownedArmors?.includes(id)) eng.equipArmor(id); else eng.buyArmor(id);
       this.renderModalTab();
     }));
     body.querySelectorAll('[data-reload]').forEach(b => b.addEventListener('click', () => {
@@ -960,6 +975,10 @@ export class UIManager {
       eng.generateContract();
       this.renderModalTab();
     });
+    // VEXMORA 3.0: кнопки испытаний арен
+    body.querySelectorAll('[data-trial]').forEach(b => b.addEventListener('click', () => {
+      if (eng.startTrial(b.dataset.trial)) this.closeModal();
+    }));
     this.bindObjectiveButtons(body);
   }
 
@@ -1016,6 +1035,66 @@ export class UIManager {
 
     body.querySelectorAll('[data-travel]').forEach(b => b.addEventListener('click', () => {
       if (eng.fastTravel(b.dataset.travel)) this.closeModal();
+    }));
+  }
+
+  // ── VEXMORA 3.0: Фракции Эпохи Павших Богов ───────────────────────────
+  renderFactionsTab(body) {
+    const eng = this.engine;
+    const choiceHtml = eng.storyChoices?.main
+      ? `<div class="res-pills"><span class="res-pill">📖 Сюжетный выбор: вы встали на сторону ${eng.storyChoices.main === 'coven' ? '🔮 Ковена Бездны' : '🌅 Ордена Рассвета'}</span></div>`
+      : `<div class="section-title">📖 Сюжетная развилка Эпохи Павших Богов</div>
+         <div class="grid-cards">
+           <div class="item-card"><div class="card-title">🌅 Клятва Ордену Рассвета</div><div class="card-desc">+30 репутации Рассвета, −15 Ковена. Свет против тьмы.</div><div class="card-actions"><button class="action-btn gold" data-choice="side_dawn">Присягнуть Рассвету</button></div></div>
+           <div class="item-card"><div class="card-title">🔮 Дар Ковена Бездны</div><div class="card-desc">+30 репутации Ковена, −15 Рассвета. Сила тьмы имеет цену.</div><div class="card-actions"><button class="action-btn" data-choice="side_coven">Принять дар Ковена</button></div></div>
+         </div>`;
+
+    body.innerHTML = `
+      ${this.renderResourceStrip()}
+      ${choiceHtml}
+      <div class="section-title">🏳️ Фракции мира (репутация: победы над боссами регионов +25..40, сюжетные выборы)</div>
+      <div class="grid-cards">
+        ${Object.values(FACTIONS).map(f => {
+          const repVal = eng.factionRep?.[f.id] || 0;
+          const unlocked = repVal >= 40;
+          const owned = eng.inventory.weapons.includes(f.itemWeapon);
+          const w = WEAPONS[f.itemWeapon];
+          return `
+          <div class="item-card ${unlocked ? 'equipped' : ''}">
+            <div class="card-head"><span class="card-title">${f.icon} ${f.name}</span><small style="color:${unlocked ? '#4ade80' : '#f59e0b'}">Репутация: ${repVal}/40${unlocked ? ' · Магазин открыт' : ''}</small></div>
+            <div class="card-desc">${f.desc}<br/>Регион: <b>${f.region}</b> · Босс-покровитель: ${BOSSES[f.bossId]?.name || ''}<br/>Фракционное оружие: <b style="color:#fbbf24">${w?.name}</b> — ${f.itemCost}🪙</div>
+            <div class="card-actions">
+              <button class="action-btn gold" data-faction-boss="${f.bossId}">📍 К боссу фракции</button>
+              <button class="action-btn ${unlocked && !owned ? 'green' : ''}" data-faction-buy="${f.id}" ${owned ? 'disabled' : ''}>${owned ? '✓ Получено' : unlocked ? `Купить за ${f.itemCost}🪙` : '🔒 Нужна репутация 40'}</button>
+            </div>
+          </div>`;
+        }).join('')}
+      </div>
+      <div class="section-title">🏟️ Испытания Арен (волновые подземелья)</div>
+      <div class="grid-cards">
+        ${Object.values(TRIALS).map(t => {
+          const done = eng.trialsDone?.includes(t.id);
+          return `<div class="item-card ${done ? 'equipped' : ''}"><div class="card-head"><span class="card-title">${t.icon} ${t.name}</span><small>${done ? '✓ Пройдено' : `${t.waves} волны`}</small></div><div class="card-desc">${t.desc}</div><div class="card-actions"><button class="action-btn ${done ? '' : 'gold'}" data-trial-start="${t.id}">${done ? 'Пройти ещё раз' : '⚔️ Начать испытание'}</button></div></div>`;
+        }).join('')}
+      </div>
+    `;
+    this.bindObjectiveButtons(body);
+    body.querySelectorAll('[data-choice]').forEach(b => b.addEventListener('click', () => {
+      eng.makeStoryChoice(b.dataset.choice);
+      this.updateHud(true);
+      this.renderModalTab();
+    }));
+    body.querySelectorAll('[data-faction-buy]').forEach(b => b.addEventListener('click', () => {
+      eng.buyFactionItem(b.dataset.factionBuy);
+      this.updateHud(true);
+      this.renderModalTab();
+    }));
+    body.querySelectorAll('[data-faction-boss]').forEach(b => b.addEventListener('click', () => {
+      const boss = BOSSES[b.dataset.factionBoss];
+      if (boss) { eng.setObjective(boss.x, boss.y, `👹 ${boss.name}`); this.closeModal(); }
+    }));
+    body.querySelectorAll('[data-trial-start]').forEach(b => b.addEventListener('click', () => {
+      if (eng.startTrial(b.dataset.trialStart)) this.closeModal();
     }));
   }
 
@@ -1094,6 +1173,16 @@ export class UIManager {
         </div>
 
         <div class="item-card">
+          <div class="card-title">⚡ Режим повышенной сложности</div>
+          <div class="card-desc">${eng.defeatedBosses.includes('boss_fallen_god') ? 'Враги: +50% HP и +50% опыта, +30% урона. Для настоящих героев Эпохи!' : 'Откроется после победы над секретным Павшем Богом Азаротом в Землях Павших Богов.'}</div>
+          <div class="card-actions">
+            <button class="action-btn ${eng.hardMode ? 'gold' : ''}" id="btn-toggle-hardmode">
+              ${eng.hardMode ? '⚡ Сложность: ПОВЫШЕННАЯ' : '⚡ Сложность: Обычная'}
+            </button>
+          </div>
+        </div>
+
+        <div class="item-card">
           <div class="card-title">💾 Сохранение прогресса</div>
           <div class="card-desc">Прогресс автоматически сохраняется каждые 20 секунд и при важных событиях.</div>
           <div class="card-actions">
@@ -1110,6 +1199,11 @@ export class UIManager {
       eng.saveGame(true);
       this.renderModalTab();
     }));
+
+    document.getElementById('btn-toggle-hardmode')?.addEventListener('click', () => {
+      eng.toggleHardMode();
+      this.renderModalTab();
+    });
 
     document.getElementById('btn-toggle-sound')?.addEventListener('click', () => {
       s.sound = !s.sound;

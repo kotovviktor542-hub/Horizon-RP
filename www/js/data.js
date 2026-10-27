@@ -5,16 +5,16 @@
 export const GAME_TITLE = 'VEXMORA';
 
 export const UPDATE_ANNOUNCEMENT = {
-  version: '2.1',
-  title: 'ОБНОВЛЕНИЕ VEXMORA — UPDATE 2.0: RISE OF THE ABYSS',
-  lead: 'Бездна пробуждается! Расширение существующей VEXMORA: весь прогресс, стиль, управление и механики сохранены. Впереди — 3 новые локации, глубины Бездны и её Сердце.',
+  version: '3.0',
+  title: 'VEXMORA: AGE OF THE FALLEN GODS — МАСШТАБНОЕ ОБНОВЛЕНИЕ 3.0',
+  lead: 'Боги исчезли. Мир треснул по швам. 8 регионов, 20 боссов, фракции, испытания и финал Эпохи Павших Богов ждут героя!',
   sections: [
-    { icon: '🏛️', heading: '1. Три новые локации', text: 'Забытые Руины, Лес Проклятых и Крепость Бездны: уникальные враги, секретные комнаты, сундуки, скрытые проходы, ловушки (шипы, огонь, яд), разрушаемые объекты и редкие Кристаллы Бездны.' },
-    { icon: '👹', heading: '2. Пять боссов Бездны', text: 'Рунный Голем, Некромант Забытых, Королева Проклятого Леса, Владыка Бездны и секретное Сердце Бездны. У каждого 3 стадии боя, атмосферная заставка перед боем, честные анимации подготовки атак и редкие награды.' },
-    { icon: '⚔️', heading: '3. Новое оружие и способности', text: 'Кинжалы, боевые топоры, посохи Бездны, шипастый лук и легендарные Клинок Бездны и винтовка «Феникс». Новые активные способности: Огненный удар, Ледяной взрыв и Теневой телепорт (Рывок уже в игре и усилен).' },
-    { icon: '🆘', heading: '4. Новые спасения NPC', text: 'Пленники руин, проклятого леса и крепости: Травница усилит лечение, а спасённый Кузнец Бездны даст скидку на улучшение и модификацию экипировки в кузнице Убежища.' },
-    { icon: '💀', heading: '5. Десять созданий Бездны и Элита', text: 'Скелеты-воины, тёмные лучники, маги и культисты Бездны, каменные големы, призраки, чумные носители, морозные ревенанты, костяные гончие и охотники. Элитные враги сильнее и дают редкий лут и Кристаллы.' },
-    { icon: '✨', heading: '6. Артефакты, события и музыка', text: '6 коллекционных артефактов с реальными усилениями, случайные события (засады монстров, проклятые сундуки, элитные охотники), секретный босс, процедурная музыка локаций и боссов, заставки боссов и настраиваемый размер кнопок.' }
+    { icon: '🗺️', title: '8 регионов мира', text: 'Пепельные земли, Затерянный лес, Ледяная пустошь, Королевство мёртвых, Бездна, Небесные руины, Подземное царство и Земли павших богов — со своей музыкой, врагами и секретами.' },
+    { icon: '👹', title: '20 боссов и секретный Павший Бог', text: 'Пепельный король, Королева Корней, Ледяной колосс, Пожиратель душ и финальный Павший Бог. 3 фазы, телеграфы, интро и легендарные награды.' },
+    { icon: '⚔️', title: '48 видов оружия и уязвимости стихий', text: 'Огонь, лёд, молния и тьма: подбирай стихию под врага. Слабые места дают +35% урона!' },
+    { icon: '🏳️', title: '5 фракций и репутация', text: 'Орден Рассвета, Стражи Леса, Гильдия охотников, Ковен Бездны и Наследники королей. Победы над боссами регионов укрепляют твою репутацию.' },
+    { icon: '🛡️', title: 'Легендарные комплекты брони', text: '6 комплектов с защитой и особыми свойствами — добывай у боссов, покупай и крафти.' },
+    { icon: '🏰', title: 'Испытания и сюжет «Эпоха павших богов»', text: 'Волновые испытания арен, новые главы кампании, развилки фракций и повышенная сложность после финала.' }
   ]
 };
 
@@ -93,6 +93,41 @@ export const LOCATIONS = {
     id: 'abyss_fortress', name: 'Крепость Бездны', subtitle: 'Владыка Бездны и её Сердце · маги, культисты, огненные ловушки',
     x: 5960, y: 380, radius: 430, tile: 'abyss', groundBase: '#241a2e', groundAlt: '#181021', accent: '#e879f9', music: 'abyss',
     enemies: ['abyss_mage', 'void_cultist', 'frost_revenant', 'stone_golem', 'stealth_hunter']
+  },
+  ashlands: {
+    id: 'ashlands', name: 'Пепельные Земли', subtitle: 'Пепельный король · вулканы, импы и магмовые големы',
+    x: 900, y: 2900, radius: 430, tile: 'ash', groundBase: '#4a2320', groundAlt: '#331613', accent: '#fb923c', music: 'ash',
+    enemies: ['ash_imp', 'fire_elemental', 'magma_golem', 'wolf_mutant']
+  },
+  lost_forest: {
+    id: 'lost_forest', name: 'Затерянный Лес', subtitle: 'Королева Корней · живые растения, друиды и древние стражи',
+    x: 1700, y: 900, radius: 430, tile: 'lostforest', groundBase: '#173d1e', groundAlt: '#0f2c14', accent: '#4ade80', music: 'cursed',
+    enemies: ['root_druid', 'goblin_shaman', 'ancient_guard', 'thorn_hunter']
+  },
+  ice_wastes: {
+    id: 'ice_wastes', name: 'Ледяная Пустошь', subtitle: 'Ледяной колосс · метели, ледяные лучники и великаны',
+    x: 2900, y: 800, radius: 430, tile: 'frost', groundBase: '#274b63', groundAlt: '#1b3548', accent: '#7dd3fc', music: 'ice',
+    enemies: ['ice_archer', 'frost_giant', 'frost_revenant', 'wolf_mutant']
+  },
+  kingdom_dead: {
+    id: 'kingdom_dead', name: 'Королевство Мёртвых', subtitle: 'Пожиратель душ · проклятые рыцари и призраки',
+    x: 4300, y: 1500, radius: 430, tile: 'dead', groundBase: '#2b2438', groundAlt: '#1d1829', accent: '#c084fc', music: 'cursed',
+    enemies: ['cursed_knight', 'soul_wraith', 'skeleton_warrior', 'shadow_killer']
+  },
+  sky_ruins: {
+    id: 'sky_ruins', name: 'Небесные Руины', subtitle: 'Парящие острова · гарпии и древние механизмы',
+    x: 1500, y: 4700, radius: 430, tile: 'sky', groundBase: '#28455e', groundAlt: '#1b3247', accent: '#22d3ee', music: 'sky',
+    enemies: ['harpy', 'ancient_guard', 'shadow_killer', 'ice_archer']
+  },
+  underground: {
+    id: 'underground', name: 'Подземное Царство', subtitle: 'Глубинные шахты · тролли, гоблины и забытые лаборатории',
+    x: 3300, y: 4900, radius: 430, tile: 'under', groundBase: '#33261a', groundAlt: '#241a10', accent: '#fbbf24', music: 'under',
+    enemies: ['cave_troll', 'goblin_shaman', 'wolf_mutant', 'ancient_guard']
+  },
+  fallen_gods: {
+    id: 'fallen_gods', name: 'Земли Павших Богов', subtitle: 'Финал Эпохи · сильнейшие твари и сам Павший Бог',
+    x: 5600, y: 4900, radius: 430, tile: 'gods', groundBase: '#3d2c10', groundAlt: '#2b1f0a', accent: '#facc15', music: 'gods',
+    enemies: ['shadow_killer', 'cursed_knight', 'magma_golem', 'frost_giant', 'soul_wraith']
   }
 };
 
@@ -106,7 +141,10 @@ export const CAMPFIRES = [
   { id: 'camp_mountains', name: 'Штурмовой Лагерь Хребта',        x: 4460, y: 1280, biome: 'mountains', unlockedByDefault: false },
   { id: 'camp_ruins',     name: 'Лагерь у Забытых Руин',          x: 1010, y: 1050, biome: 'forest',    unlockedByDefault: false },
   { id: 'camp_cursed',    name: 'Стоянка у Леса Проклятых',       x: 4600, y: 5360, biome: 'desert',    unlockedByDefault: false },
-  { id: 'camp_abyss',     name: 'Перевал Крепости Бездны',        x: 5660, y: 660,  biome: 'mountains', unlockedByDefault: false }
+  { id: 'camp_abyss',     name: 'Перевал Крепости Бездны',        x: 5660, y: 660,  biome: 'mountains', unlockedByDefault: false },
+  { id: 'camp_ash',       name: 'Пепельный Привал',               x: 1230, y: 3120, biome: 'desert',    unlockedByDefault: false },
+  { id: 'camp_sky',       name: 'Причал Небесных Руин',           x: 1830, y: 4940, biome: 'forest',    unlockedByDefault: false },
+  { id: 'camp_gods',      name: 'Последний Лагерь Богов',         x: 5300, y: 4640, biome: 'mountains', unlockedByDefault: false }
 ];
 
 // Специалисты Главной Базы (Убежища VEXMORA)
@@ -545,6 +583,150 @@ export const WEAPONS = {
     baseDamage: 84, cooldown: 0.26, range: 96, arc: 2.25, critBonus: 0.30, knockback: 240, price: 1400,
     desc: 'Живой клинок из Сердца Бездны: каждый удар вытягивает здоровье врагов в героя (+10% урона в HP)!'
   },
+  ash_greatsword: {
+    id: 'ash_greatsword', name: 'Двуручный Меч Пепла', rarity: 'epic', tier: 4,
+    sprite: 'ash_greatsword', icon: 'assets/sprites/weapons/ash_greatsword.png',
+    category: 'melee', classLabel: 'Двуручные мечи', effect: 'fire',
+    ammoCost: 0, magSize: 0, reloadTime: 0,
+    baseDamage: 74, cooldown: 0.52, range: 86, arc: 1.7, critBonus: 0.18, knockback: 320, price: 720,
+    desc: 'Тяжёлый двуручный клинок вулкана: медленные, но сокрушительные взмахи с поджогом.'
+  },
+  king_slayer: {
+    id: 'king_slayer', name: 'Убийца Королей (Орден Рассвета)', rarity: 'epic', tier: 4,
+    sprite: 'king_slayer', icon: 'assets/sprites/weapons/king_slayer.png',
+    category: 'melee', classLabel: 'Мечи', element: 'lightning',
+    ammoCost: 0, magSize: 0, reloadTime: 0,
+    baseDamage: 62, cooldown: 0.34, range: 74, arc: 1.4, critBonus: 0.26, knockback: 190, price: 690,
+    desc: 'Клинок рыцарей Рассвета, закалённый грозой. Особенно смертоносен против бронированных.'
+  },
+  frost_spear: {
+    id: 'frost_spear', name: 'Копьё Стужи', rarity: 'rare', tier: 3,
+    sprite: 'frost_spear', icon: 'assets/sprites/weapons/frost_spear.png',
+    category: 'melee', classLabel: 'Копья', effect: 'abyss',
+    ammoCost: 0, magSize: 0, reloadTime: 0,
+    baseDamage: 48, cooldown: 0.3, range: 98, arc: 0.95, critBonus: 0.22, knockback: 210, price: 430,
+    desc: 'Длинное копьё Ледяной Пустоши: большая дистанция укола и замедление врагов.'
+  },
+  ice_bow: {
+    id: 'ice_bow', name: 'Лук Ледяной Пустоши', rarity: 'rare', tier: 3,
+    sprite: 'ice_bow', icon: 'assets/sprites/weapons/ice_bow.png',
+    category: 'bow', classLabel: 'Луки', effect: 'abyss',
+    ammoCost: 0, magSize: 0, reloadTime: 0,
+    baseDamage: 44, cooldown: 0.34, range: 430, projSpeed: 740, pierce: 2, critBonus: 0.22, knockback: 150, price: 410,
+    desc: 'Стрелы стужи замедляют цели и пробивают двоих врагов насквозь.'
+  },
+  dead_scythe: {
+    id: 'dead_scythe', name: 'Коса Мёртвых Королей', rarity: 'epic', tier: 4,
+    sprite: 'dead_scythe', icon: 'assets/sprites/weapons/dead_scythe.png',
+    category: 'melee', classLabel: 'Косы', effect: 'lifesteal',
+    ammoCost: 0, magSize: 0, reloadTime: 0,
+    baseDamage: 66, cooldown: 0.4, range: 90, arc: 1.8, critBonus: 0.2, knockback: 240, price: 660,
+    desc: 'Широкие взмахи косы вытягивают жизнь из врагов Королевства Мёртвых.'
+  },
+  soul_staff: {
+    id: 'soul_staff', name: 'Посох Душ (Ковен Бездны)', rarity: 'epic', tier: 4,
+    sprite: 'soul_staff', icon: 'assets/sprites/weapons/soul_staff.png',
+    category: 'magic', classLabel: 'Магические посохи', effect: 'abyss', element: 'dark',
+    ammoCost: 0, magSize: 0, reloadTime: 0,
+    baseDamage: 63, cooldown: 0.36, range: 450, projSpeed: 550, splashRadius: 100, critBonus: 0.26, knockback: 170, price: 700,
+    desc: 'Тёмные сферы душ с самонаведением. Смертелен против призраков и теней.'
+  },
+  root_bow: {
+    id: 'root_bow', name: 'Лук Живых Корней', rarity: 'rare', tier: 3,
+    sprite: 'root_bow', icon: 'assets/sprites/weapons/root_bow.png',
+    category: 'bow', classLabel: 'Луки', effect: 'burn',
+    ammoCost: 0, magSize: 0, reloadTime: 0,
+    baseDamage: 42, cooldown: 0.3, range: 420, projSpeed: 730, pierce: 2, critBonus: 0.2, knockback: 140, price: 400,
+    desc: 'Стрелы-корни поджигают и опутывают врагов Затерянного Леса.'
+  },
+  vine_blade: {
+    id: 'vine_blade', name: 'Клинок Лозы (Стражи Леса)', rarity: 'rare', tier: 3,
+    sprite: 'vine_blade', icon: 'assets/sprites/weapons/vine_blade.png',
+    category: 'melee', classLabel: 'Мечи', effect: 'burn',
+    ammoCost: 0, magSize: 0, reloadTime: 0,
+    baseDamage: 46, cooldown: 0.24, range: 72, arc: 1.35, critBonus: 0.28, knockback: 140, price: 380,
+    desc: 'Быстрый клинок друидов с отравленными шипами лозы.'
+  },
+  sky_lance: {
+    id: 'sky_lance', name: 'Небесное Копьё', rarity: 'epic', tier: 4,
+    sprite: 'sky_lance', icon: 'assets/sprites/weapons/sky_lance.png',
+    category: 'melee', classLabel: 'Копья', element: 'lightning',
+    ammoCost: 0, magSize: 0, reloadTime: 0,
+    baseDamage: 58, cooldown: 0.32, range: 102, arc: 1.0, critBonus: 0.3, knockback: 260, price: 620,
+    desc: 'Копьё Небесных Руин с грозовым наконечником: лучший ответ гарпиям и стражам.'
+  },
+  storm_hammer: {
+    id: 'storm_hammer', name: 'Грозовой Молот', rarity: 'epic', tier: 4,
+    sprite: 'storm_hammer', icon: 'assets/sprites/weapons/storm_hammer.png',
+    category: 'melee', classLabel: 'Молоты', element: 'lightning',
+    ammoCost: 0, magSize: 0, reloadTime: 0,
+    baseDamage: 78, cooldown: 0.55, range: 80, arc: 1.5, critBonus: 0.16, knockback: 380, price: 740,
+    desc: 'Молот древних механизмов: сокрушительный удар и огромный отброс.'
+  },
+  under_rail: {
+    id: 'under_rail', name: 'Подземный Рельсотрон', rarity: 'epic', tier: 4,
+    sprite: 'under_rail', icon: 'assets/sprites/weapons/under_rail.png',
+    category: 'gun', classLabel: 'Рельсотроны', element: 'lightning',
+    ammoCost: 1, magSize: 10, reloadTime: 1.6,
+    baseDamage: 96, cooldown: 0.62, range: 560, projSpeed: 1250, spread: 0.008, pellets: 1, pierce: 3, critBonus: 0.3, knockback: 240, projColor: '#e2e8f0', price: 820,
+    desc: 'Секрет лабораторий Подземного Царства: пробивает троих врагов насквозь.'
+  },
+  magma_rifle: {
+    id: 'magma_rifle', name: 'Магмовая Винтовка', rarity: 'epic', tier: 4,
+    sprite: 'magma_rifle', icon: 'assets/sprites/weapons/magma_rifle.png',
+    category: 'gun', classLabel: 'Штурмовые винтовки', effect: 'fire',
+    ammoCost: 1, magSize: 28, reloadTime: 1.4,
+    baseDamage: 40, cooldown: 0.16, range: 460, projSpeed: 960, spread: 0.05, pellets: 1, pierce: 1, critBonus: 0.22, knockback: 150, projColor: '#fb923c', price: 760,
+    desc: 'Раскалённые снаряды вулкана поджигают всё на линии огня.'
+  },
+  god_blade: {
+    id: 'god_blade', name: 'ЛЕГЕНДА: Клинок Павшего Бога', rarity: 'legendary', tier: 5,
+    sprite: 'god_blade', icon: 'assets/sprites/weapons/god_blade.png',
+    category: 'melee', classLabel: 'Легендарные клинки', effect: 'lifesteal', element: 'dark',
+    ammoCost: 0, magSize: 0, reloadTime: 0,
+    baseDamage: 92, cooldown: 0.36, range: 88, arc: 1.65, critBonus: 0.32, knockback: 300, price: 2200,
+    desc: 'Клинок самого Азарота. Выпивает души врагов и возвращает герою жизнь.'
+  },
+  dragon_fang: {
+    id: 'dragon_fang', name: 'ЛЕГЕНДА: Драконий Клык Вулкара', rarity: 'legendary', tier: 5,
+    sprite: 'dragon_fang', icon: 'assets/sprites/weapons/dragon_fang.png',
+    category: 'melee', classLabel: 'Легендарные клинки', effect: 'fire',
+    ammoCost: 0, magSize: 0, reloadTime: 0,
+    baseDamage: 84, cooldown: 0.38, range: 84, arc: 1.55, critBonus: 0.26, knockback: 280, price: 1800,
+    desc: 'Меч Пепельного Короля: каждое попадание — вспышка драконьего пламени.'
+  },
+  queen_thorn: {
+    id: 'queen_thorn', name: 'ЛЕГЕНДА: Шип Королевы Корней', rarity: 'legendary', tier: 5,
+    sprite: 'queen_thorn', icon: 'assets/sprites/weapons/queen_thorn.png',
+    category: 'bow', classLabel: 'Легендарные лук', effect: 'burn',
+    ammoCost: 0, magSize: 0, reloadTime: 0,
+    baseDamage: 58, cooldown: 0.3, range: 460, projSpeed: 790, pierce: 3, critBonus: 0.3, knockback: 180, price: 1650,
+    desc: 'Лук Сильваны: стрелы-шипы пробивают троих и поджигают лес врагов.'
+  },
+  colossus_maul: {
+    id: 'colossus_maul', name: 'ЛЕГЕНДА: Крушитель Колосса', rarity: 'legendary', tier: 5,
+    sprite: 'colossus_maul', icon: 'assets/sprites/weapons/colossus_maul.png',
+    category: 'melee', classLabel: 'Легендарные молоты',
+    ammoCost: 0, magSize: 0, reloadTime: 0,
+    baseDamage: 98, cooldown: 0.58, range: 84, arc: 1.6, critBonus: 0.2, knockback: 460, price: 1900,
+    desc: 'Молот Ледяного Колосса: один удар — и строй врагов разлетается, как лёд.'
+  },
+  soul_reaper: {
+    id: 'soul_reaper', name: 'ЛЕГЕНДА: Жнец Душ Морвейна', rarity: 'legendary', tier: 5,
+    sprite: 'soul_reaper', icon: 'assets/sprites/weapons/soul_reaper.png',
+    category: 'magic', classLabel: 'Легендарные посохи', effect: 'abyss', element: 'dark',
+    ammoCost: 0, magSize: 0, reloadTime: 0,
+    baseDamage: 80, cooldown: 0.34, range: 480, projSpeed: 580, splashRadius: 115, critBonus: 0.3, knockback: 200, price: 2000,
+    desc: 'Посох Пожирателя Душ: сферы тьмы пожирают целые отряды призраков.'
+  },
+  rune_crossbow: {
+    id: 'rune_crossbow', name: 'Рунный Арбалет Охотников', rarity: 'epic', tier: 4,
+    sprite: 'rune_crossbow', icon: 'assets/sprites/weapons/rune_crossbow.png',
+    category: 'bow', classLabel: 'Арбалеты', element: 'lightning',
+    ammoCost: 0, magSize: 0, reloadTime: 0,
+    baseDamage: 66, cooldown: 0.5, range: 500, projSpeed: 900, pierce: 2, critBonus: 0.34, knockback: 220, price: 780,
+    desc: 'Арбалет Гильдии охотников: редкие, но смертоносные рунные болты.'
+  },
   phoenix_rifle: {
     id: 'phoenix_rifle', name: 'ЛЕГЕНДА: Винтовка «Феникс Бездны»', rarity: 'legendary', tier: 5,
     sprite: 'phoenix_rifle', icon: 'assets/sprites/weapons/phoenix_rifle.png',
@@ -591,7 +773,11 @@ export const RECIPES = [
   { id: 'rc_dagger',   weaponId: 'shadow_dagger', amount: 1, costCoins: 120, ingredients: { scrap: 5, crystal: 1 }, desc: 'Выковать Теневой Кинжал из деталей и Кристалла Бездны.' },
   { id: 'rc_axe',      weaponId: 'war_axe',    amount: 1,  costCoins: 190, ingredients: { scrap: 8, stone: 5, crystal: 2 }, desc: 'Выковать Боевой Топор «Крушитель Рун».' },
   { id: 'rc_staff',    weaponId: 'abyss_staff', amount: 1, costCoins: 260, ingredients: { scrap: 7, herb: 5, crystal: 3 }, desc: 'Собрать Посох Бездны с самонаводящимися сферами.' },
-  { id: 'rc_phoenix',  weaponId: 'phoenix_rifle', amount: 1, costCoins: 420, ingredients: { scrap: 14, stone: 8, crystal: 5 }, desc: 'ЛЕГЕНДА: собрать зажигательную винтовку «Феникс Бездны».' }
+  { id: 'rc_phoenix',  weaponId: 'phoenix_rifle', amount: 1, costCoins: 420, ingredients: { scrap: 14, stone: 8, crystal: 5 }, desc: 'ЛЕГЕНДА: собрать зажигательную винтовку «Феникс Бездны».' },
+  { id: 'rc_ash_blade', weaponId: 'ash_greatsword', amount: 1, costCoins: 300, ingredients: { scrap: 10, stone: 6, crystal: 3 }, desc: 'Выковать Двуручный Меч Пепла из вулканической стали.' },
+  { id: 'rc_frost_spear', weaponId: 'frost_spear', amount: 1, costCoins: 200, ingredients: { scrap: 6, stone: 4, crystal: 2 }, desc: 'Собрать Копьё Стужи с ледяным наконечником.' },
+  { id: 'rc_storm_hammer', weaponId: 'storm_hammer', amount: 1, costCoins: 340, ingredients: { scrap: 12, stone: 8, crystal: 4 }, desc: 'Собрать Грозовой Молот древних механизмов.' },
+  { id: 'rc_rune_bow', weaponId: 'rune_crossbow', amount: 1, costCoins: 360, ingredients: { scrap: 9, wood: 8, crystal: 4 }, desc: 'Собрать Рунный Арбалет Охотников.' }
 ];
 
 // 3 активные боевые способности
@@ -638,7 +824,14 @@ export const SKILL_TREE = [
   { id: 'perk_second_wind',  branch: 'Защита',    name: 'Адреналиновый рывок', icon: '💨', maxRank: 3, desc: '-12% перезарядки Рывка и +15 к максимуму выносливости за ранг.' },
   { id: 'perk_scavenger',    branch: 'Выживание', name: 'Мародёр Зоны',        icon: '🎒', maxRank: 3, desc: '+15% находимых монет, патронов и техно-деталей за ранг.' },
   { id: 'perk_keymaster',    branch: 'Выживание', name: 'Дешифратор VEXMORA',  icon: '🗝️', maxRank: 3, desc: 'Шанс 15% за ранг не потратить Ключ-карту при открытии клетки или бункера!' },
-  { id: 'perk_commander',    branch: 'Выживание', name: 'Тактика Отряда',      icon: '🤝', maxRank: 3, desc: '+25% к урону и скорострельности спасённого бойца-напарника за ранг.' }
+  { id: 'perk_commander',    branch: 'Выживание', name: 'Тактика Отряда',      icon: '🤝', maxRank: 3, desc: '+25% к урону и скорострельности спасённого бойца-напарника за ранг.' },
+  { id: 'perk_warrior_might', branch: 'Воин',   name: 'Мощь Воина',        icon: '⚔️', maxRank: 3, desc: '+6% ко всему урону оружия за ранг. Ветка Воина.' },
+  { id: 'perk_assassin_crit', branch: 'Ассасин', name: 'Смертельный Удар',  icon: '🗡️', maxRank: 3, desc: '+4% к шансу крита за ранг. Ветка Ассасина.' },
+  { id: 'perk_assassin_speed', branch: 'Ассасин', name: 'Шаг Тени',        icon: '👟', maxRank: 3, desc: '+3% к скорости передвижения за ранг. Ветка Ассасина.' },
+  { id: 'perk_mage_power',   branch: 'Маг',     name: 'Сила Стихий',       icon: '🔮', maxRank: 3, desc: '+10% к урону магического оружия за ранг. Ветка Мага.' },
+  { id: 'perk_mage_focus',   branch: 'Маг',     name: 'Фокус Чародея',     icon: '🧿', maxRank: 3, desc: 'Способности перезаряжаются на 8% быстрее за ранг. Ветка Мага.' },
+  { id: 'perk_guardian_vit', branch: 'Страж',   name: 'Тело Стража',       icon: '🛡️', maxRank: 3, desc: '+25 к максимальному здоровью за ранг. Ветка Стража.' },
+  { id: 'perk_guardian_regen', branch: 'Страж', name: 'Дыхание Стража',    icon: '💚', maxRank: 3, desc: '+0.8 HP/сек регенерации за ранг. Ветка Стража.' }
 ];
 
 // ── 16 УНИКАЛЬНЫХ ТИПОВ ПРОТИВНИКОВ ────────────────────────────────────
@@ -759,7 +952,7 @@ export const ENEMIES = {
   // ── RISE OF THE ABYSS: 10 созданий Бездны ─────────────────────────────
   skeleton_warrior: {
     id: 'skeleton_warrior', name: 'Скелет-Воин Руин', sprite: 'skeleton_warrior', role: 'Бронированный скелет',
-    hp: 165, damage: 22, speed: 118, radius: 15, armorMult: 0.8, xp: 58, coins: [14, 26],
+    hp: 165, damage: 22, speed: 118, radius: 15, armorMult: 0.8, xp: 58, coins: [14, 26], weak: 'fire',
     behavior: 'melee',
     drops: [{ res: 'stone', chance: 0.5 }, { res: 'crystal', chance: 0.10 }, { id: 'ammo', chance: 0.3 }]
   },
@@ -777,7 +970,7 @@ export const ENEMIES = {
   },
   stone_golem: {
     id: 'stone_golem', name: 'Каменный Голем', sprite: 'stone_golem', role: 'Танк: удар по земле (телеграф)',
-    hp: 430, damage: 34, speed: 76, radius: 20, armorMult: 0.6, xp: 110, coins: [30, 55],
+    hp: 430, damage: 34, speed: 76, radius: 20, armorMult: 0.6, xp: 110, coins: [30, 55], weak: 'ice',
     behavior: 'golem', attackRange: 70,
     drops: [{ res: 'stone', chance: 0.9 }, { res: 'crystal', chance: 0.35 }]
   },
@@ -810,6 +1003,90 @@ export const ENEMIES = {
     hp: 120, damage: 21, speed: 176, radius: 16, xp: 55, coins: [12, 24],
     behavior: 'pouncer',
     drops: [{ res: 'stone', chance: 0.4 }, { id: 'food', chance: 0.35 }]
+  },
+  ash_imp: {
+    id: 'ash_imp', name: 'Пепельный Имп', sprite: 'ash_imp', role: 'Огненный демонёнок',
+    hp: 120, damage: 20, speed: 150, radius: 13, xp: 52, coins: [12, 24], weak: 'ice',
+    behavior: 'pyro', attackRange: 180, projSpeed: 360,
+    drops: [{ id: 'potion', chance: 0.25 }, { res: 'scrap', chance: 0.4 }, { id: 'ammo', chance: 0.3 }]
+  },
+  goblin_shaman: {
+    id: 'goblin_shaman', name: 'Гоблин-Шаман', sprite: 'goblin_shaman', role: 'Лечит свой отряд',
+    hp: 130, damage: 16, speed: 105, radius: 13, xp: 55, coins: [14, 26], weak: 'fire',
+    behavior: 'healer_support', attackRange: 260, projSpeed: 430,
+    drops: [{ res: 'herb', chance: 0.6 }, { id: 'potion', chance: 0.35 }]
+  },
+  wolf_mutant: {
+    id: 'wolf_mutant', name: 'Волк-Мутант Бездны', sprite: 'wolf_mutant', role: 'Прыгающий хищник',
+    hp: 150, damage: 24, speed: 176, radius: 14, xp: 58, coins: [12, 25], weak: 'fire',
+    behavior: 'pouncer',
+    drops: [{ res: 'herb', chance: 0.4 }, { id: 'food', chance: 0.3 }]
+  },
+  cave_troll: {
+    id: 'cave_troll', name: 'Пещерный Тролль', sprite: 'cave_troll', role: 'Танк: удар по земле (телеграф)',
+    hp: 620, damage: 38, speed: 74, radius: 20, armorMult: 0.75, xp: 120, coins: [26, 48], weak: 'fire',
+    behavior: 'golem', attackRange: 76,
+    drops: [{ res: 'stone', chance: 0.8 }, { res: 'crystal', chance: 0.22 }, { id: 'medkit', chance: 0.3 }]
+  },
+  harpy: {
+    id: 'harpy', name: 'Гарпия Небесных Руин', sprite: 'harpy', role: 'Летающий налётчик',
+    hp: 135, damage: 21, speed: 168, radius: 13, flying: true, xp: 60, coins: [14, 27], weak: 'lightning',
+    behavior: 'drone_strafe', attackRange: 290, projSpeed: 500,
+    drops: [{ id: 'ammo', chance: 0.4 }, { res: 'crystal', chance: 0.15 }]
+  },
+  cursed_knight: {
+    id: 'cursed_knight', name: 'Проклятый Рыцарь', sprite: 'cursed_knight', role: 'Бронированный воин мёртвых',
+    hp: 340, damage: 30, speed: 96, radius: 16, armorMult: 0.62, xp: 95, coins: [20, 38], weak: 'lightning',
+    behavior: 'melee',
+    drops: [{ res: 'scrap', chance: 0.6 }, { res: 'crystal', chance: 0.18 }, { id: 'key', chance: 0.08 }]
+  },
+  fire_elemental: {
+    id: 'fire_elemental', name: 'Огненный Элементаль', sprite: 'fire_elemental', role: 'Живое пламя вулкана',
+    hp: 210, damage: 26, speed: 122, radius: 15, xp: 78, coins: [16, 32], weak: 'ice',
+    behavior: 'pyro', attackRange: 185, projSpeed: 350,
+    drops: [{ res: 'crystal', chance: 0.25 }, { id: 'potion', chance: 0.3 }]
+  },
+  ice_archer: {
+    id: 'ice_archer', name: 'Ледяной Лучник', sprite: 'ice_archer', role: 'Замедляет стрелами стужи',
+    hp: 155, damage: 22, speed: 112, radius: 14, xp: 62, coins: [13, 26], weak: 'fire',
+    behavior: 'frost_shooter', attackRange: 320, projSpeed: 470,
+    drops: [{ id: 'ammo', chance: 0.45 }, { res: 'crystal', chance: 0.12 }]
+  },
+  shadow_killer: {
+    id: 'shadow_killer', name: 'Теневой Убийца', sprite: 'shadow_killer', role: 'Невидимый охотник Бездны',
+    hp: 190, damage: 30, speed: 158, radius: 13, xp: 88, coins: [18, 34], weak: 'dark',
+    behavior: 'stealth_stalker',
+    drops: [{ res: 'crystal', chance: 0.28 }, { id: 'potion', chance: 0.3 }]
+  },
+  ancient_guard: {
+    id: 'ancient_guard', name: 'Древний Страж', sprite: 'ancient_guard', role: 'Щитоносец руин',
+    hp: 330, damage: 27, speed: 84, radius: 16, armorMult: 0.7, xp: 92, coins: [19, 36], weak: 'lightning',
+    behavior: 'shield_march', attackRange: 240, projSpeed: 430,
+    drops: [{ res: 'stone', chance: 0.5 }, { res: 'scrap', chance: 0.5 }, { id: 'key', chance: 0.07 }]
+  },
+  root_druid: {
+    id: 'root_druid', name: 'Друид Корней', sprite: 'root_druid', role: 'Маг поддержки леса',
+    hp: 165, damage: 19, speed: 102, radius: 14, xp: 70, coins: [15, 30], weak: 'fire',
+    behavior: 'healer_support', attackRange: 270, projSpeed: 450,
+    drops: [{ res: 'herb', chance: 0.8 }, { id: 'potion', chance: 0.4 }]
+  },
+  magma_golem: {
+    id: 'magma_golem', name: 'Магмовый Голем', sprite: 'magma_golem', role: 'Танк: удар по земле (телеграф)',
+    hp: 700, damage: 42, speed: 70, radius: 21, armorMult: 0.72, xp: 135, coins: [30, 55], weak: 'ice',
+    behavior: 'golem', attackRange: 78,
+    drops: [{ res: 'crystal', chance: 0.35 }, { res: 'stone', chance: 0.7 }, { id: 'medkit', chance: 0.3 }]
+  },
+  frost_giant: {
+    id: 'frost_giant', name: 'Ледяной Великан', sprite: 'frost_giant', role: 'Танк: удар по земле (телеграф)',
+    hp: 680, damage: 40, speed: 72, radius: 21, armorMult: 0.74, xp: 130, coins: [28, 52], weak: 'fire',
+    behavior: 'golem', attackRange: 78,
+    drops: [{ res: 'crystal', chance: 0.3 }, { id: 'medkit', chance: 0.35 }, { id: 'key', chance: 0.1 }]
+  },
+  soul_wraith: {
+    id: 'soul_wraith', name: 'Призрак Пожирателя', sprite: 'soul_wraith', role: 'Невидимый дух мёртвых',
+    hp: 200, damage: 29, speed: 148, radius: 14, xp: 90, coins: [18, 35], weak: 'dark',
+    behavior: 'stealth_stalker',
+    drops: [{ res: 'crystal', chance: 0.3 }, { id: 'potion', chance: 0.35 }]
   },
   void_cultist: {
     id: 'void_cultist', name: 'Культист Пустоты', sprite: 'void_cultist', role: 'Ритуальные залпы Бездны',
@@ -994,6 +1271,71 @@ export const BOSSES = {
     unlocksZone: 'Врата Сердца Бездны',
     intro: 'Крепость содрогается от боевого рога. Владыка Кзаргот спускается с трона Пустоты с клинком из застывшей лавы.',
     desc: 'Огненные линии-телеграфы, призыв магов и культистов, яростные серии рывков в третьей стадии.'
+  },
+  boss_ash_king: {
+    id: 'boss_ash_king', order: 16,
+    name: 'Пепельный Король «Вулкар»',
+    title: 'Владыка Пепельных Земель',
+    sprite: 'boss_ash_king',
+    biome: 'desert', x: 900, y: 2900, arenaRadius: 350,
+    hp: 6800, damage: 58, speed: 104, radius: 34, xp: 2600, coins: 1600,
+    rewardWeapon: 'dragon_fang', rewardArmor: 'set_ash',
+    rewardItems: [{ id: 'key', count: 2 }, { id: 'potion', count: 2 }],
+    unlocksZone: 'Трон Вулкара в Пепельных Землях',
+    intro: 'Пепел встаёт стеной. Король, сгоревший вместе со своим королевством, поднимает клинок Драконьего Клыка.',
+    faction: 'dawn'
+  },
+  boss_root_queen: {
+    id: 'boss_root_queen', order: 17,
+    name: 'Королева Корней «Сильвана»',
+    title: 'Сердце Затерянного Леса',
+    sprite: 'boss_root_queen',
+    biome: 'forest', x: 1700, y: 900, arenaRadius: 350,
+    hp: 6400, damage: 54, speed: 98, radius: 33, xp: 2500, coins: 1500,
+    rewardWeapon: 'queen_thorn', rewardArmor: 'set_forest',
+    rewardItems: [{ id: 'key', count: 2 }, { id: 'potion', count: 2 }],
+    unlocksZone: 'Священный Храм Затерянного Леса',
+    intro: 'Корни рвут землю. Лес вспоминает свою королеву — и она не рада гостям.',
+    faction: 'forest'
+  },
+  boss_ice_colossus: {
+    id: 'boss_ice_colossus', order: 18,
+    name: 'Ледяной Колосс «Борей»',
+    title: 'Страж Ледяной Пустоши',
+    sprite: 'boss_ice_colossus',
+    biome: 'mountains', x: 2900, y: 800, arenaRadius: 350,
+    hp: 7600, damage: 60, speed: 82, radius: 36, xp: 2800, coins: 1700,
+    rewardWeapon: 'colossus_maul', rewardArmor: 'set_ice',
+    rewardItems: [{ id: 'key', count: 2 }, { id: 'medkit', count: 3 }],
+    unlocksZone: 'Замёрзший Трон Пустоши',
+    intro: 'Лёд трещит, как кость. Колосс, спавший тысячу зим, открывает глаза цвета метели.',
+    faction: 'hunters'
+  },
+  boss_soul_eater: {
+    id: 'boss_soul_eater', order: 19,
+    name: 'Пожиратель Душ «Морвейн»',
+    title: 'Ужас Королевства Мёртвых',
+    sprite: 'boss_soul_eater',
+    biome: 'mountains', x: 4300, y: 1500, arenaRadius: 350,
+    hp: 8200, damage: 64, speed: 110, radius: 34, xp: 3200, coins: 2000,
+    rewardWeapon: 'soul_reaper', rewardArmor: 'set_shadow',
+    rewardItems: [{ id: 'key', count: 2 }, { id: 'potion', count: 3 }],
+    unlocksZone: 'Крипта Душ Королевства Мёртвых',
+    intro: 'Тысячи украденных душ кричат хором. Морвейн пришёл за ещё одной.',
+    faction: 'coven'
+  },
+  boss_fallen_god: {
+    id: 'boss_fallen_god', order: 20, secret: true,
+    name: 'ПАВШИЙ БОГ «Азарот»',
+    title: 'Финал Эпохи Павших Богов',
+    sprite: 'boss_fallen_god',
+    biome: 'mountains', x: 5600, y: 4900, arenaRadius: 380,
+    hp: 12500, damage: 78, speed: 118, radius: 38, xp: 6000, coins: 4000,
+    rewardWeapon: 'god_blade', rewardArmor: 'set_god',
+    rewardItems: [{ id: 'key', count: 3 }, { id: 'potion', count: 4 }],
+    unlocksZone: 'Трон Павших Богов и Режим Повышенной Сложности',
+    intro: 'Небо гаснет. Бог, которого мир забыл из страха, вспоминает своё имя.',
+    faction: 'kings'
   },
   boss_abyss_heart: {
     id: 'boss_abyss_heart', order: 15,
@@ -1237,6 +1579,24 @@ export const SECRETS = [
     coins: 380
   },
   {
+    id: 'sec_sky_vault',
+    name: 'Сокровищница Небесных Руин',
+    hint: 'Вскрой парящий бункер Небесных Руин Ключ-картой',
+    x: 1350, y: 4520, requiresKey: true,
+    rewardWeapon: 'sky_lance',
+    rewardItems: [{ id: 'ammo', count: 40 }],
+    coins: 520
+  },
+  {
+    id: 'sec_under_vault',
+    name: 'Лаборатория Подземного Царства',
+    hint: 'Вскрой забытую лабораторию Подземного Царства Ключ-картой',
+    x: 3150, y: 5080, requiresKey: true,
+    rewardWeapon: 'under_rail',
+    rewardItems: [{ id: 'medkit', count: 3 }],
+    coins: 580
+  },
+  {
     id: 'sec_abyss_vault',
     name: 'Сокровищница Крепости Бездны',
     hint: 'Вскрой обсидиановый бункер Крепости Бездны Ключ-картой',
@@ -1247,6 +1607,32 @@ export const SECRETS = [
     coins: 620
   }
 ];
+
+// VEXMORA 3.0: 5 фракций Эпохи Павших Богов — репутация, магазины и уникальное оружие
+export const FACTIONS = {
+  dawn:    { id: 'dawn',    name: 'Орден Рассвета',        icon: '🌅', region: 'Пепельные земли',    bossId: 'boss_ash_king',    itemWeapon: 'king_slayer',   itemCost: 520, desc: 'Рыцари, поклявшиеся вернуть свет миру. Ненавидят Ковен Бездны.' },
+  forest:  { id: 'forest',  name: 'Стражи Древнего Леса',  icon: '🌿', region: 'Затерянный лес',     bossId: 'boss_root_queen',  itemWeapon: 'vine_blade',    itemCost: 380, desc: 'Друиды и охотники, охраняющие сердце леса от машин и огня.' },
+  hunters: { id: 'hunters', name: 'Гильдия Охотников',     icon: '🏹', region: 'Ледяная пустошь',     bossId: 'boss_ice_colossus', itemWeapon: 'rune_crossbow', itemCost: 560, desc: 'Наёмники-следопыты: трофеи боссов — их валюта и честь.' },
+  coven:   { id: 'coven',   name: 'Ковен Бездны',          icon: '🔮', region: 'Королевство мёртвых', bossId: 'boss_soul_eater', itemWeapon: 'soul_staff',    itemCost: 540, desc: 'Тёмные маги, торгующие душами. Орден Рассвета считает их еретиками.' },
+  kings:   { id: 'kings',   name: 'Наследники Павших Королей', icon: '👑', region: 'Земли павших богов', bossId: 'boss_fallen_god', itemWeapon: 'dead_scythe', itemCost: 600, desc: 'Потомки древних династий, ждущие героя, что сядет на Трон Богов.' }
+};
+
+// VEXMORA 3.0: легендарные комплекты брони (защита + особые свойства)
+export const ARMORS = {
+  set_ash:    { id: 'set_ash',    name: 'Доспех Пепельного Короля', icon: '🔥', def: 0.22, price: 900,  desc: '−22% урона. Иммунитет к огненным ловушкам Пепельных земель и Крепости.' },
+  set_forest: { id: 'set_forest', name: 'Облачение Лесного Духа',   icon: '🌿', def: 0.16, price: 620,  desc: '−16% урона. Ядовитые ловушки наносят вдвое меньше урона.' },
+  set_ice:    { id: 'set_ice',    name: 'Броня Ледяного Стража',    icon: '❄️', def: 0.24, price: 980,  desc: '−24% урона. Ледяные стрелы врагов не замедляют героя.' },
+  set_shadow: { id: 'set_shadow', name: 'Комплект Теневого Охотника', icon: '🌑', def: 0.19, price: 860, desc: '−19% урона. +6% к скорости передвижения в тенях комплекта.' },
+  set_storm:  { id: 'set_storm',  name: 'Доспех Грозового Стража',  icon: '⚡', def: 0.18, price: 780,  desc: '−18% урона. +5% к шансу критического попадания.' },
+  set_god:    { id: 'set_god',    name: 'Облачение Павшего Бога',   icon: '👑', def: 0.3,  price: 2400, desc: '−30% урона. Вершина кузнечного искусства Эпохи: броня самого Азарота.' }
+};
+
+// VEXMORA 3.0: волновые испытания арен (подземелья и рейды)
+export const TRIALS = {
+  trial_ash:   { id: 'trial_ash',   name: 'Испытание Пепла',    icon: '🔥', waves: 3, perWave: 3, kinds: ['ash_imp', 'fire_elemental', 'magma_golem'], rewardCoins: 700,  rewardWeapon: 'magma_rifle', desc: '3 волны огненных тварей Пепельных земель. Награда: Магмовая Винтовка.' },
+  trial_frost: { id: 'trial_frost', name: 'Испытание Стужи',    icon: '❄️', waves: 3, perWave: 3, kinds: ['ice_archer', 'frost_giant', 'frost_revenant'], rewardCoins: 750,  rewardWeapon: 'ice_bow',     desc: '3 волны стужи Ледяной Пустоши. Награда: Лук Ледяной Пустоши.' },
+  trial_dead:  { id: 'trial_dead',  name: 'Испытание Мёртвых',  icon: '💀', waves: 4, perWave: 3, kinds: ['cursed_knight', 'soul_wraith', 'skeleton_warrior'], rewardCoins: 1000, rewardWeapon: 'storm_hammer', desc: '4 волны мёртвых королей. Награда: Грозовой Молот.' }
+};
 
 // RISE OF THE ABYSS: 6 коллекционных артефактов с реальными усилениями и историей мира
 export const ARTIFACTS = {
@@ -1397,6 +1783,38 @@ export const QUESTS = [
       { kind: 'boss', bossId: 'boss_abyss_heart', target: 1, label: 'СЕРДЦЕ БЕЗДНЫ (секрет)' }
     ],
     rewards: { xp: 5000, coins: 4000, items: [{ id: 'potion', count: 5 }] }
+  },
+  {
+    id: 'q_gods_ch1',
+    title: 'ЭПОХА ПАВШИХ БОГОВ I: Пепел и Корни',
+    desc: 'Боги исчезли, и мир треснул. Сокруши Пепельного Короля Вулкара и Королеву Корней Сильвану, чтобы остановить расползание Бездны!',
+    targetPos: { x: 900, y: 2900 },
+    goals: [
+      { kind: 'boss', bossId: 'boss_ash_king', target: 1, label: 'Пепельный король' },
+      { kind: 'boss', bossId: 'boss_root_queen', target: 1, label: 'Королева корней' }
+    ],
+    rewards: { xp: 2600, coins: 1800, items: [{ id: 'key', count: 2 }] }
+  },
+  {
+    id: 'q_gods_ch2',
+    title: 'ЭПОХА ПАВШИХ БОГОВ II: Лёд и Души',
+    desc: 'Разбуди Ледяного Колосса Борея и вырви Королевство Мёртвых из пасти Пожирателя Душ Морвейна!',
+    targetPos: { x: 2900, y: 800 },
+    goals: [
+      { kind: 'boss', bossId: 'boss_ice_colossus', target: 1, label: 'Ледяной колосс' },
+      { kind: 'boss', bossId: 'boss_soul_eater', target: 1, label: 'Пожиратель душ' }
+    ],
+    rewards: { xp: 3400, coins: 2400, items: [{ id: 'potion', count: 3 }] }
+  },
+  {
+    id: 'q_gods_ch3',
+    title: 'ЭПОХА ПАВШИХ БОГОВ III: ПАВШИЙ БОГ',
+    desc: 'Все дороги ведут в Земли Павших Богов. Найди секретный Трон и брось вызов самому Азароту — богу, которого мир забыл из страха!',
+    targetPos: { x: 5600, y: 4900 },
+    goals: [
+      { kind: 'boss', bossId: 'boss_fallen_god', target: 1, label: 'ПАВШИЙ БОГ АЗАРОТ (секрет)' }
+    ],
+    rewards: { xp: 8000, coins: 6000, items: [{ id: 'potion', count: 5 }] }
   }
 ];
 
@@ -1423,5 +1841,10 @@ export const ACHIEVEMENTS = [
   { id: 'ach_artifact_3',  name: 'Собиратель Реликвий', icon: '✨', desc: 'Собрать 3 артефакта Бездны.',                  reward: 450,  check: (s) => (s.artifacts || []).length >= 3 },
   { id: 'ach_artifact_6',  name: 'Хранитель Бездны',    icon: '👑', desc: 'Собрать все 6 артефактов Бездны!',             reward: 1200, check: (s) => (s.artifacts || []).length >= 6 },
   { id: 'ach_elite_5',     name: 'Охотник на Элиту',    icon: '💜', desc: 'Победить 5 элитных врагов Бездны.',            reward: 380,  check: (s) => (s.stats.eliteKills || 0) >= 5 },
-  { id: 'ach_boss_15',     name: 'ПОКОРИТЕЛЬ БЕЗДНЫ',   icon: '🌌', desc: 'Победить всех 15 боссов, включая Сердце Бездны!', reward: 3000, check: (s) => s.defeatedBosses.length >= 15 }
+  { id: 'ach_boss_15',     name: 'ПОКОРИТЕЛЬ БЕЗДНЫ',   icon: '🌌', desc: 'Победить всех 15 боссов, включая Сердце Бездны!', reward: 3000, check: (s) => s.defeatedBosses.length >= 15 },
+  { id: 'ach_regions_8',   name: 'Странник Восьми Земель', icon: '🧭', desc: 'Открыть все 8 особых регионов мира.',       reward: 600,  check: (s) => (s.discoveredLocations || []).length >= 8 },
+  { id: 'ach_boss_20',     name: 'УБИЙЦА БОГОВ',        icon: '⚡', desc: 'Победить всех 20 боссов, включая Павшего Бога!', reward: 5000, check: (s) => s.defeatedBosses.length >= 20 },
+  { id: 'ach_faction_100', name: 'Друг Фракций',        icon: '🏳️', desc: 'Набрать 100 репутации любой фракции.',          reward: 500,  check: (s) => Object.values(s.factionRep || {}).some(v => v >= 100) },
+  { id: 'ach_trials_3',    name: 'Чемпион Арен',        icon: '🏟️', desc: 'Пройти все 3 испытания арен.',                 reward: 650,  check: (s) => (s.trialsDone || []).length >= 3 },
+  { id: 'ach_armor_3',     name: 'Легендарный Доспех',  icon: '🛡️', desc: 'Собрать 3 комплекта легендарной брони.',        reward: 550,  check: (s) => (s.ownedArmors || []).length >= 3 }
 ];

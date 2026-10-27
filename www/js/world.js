@@ -224,6 +224,15 @@ export function createWorld(seed = 20261025) {
     id: 'bld_sec_abyss', interactType: 'secret_vault', secretId: 'sec_abyss_vault', name: 'Сокровищница Крепости Бездны'
   });
   addBuilding('watchtower', 470, 560, { interactType: 'loot_once', name: 'Руинная Башня Стражей' });
+  // VEXMORA 3.0: секретные бункеры Небесных Руин и Подземного Царства
+  addBuilding('bunker', 1350, 4520, {
+    id: 'bld_sec_sky', interactType: 'secret_vault', secretId: 'sec_sky_vault', name: 'Сокровищница Небесных Руин'
+  });
+  addBuilding('bunker', 3150, 5080, {
+    id: 'bld_sec_under', interactType: 'secret_vault', secretId: 'sec_under_vault', name: 'Лаборатория Подземного Царства'
+  });
+  addBuilding('watchtower', 1080, 2720, { interactType: 'loot_once', name: 'Пепельная Башня Вулкара' });
+  addBuilding('watchtower', 5450, 4720, { interactType: 'loot_once', name: 'Башня Последнего Лагеря' });
   addBuilding('base', 5980, 300, { interactType: 'loot_once', name: 'Цитадель Крепости Бездны' });
 
   // Руинные колонны вокруг Забытых Руин
@@ -250,6 +259,28 @@ export function createWorld(seed = 20261025) {
   ];
   for (const [id, cx, cy, cursed] of chestDefs) {
     chests.push({ id, x: cx, y: cy, looted: false, cursed });
+  }
+
+  // VEXMORA 3.0: ловушки, сундуки и жилы новых регионов
+  const trapDefs3 = [
+    ['trap_fire', 820, 2820], ['trap_fire', 990, 2990], ['trap_fire', 760, 3050],
+    ['trap_spikes', 2820, 720], ['trap_spikes', 2990, 890], ['trap_poison', 1620, 830],
+    ['trap_poison', 1780, 990], ['trap_fire', 5520, 4810], ['trap_spikes', 5690, 4990]
+  ];
+  for (const [kind, tx, ty] of trapDefs3) {
+    traps.push({ id: `trap_${nextId++}`, kind, x: tx, y: ty, radius: 26, damage: kind === 'trap_fire' ? 26 : kind === 'trap_spikes' ? 20 : 16, hitCd: 0 });
+  }
+  const chestDefs3 = [
+    ['chest_ash_1', 840, 2790, false], ['chest_ash_2', 1010, 3060, true],
+    ['chest_lost_1', 1600, 1010, false], ['chest_ice_1', 3010, 690, true],
+    ['chest_dead_1', 4200, 1390, false], ['chest_sky_1', 1620, 4820, true],
+    ['chest_under_1', 3420, 4790, false], ['chest_gods_1', 5720, 5020, true]
+  ];
+  for (const [id, cx, cy, cursed] of chestDefs3) {
+    chests.push({ id, x: cx, y: cy, looted: false, cursed });
+  }
+  for (const [cx, cy] of [[950, 2760], [1760, 790], [2790, 910], [4410, 1610], [1390, 4810], [3210, 4780], [5490, 5010], [5710, 4780]]) {
+    nodes.push(makeNode(nextId++, 'crystal_node', cx, cy));
   }
 
   // Кристаллические жилы Бездны (редкий ресурс для легендарного крафта)

@@ -7,7 +7,7 @@
 import {
   WORLD_CONFIG, RARITIES, BIOMES, CAMPFIRES, NPCS, WEAPONS, WEAPON_MODS, BASE_ROOMS,
   ITEMS, RESOURCES, RECIPES, SKILLS, SKILL_TREE, ENEMIES, BOSSES, SECRETS, QUESTS, ACHIEVEMENTS,
-  RESCUE_MISSIONS, MISSION_TEMPLATES, LOCATIONS, ARTIFACTS
+  RESCUE_MISSIONS, MISSION_TEMPLATES, LOCATIONS, ARTIFACTS, FACTIONS, ARMORS, TRIALS
 } from './data.js';
 import { createWorld, dist2, getBiomeIdAt, getLocationIdAt } from './world.js';
 
@@ -167,6 +167,15 @@ export class GameEngine {
     this.eventTimer = 110;
     this.musicTheme = null;
 
+    // VEXMORA 3.0: фракции, броня, испытания, сюжетные выборы, повышенная сложность
+    this.factionRep = { dawn: 0, forest: 0, hunters: 0, coven: 0, kings: 0 };
+    this.ownedArmors = [];
+    this.equippedArmor = null;
+    this.trialsDone = [];
+    this.activeTrial = null;
+    this.storyChoices = {};
+    this.hardMode = false;
+
     this.unlockedCamps = ['camp_forest'];
     this.discoveredSecrets = [];
     this.lootedBuildings = [];
@@ -302,7 +311,7 @@ export class GameEngine {
     const agi = p.stats.agility;
     const bp = this.inventory.backpackLevel || 0;
     const prevMaxHp = p.maxHp || 130;
-    p.maxHp = Math.round(112 + p.level * 16 + vit * 22 + bp * 25 + this.getPerkRank('perk_kevlar') * 30);
+    p.maxHp = Math.round(112 + p.level * 16 + vit * 22 + bp * 25 + this.getPerkRank('perk_kevlar') * 30 + this.getPerkRank('perk_guardian_vit') * 25);
     p.maxStamina = Math.round(96 + agi * 8 + p.level * 2 + bp * 6 + this.getPerkRank('perk_second_wind') * 15);
     if (refill) {
       p.hp = p.maxHp;
@@ -325,6 +334,8 @@ export class GameEngine {
     }
     let spd = 205 + p.stats.agility * 7;
     if (this.hasArtifact('art_moon')) spd *= 1.08;
+    spd *= 1 + this.getPerkRank('perk_assassin_speed') * 0.03;
+    if (this.equippedArmor === 'set_shadow') spd *= 1.06;
     if (p.slowTimer > 0) spd *= 0.62;
     if (p.sprinting && p.stamina > 4) spd *= 1.28;
     if (p.shieldBuffTimer > 0) spd *= 1.20;
@@ -340,8 +351,10 @@ export class GameEngine {
     if (this.hasArtifact('art_sun')) mult *= 1.10;                            // Солнечная Руна: +10% урона
     if (w.category === 'magic') {
       mult *= 1 + ((p.stats.magic || 1) - 1) * 0.09;                          // Характеристика «Магия»
+      mult *= 1 + this.getPerkRank('perk_mage_power') * 0.10;                 // Ветка Мага: Сила Стихий
       if (this.hasArtifact('art_abyss')) mult *= 1.12;                        // Ядро Бездны усиливает магию
     }
+    mult *= 1 + this.getPerkRank('perk_warrior_might') * 0.06;                // Ветка Воина: Мощь
     mult *= 1 + (this.baseLevels.workshop || 0) * 0.06;                       // Инженерный Цех Базы
     if (w.category === 'gun' || w.category === 'explosive') {
       mult *= 1 + this.getPerkRank('perk_hollow_point') * 0.08;               // перк «Экспансивный калибр»
@@ -355,6 +368,8 @@ export class GameEngine {
     const w = WEAPONS[weaponId] || WEAPONS.knife;
     let c = 0.07 + this.player.stats.luck * 0.03 + (w.critBonus || 0) + this.getPerkRank('perk_exec_crit') * 0.05;
     if (this.hasArtifact('art_storm')) c += 0.06;                             // Грозовой Глаз: +6% крита
+    c += this.getPerkRank('perk_assassin_crit') * 0.04;                       // Ветка Ассасина: Смертельный Удар
+    if (this.equippedArmor === 'set_storm') c += 0.05;                        // Доспех Грозового Стража
     if (this.hasMod(weaponId, 'mod_scope')) c += 0.15;                        // Лазерный Коллиматор
     return Math.min(0.72, c);
   }
@@ -412,6 +427,136 @@ export class GameEngine {
     return true;
   }
 
+  // ── VEXMORA 3.0: фракции, броня, испытания, сюжетные выборы, сложность ──
+  addFactionRep(factionId, amount) {
+    const f = FACTIONS[factionId];
+    if (!f) return;
+    const before = this.factionRep[factionId] || 0;
+    this.factionRep[factionId] = Math.max(0, Math.min(200, before + amount));
+    if (amount > 0 && this.factionRep[factionId] >= 40 && before < 40) {
+      this.pushToast(`${f.icon} ${f.name}: репутация ${this.factionRep[factionId]} — открыт фракционный магазин!`, '#4ade80');
+    } else if (amount !== 0) {
+      this.pushToast(`${f.icon} ${f.name}: репутация ${amount > 0 ? '+' : ''}${amount} (итого ${this.factionRep[factionId]})`, amount > 0 ? '#93c5fd' : '#f87171');
+    }
+    this.checkAchievements();
+  }
+
+  buyFactionItem(factionId) {
+    const f = FACTIONS[factionId];
+    if (!f) return false;
+    if ((this.factionRep[factionId] || 0) < 40) {
+      this.pushToast(`🔒 Нужна репутация 40 у фракции «${f.name}» (побеждай босса региона!)`, '#f59e0b');
+      return false;
+    }
+    if (this.inventory.weapons.includes(f.itemWeapon)) {
+      this.pushToast('Это фракционное оружие уже у вас!', '#94a3b8');
+      return false;
+    }
+    if (this.inventory.coins < f.itemCost) {
+      this.pushToast('Недостаточно монет!', '#ef4444');
+      return false;
+    }
+    this.inventory.coins -= f.itemCost;
+    this.grantWeapon(f.itemWeapon);
+    this.sound.play('unlock');
+    this.pushToast(`${f.icon} Фракция «${f.name}» вручает: ${WEAPONS[f.itemWeapon]?.name}!`, '#fbbf24');
+    this.saveGame(true);
+    return true;
+  }
+
+  makeStoryChoice(choiceId) {
+    if (this.storyChoices.main) return false;
+    if (choiceId === 'side_coven') {
+      this.storyChoices.main = 'coven';
+      this.addFactionRep('coven', 30);
+      this.addFactionRep('dawn', -15);
+      this.pushToast('🔮 Ты принял дар Ковена Бездны. Орден Рассвета запомнит это...', '#c084fc');
+    } else if (choiceId === 'side_dawn') {
+      this.storyChoices.main = 'dawn';
+      this.addFactionRep('dawn', 30);
+      this.addFactionRep('coven', -15);
+      this.pushToast('🌅 Ты поклялся Ордену Рассвета. Ковен Бездны затаил обиду...', '#fde047');
+    } else return false;
+    this.saveGame(true);
+    return true;
+  }
+
+  grantArmor(armorId) {
+    const def = ARMORS[armorId];
+    if (!def) return false;
+    if (!this.ownedArmors.includes(armorId)) {
+      this.ownedArmors.push(armorId);
+      this.sound.play('levelup');
+      this.pushToast(`${def.icon} КОМПЛЕКТ БРОНИ: ${def.name}! Надень во вкладке 🎒 Арсенал`, '#fbbf24');
+      this.checkAchievements();
+    }
+    if (!this.equippedArmor) this.equippedArmor = armorId;
+    return true;
+  }
+
+  equipArmor(armorId) {
+    if (!this.ownedArmors.includes(armorId)) return false;
+    this.equippedArmor = armorId;
+    this.sound.play('ui');
+    this.pushToast(`${ARMORS[armorId].icon} Надето: ${ARMORS[armorId].name}`, '#4ade80');
+    return true;
+  }
+
+  buyArmor(armorId) {
+    const def = ARMORS[armorId];
+    if (!def) return false;
+    if (this.ownedArmors.includes(armorId)) return this.equipArmor(armorId);
+    if (this.inventory.coins < def.price) {
+      this.pushToast('Недостаточно монет!', '#ef4444');
+      return false;
+    }
+    this.inventory.coins -= def.price;
+    this.grantArmor(armorId);
+    this.equippedArmor = armorId;
+    this.saveGame(true);
+    return true;
+  }
+
+  startTrial(trialId) {
+    const trial = TRIALS[trialId];
+    if (!trial || this.player.dead) return false;
+    if (this.activeTrial) {
+      this.pushToast('⚔️ Сначала завершите текущее испытание!', '#f59e0b');
+      return false;
+    }
+    this.activeTrial = { id: trialId, wave: 0 };
+    this.spawnTrialWave();
+    this.sound.play('skill');
+    this.pushToast(`${trial.icon} ИСПЫТАНИЕ НАЧАЛОСЬ: ${trial.name}! Волна 1/${trial.waves}`, '#f43f5e');
+    return true;
+  }
+
+  spawnTrialWave() {
+    const trial = TRIALS[this.activeTrial.id];
+    this.activeTrial.wave++;
+    const kind = trial.kinds[Math.min(trial.kinds.length - 1, this.activeTrial.wave - 1)];
+    for (let k = 0; k < trial.perWave; k++) {
+      const ang = (k / trial.perWave) * Math.PI * 2 + Math.random() * 0.5;
+      const e = this.spawnEnemyAt(this.player.x + Math.cos(ang) * 230, this.player.y + Math.sin(ang) * 230, kind, true, this.activeTrial.wave >= 3 && k === 0);
+      if (e) e.trialId = this.activeTrial.id;
+    }
+    if (this.activeTrial.wave > 1) {
+      this.pushToast(`🏟️ ${trial.name}: волна ${this.activeTrial.wave}/${trial.waves}!`, '#fbbf24');
+    }
+  }
+
+  toggleHardMode() {
+    if (!this.defeatedBosses.includes('boss_fallen_god')) {
+      this.pushToast('🔒 Режим повышенной сложности откроется после победы над Павшем Богом!', '#f59e0b');
+      return false;
+    }
+    this.hardMode = !this.hardMode;
+    if (this.hardMode) this.pushToast('⚡ ПОВЫШЕННАЯ СЛОЖНОСТЬ ВКЛЮЧЕНА: враги +50% HP, +30% урона, +50% опыта!', '#f43f5e');
+    else this.pushToast('Повышенная сложность выключена', '#94a3b8');
+    this.saveGame(true);
+    return true;
+  }
+
   hasSave() {
     try {
       return !!localStorage.getItem(SAVE_KEY);
@@ -454,6 +599,12 @@ export class GameEngine {
         discoveredLocations: this.discoveredLocations,
         artifacts: this.artifacts,
         lootedChests: this.lootedChests,
+        factionRep: this.factionRep,
+        ownedArmors: this.ownedArmors,
+        equippedArmor: this.equippedArmor,
+        trialsDone: this.trialsDone,
+        storyChoices: this.storyChoices,
+        hardMode: this.hardMode,
         unlockedCamps: this.unlockedCamps,
         discoveredSecrets: this.discoveredSecrets,
         lootedBuildings: this.lootedBuildings,
@@ -531,6 +682,13 @@ export class GameEngine {
         if (this.lootedChests.includes(ch.id)) ch.looted = true;
       }
       if (data.stats) this.stats.eliteKills = this.stats.eliteKills || 0;
+      // VEXMORA 3.0: поля Эпохи Павших Богов со значениями по умолчанию для старых сохранений
+      this.factionRep = Object.assign({ dawn: 0, forest: 0, hunters: 0, coven: 0, kings: 0 }, data.factionRep || {});
+      this.ownedArmors = Array.isArray(data.ownedArmors) ? data.ownedArmors.filter(id => ARMORS[id]) : [];
+      this.equippedArmor = ARMORS[data.equippedArmor] ? data.equippedArmor : null;
+      this.trialsDone = Array.isArray(data.trialsDone) ? data.trialsDone.filter(id => TRIALS[id]) : [];
+      this.storyChoices = (data.storyChoices && typeof data.storyChoices === 'object') ? data.storyChoices : {};
+      this.hardMode = !!data.hardMode;
       this.unlockedCamps = data.unlockedCamps || ['camp_forest'];
       this.discoveredSecrets = data.discoveredSecrets || [];
       this.lootedBuildings = data.lootedBuildings || [];
@@ -593,6 +751,8 @@ export class GameEngine {
         xp: b.xp,
         coins: b.coins,
         rewardWeapon: b.rewardWeapon,
+        rewardArmor: b.rewardArmor || null,
+        faction: b.faction || null,
         rewardArtifact: b.rewardArtifact || null,
         intro: b.intro || b.desc || '',
         introShown: false,
@@ -665,6 +825,7 @@ export class GameEngine {
       attackRange: tpl.attackRange || 44,
       projSpeed: tpl.projSpeed || 420,
       armorMult: tpl.armorMult || 1,
+      weak: tpl.weak || null,
       isMiniBoss: !!tpl.isMiniBoss,
       stealth: !!tpl.stealth,
       flying: !!tpl.flying,
@@ -696,6 +857,11 @@ export class GameEngine {
       hitFlash: 0,
       animTime: Math.random() * 5
     };
+    if (this.hardMode) {
+      e.hp = e.maxHp = Math.round(e.hp * 1.5);
+      e.damage = Math.round(e.damage * 1.3);
+      e.xp = Math.round(e.xp * 1.5);
+    }
     if (elite) {
       e.hp = e.maxHp = Math.round(e.hp * 2.3);
       e.damage = Math.round(e.damage * 1.35);
@@ -1492,6 +1658,7 @@ export class GameEngine {
 
     p.stamina -= skDef.staminaCost;
     let cdMult = Math.max(0.65, 1 - (effLevel - 1) * 0.08);
+    cdMult *= 1 - this.getPerkRank('perk_mage_focus') * 0.08;                 // Ветка Мага: Фокус Чародея
     if ((skillId === 'ice_blast' || skillId === 'magic_nova') && this.hasArtifact('art_frost')) cdMult *= 0.8;
     skState.cd = skDef.baseCooldown * cdMult;
     this.sound.play('skill');
@@ -2307,6 +2474,40 @@ export class GameEngine {
         if (b.phase >= 2) summon(b.phase >= 3 ? 'void_cultist' : 'abyss_mage', 2);
         if (b.phase >= 3) this.spawnTelegraph(p.x, p.y, 96, 0.8, Math.round(b.damage * 1.3));
         break;
+      case 'boss_ash_king': // ПЕПЕЛЬНЫЙ КОРОЛЬ: огненные веера, рывок и пепельные телеграфы
+        fan(b.phase >= 2 ? 7 : 5, 1.2, 400, 1.0, '#fb923c');
+        this.spawnTelegraph(p.x, p.y, 96, 0.85, Math.round(b.damage * 1.2));
+        if (b.phase >= 2) { b.dashActive = 0.38; b.dashVx = nx * 450; b.dashVy = ny * 450; }
+        if (b.phase >= 3) ring(12, 350, '#f97316');
+        break;
+      case 'boss_root_queen': // КОРОЛЕВА КОРНЕЙ: призыв друидов, веера шипов, лечение корней
+        summon(b.phase >= 2 ? 'root_druid' : 'goblin_shaman', 2);
+        fan(b.phase >= 2 ? 9 : 6, 1.5, 370, 0.9, '#4ade80');
+        if (b.phase >= 3) { b.hp = Math.min(b.maxHp, b.hp + b.maxHp * 0.02); this.pushToast('🌿 Королева Корней питается силой леса (+2% HP)!', '#4ade80'); }
+        break;
+      case 'boss_ice_colossus': // ЛЕДЯНОЙ КОЛОСС: кольца стужи, обледенение арены, сокрушительный удар
+        ring(b.phase >= 2 ? 16 : 12, 340, '#7dd3fc');
+        this.spawnTelegraph(p.x, p.y, 108, 0.9, Math.round(b.damage * 1.25));
+        if (b.phase >= 2) p.slowTimer = Math.max(p.slowTimer || 0, this.equippedArmor === 'set_ice' ? 0 : 1.0);
+        if (b.phase >= 3) { b.vz = 420; b.z = 4; b.dashActive = 0.44; b.dashVx = nx * 420; b.dashVy = ny * 420; }
+        break;
+      case 'boss_soul_eater': // ПОЖИРАТЕЛЬ ДУШ: телепорты душ, веера тьмы, призыв призраков
+        b.x = clamp(p.x - nx * 110 + randRange(-50, 50), 70, this.world.width - 70);
+        b.y = clamp(p.y - ny * 110 + randRange(-50, 50), 70, this.world.height - 70);
+        this.spawnSpriteEffect('magic', b.x, b.y, 1.5, 14);
+        fan(b.phase >= 2 ? 7 : 5, 1.3, 420, 1.0, '#c084fc');
+        if (b.phase >= 2) summon('soul_wraith', 2);
+        if (b.phase >= 3) ring(16, 360, '#a855f7');
+        break;
+      case 'boss_fallen_god': // ПАВШИЙ БОГ АЗАРОТ: всё сразу — кольца, веера, рывки, призыв и телеграфы
+        ring(b.phase === 1 ? 14 : b.phase === 2 ? 18 : 24, 390 + b.phase * 20, '#facc15');
+        fan(b.phase >= 2 ? 7 : 5, 1.2, 440, 1.05, '#fde047', 'bullet');
+        if (b.phase >= 2) {
+          for (let k = 0; k < 3; k++) this.spawnTelegraph(p.x + randRange(-110, 110), p.y + randRange(-110, 110), 88, 0.85, Math.round(b.damage * 1.2));
+          summon('shadow_killer', 2);
+        }
+        if (b.phase >= 3) { b.dashActive = 0.38; b.dashVx = nx * 480; b.dashVy = ny * 480; }
+        break;
       case 'boss_abyss_heart': // СЕРДЦЕ БЕЗДНЫ (секрет): кольца хаоса, телепорты, сверхновая
         ring(b.phase === 1 ? 14 : b.phase === 2 ? 18 : 24, 380 + b.phase * 18, '#f0abfc');
         if (b.phase >= 2) {
@@ -2337,6 +2538,15 @@ export class GameEngine {
 
   // ── Урон, опыт, уровни и трофеи ──────────────────────────────────────
   damageEnemy(e, dmg, isCrit = false, customColor = null, opts = {}) {
+    // VEXMORA 3.0: уязвимости стихий (огонь/лёд/молния/тьма) — +35% урона по слабому месту!
+    if (opts.weaponId && e.weak) {
+      const wEl = WEAPONS[opts.weaponId];
+      const element = wEl?.element || (wEl?.effect === 'burn' || wEl?.effect === 'fire' ? 'fire' : wEl?.effect === 'abyss' ? 'dark' : WEAPONS[opts.weaponId]?.category === 'tesla' ? 'lightning' : null);
+      if (element && element === e.weak) {
+        dmg = Math.round(dmg * 1.35);
+        this.addFloatingText(e.x, e.y - 34, '🎯 УЯЗВИМОСТЬ!', '#fde047');
+      }
+    }
     if (e.armorMult && e.armorMult < 1) dmg = Math.max(1, Math.round(dmg * e.armorMult));
     e.hp -= dmg;
     // Крио-Импульс и Вампирский Реактор (только для попаданий оружием игрока)
@@ -2457,7 +2667,13 @@ export class GameEngine {
       this.inventory.coins += b.coins;
       this.gainXp(b.xp);
       this.grantWeapon(b.rewardWeapon);
+      if (b.rewardArmor) this.grantArmor(b.rewardArmor);
+      if (b.faction) this.addFactionRep(b.faction, 40);
       if (b.rewardArtifact) this.collectArtifact(b.rewardArtifact);
+      // Финал Эпохи: после победы над Павшем Богом открывается повышенная сложность
+      if (b.bossId === 'boss_fallen_god') {
+        this.pushToast('⚡ ОТКРЫТ РЕЖИМ ПОВЫШЕННОЙ СЛОЖНОСТИ! Включи его во вкладке ⚙️ Настройки', '#f43f5e');
+      }
       for (const it of b.rewardItems) {
         this.grantItem(it.id, it.count);
       }
@@ -2478,6 +2694,7 @@ export class GameEngine {
     // Если игрок в машине — часть урона гасит кузов
     let mult = p.shieldBuffTimer > 0 ? 0.58 : 1.0;
     mult *= Math.max(0.6, 1 - this.getPerkRank('perk_kevlar') * 0.08);
+    if (this.equippedArmor && ARMORS[this.equippedArmor]) mult *= 1 - ARMORS[this.equippedArmor].def;
     if (p.vehicleId) mult *= 0.65;
     const dmg = Math.max(1, Math.round(rawDmg * mult));
     p.hp -= dmg;
@@ -2641,7 +2858,7 @@ export class GameEngine {
             this.triggerEnemyExplosion(pr.x, pr.y, pr.splashRadius, pr.damage);
           } else {
             this.damagePlayer(pr.damage);
-            if (pr.slowPlayer) { p.slowTimer = 1.7; this.addFloatingText(p.x, p.y - 30, '❄️ ЗАМЕДЛЕНИЕ!', '#7dd3fc'); }
+            if (pr.slowPlayer && this.equippedArmor !== 'set_ice') { p.slowTimer = 1.7; this.addFloatingText(p.x, p.y - 30, '❄️ ЗАМЕДЛЕНИЕ!', '#7dd3fc'); }
           }
           this.projectiles.splice(i, 1);
         } else if (this.companion && this.companion.hp > 0 && dist2(pr.x, pr.y, this.companion.x, this.companion.y) <= (pr.radius + 13) ** 2) {
@@ -2769,10 +2986,42 @@ export class GameEngine {
       trap.hitCd = Math.max(0, (trap.hitCd || 0) - dt);
       if (trap.hitCd <= 0 && p.z < 10 && dist2(p.x, p.y, trap.x, trap.y) < (trap.radius + p.radius) ** 2) {
         trap.hitCd = 0.9;
-        this.damagePlayer(trap.damage);
+        if (trap.kind === 'trap_fire' && this.equippedArmor === 'set_ash') {
+          this.addFloatingText(p.x, p.y - 30, '🔥 Доспех Пепла защищает!', '#fb923c');
+          continue;
+        }
+        const trapDmg = (trap.kind === 'trap_poison' && this.equippedArmor === 'set_forest') ? Math.round(trap.damage * 0.5) : trap.damage;
+        this.damagePlayer(trapDmg);
         if (trap.kind === 'trap_poison') { p.slowTimer = Math.max(p.slowTimer || 0, 1.6); this.addFloatingText(p.x, p.y - 30, '☠️ ЯД!', '#a3e635'); }
         else if (trap.kind === 'trap_fire') this.addFloatingText(p.x, p.y - 30, '🔥 ОГОНЬ!', '#fb923c');
         else this.addFloatingText(p.x, p.y - 30, '🗡️ ШИПЫ!', '#e2e8f0');
+      }
+    }
+
+    // Ветка Стража: пассивная регенерация
+    const regenRank = this.getPerkRank('perk_guardian_regen');
+    if (regenRank > 0 && p.hp > 0 && p.hp < p.maxHp) {
+      p.hp = Math.min(p.maxHp, p.hp + regenRank * 0.8 * dt);
+    }
+
+    // VEXMORA 3.0: волны испытаний арен
+    if (this.activeTrial) {
+      const trial = TRIALS[this.activeTrial.id];
+      const alive = this.enemies.some(e => e.trialId === this.activeTrial.id);
+      if (trial && !alive && !p.dead) {
+        if (this.activeTrial.wave < trial.waves) {
+          this.spawnTrialWave();
+        } else {
+          const doneTrial = trial;
+          this.activeTrial = null;
+          if (!this.trialsDone.includes(doneTrial.id)) this.trialsDone.push(doneTrial.id);
+          this.inventory.coins += doneTrial.rewardCoins;
+          this.grantWeapon(doneTrial.rewardWeapon);
+          this.sound.play('levelup');
+          this.pushToast(`🏟️ ИСПЫТАНИЕ ПРОЙДЕНО: ${doneTrial.name}! +${doneTrial.rewardCoins}🪙 и ${WEAPONS[doneTrial.rewardWeapon]?.name}!`, '#fbbf24');
+          this.checkAchievements();
+          this.saveGame(true);
+        }
       }
     }
 
