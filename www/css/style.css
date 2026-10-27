@@ -461,28 +461,34 @@ html, body {
   box-shadow: 0 0 6px #ef4444;
 }
 
-/* Уведомления и Комбо */
+/* Уведомления: компактная лента в верхнем левом углу (НЕ по центру экрана) */
 .toast-stack {
   position: fixed;
-  top: 98px;
-  left: 50%;
-  transform: translateX(-50%);
+  top: 8px;
+  left: 8px;
   display: flex;
   flex-direction: column;
-  align-items: center;
+  align-items: flex-start;
   gap: 4px;
   z-index: 20;
-  width: min(92vw, 400px);
+  width: min(58vw, 290px);
+  pointer-events: none;
 }
 
 .toast-item {
-  background: rgba(15, 23, 42, 0.93);
-  border: 1px solid rgba(148, 163, 184, 0.38);
-  padding: 5px 12px;
-  border-radius: 8px;
-  font-size: 12px;
-  font-weight: 800;
-  text-align: center;
+  background: rgba(15, 23, 42, 0.82);
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  padding: 4px 9px;
+  border-radius: 7px;
+  font-size: 11px;
+  font-weight: 700;
+  text-align: left;
+  animation: toastFadeIn 0.18s ease-out;
+}
+
+@keyframes toastFadeIn {
+  from { opacity: 0; transform: translateX(-8px); }
+  to { opacity: 1; transform: translateX(0); }
 }
 
 .combo-badge {

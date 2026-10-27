@@ -387,7 +387,8 @@ export class UIManager {
       this.els.comboBadge.classList.add('hidden');
     }
 
-    this.els.toastStack.innerHTML = eng.toasts
+    // Не более 2 уведомлений одновременно и только в углу экрана
+    this.els.toastStack.innerHTML = eng.toasts.slice(0, 2)
       .map(t => `<div class="toast-item" style="color:${t.color}">${t.text}</div>`)
       .join('');
   }

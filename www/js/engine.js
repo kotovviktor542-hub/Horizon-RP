@@ -4204,7 +4204,8 @@ export class GameEngine {
   }
 
   pushToast(text, color = '#f8fafc') {
-    this.toasts.unshift({ text, color, life: 3.6 });
+    this.toasts.unshift({ text, color, life: 2.6 });
+    if (this.toasts.length > 3) this.toasts.length = 3;
     if (this.toasts.length > 4) this.toasts.pop();
   }
 }
