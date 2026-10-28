@@ -1700,6 +1700,108 @@ function generateFallenGodsExpansion() {
   mkTile('#3d2c10', '#2b1f0a', '#5e471a', 'gods.png');
 }
 
+// ── VEXMORA «ПАДЕНИЕ ДРЕВНИХ»: катакомбы, кристальные пещеры, цитадель ──
+function generateFallenAncientsExpansion() {
+  const humanoid = (file, cfg) => {
+    const fw = cfg.size || 32, fh = cfg.size || 32;
+    const pc = new PixelCanvas(fw * 6, fh);
+    const mid = Math.floor(fw / 2);
+    for (let f = 0; f < 6; f++) {
+      const ox = f * fw, step = f % 4, isAtk = f >= 4;
+      const bob = step % 2 === 1 ? -1 : 0;
+      const cx = ox + mid, by = fh - 4 + bob;
+      pc.ellipse(ox + mid, fh - 3, 7, 2, '#00000055');
+      const lOff = step === 1 ? -2 : 0, rOff = step === 3 ? -2 : 0;
+      pc.rect(cx - 5, by - 7 + lOff, 4, 6, cfg.pants);
+      pc.rect(cx + 1, by - 7 + rOff, 4, 6, cfg.pants);
+      pc.rect(cx - 6, by - 17, 12, 10, cfg.torso);
+      if (cfg.vest) pc.rect(cx - 5, by - 16, 10, 7, cfg.vest);
+      const armX = isAtk ? 4 : 1;
+      pc.rect(cx - 8, by - 16, 3, 7, cfg.torso);
+      pc.rect(cx + 5, by - 16, 3 + armX, 4, cfg.gun || cfg.torso);
+      if (cfg.wings) { pc.line(cx - 6, by - 18, cx - 13, by - 24 - (f % 2) * 2, cfg.wings, 3); pc.line(cx + 6, by - 18, cx + 13, by - 24 - (f % 2) * 2, cfg.wings, 3); }
+      pc.circle(cx, by - 21, 5, cfg.skin || '#eac096');
+      if (cfg.helmet) pc.rect(cx - 6, by - 27, 12, 5, cfg.helmet);
+      if (cfg.visor) pc.rect(cx - 4, by - 22, 8, 2, cfg.visor);
+      else { pc.pset(cx - 2, by - 22, cfg.eye || '#ef4444'); pc.pset(cx + 2, by - 22, cfg.eye || '#ef4444'); }
+      pc.outlineRegion(ox, 0, fw, fh, PAL.outline);
+    }
+    pc.save(`characters/${file}`);
+  };
+
+  humanoid('crypt_skeleton_sheet.png', { torso: '#6b7280', vest: '#374151', pants: '#1f2937', skin: '#e5e7eb', eye: '#f43f5e', helmet: '#111827' });
+  humanoid('tomb_knight_sheet.png',    { torso: '#4a044e', vest: '#701a75', pants: '#2e1065', skin: '#d8b4fe', eye: '#e879f9', helmet: '#3b0764', gun: '#9ca3af' });
+  humanoid('crystal_mage_sheet.png',   { torso: '#155e75', vest: '#0e7490', pants: '#082f49', skin: '#e0f2fe', eye: '#22d3ee', helmet: '#164e63', gun: '#67e8f9' });
+  humanoid('crystal_harpy_sheet.png',  { torso: '#0e7490', vest: '#06b6d4', pants: '#155e75', skin: '#ecfeff', eye: '#a855f7', helmet: '#164e63', gun: '#22d3ee', wings: '#a5f3fc' });
+  humanoid('abyss_duelist_sheet.png',  { torso: '#500724', vest: '#9d174d', pants: '#1f2937', skin: '#fbcfe8', eye: '#fda4af', helmet: '#500724', gun: '#e2e8f0' });
+  humanoid('crypt_archer_sheet.png',   { torso: '#3f3f46', vest: '#52525b', pants: '#18181b', skin: '#d4d4d8', eye: '#facc15', helmet: '#27272a', gun: '#a16207' });
+  humanoid('citadel_warlock_sheet.png', { torso: '#1e1b4b', vest: '#4338ca', pants: '#0f0a2e', skin: '#c7d2fe', eye: '#38bdf8', helmet: '#1e1b4b', gun: '#818cf8' });
+  humanoid('crystal_golem_sheet.png',  { size: 40, torso: '#0e7490', vest: '#22d3ee', pants: '#164e63', skin: '#a5f3fc', eye: '#ffffff', helmet: '#0e7490' });
+
+  // 3 Босса «Падения Древних» (64x64 x 6)
+  const fallBosses = [
+    { file: 'boss_catacomb_king.png', body: '#3f3f46', plate: '#71717a', core: '#f43f5e', eye: '#fda4af', style: 'king' },
+    { file: 'boss_crystal_leviathan.png', body: '#155e75', plate: '#22d3ee', core: '#ffffff', eye: '#a5f3fc', style: 'golem' },
+    { file: 'boss_citadel_lord.png',  body: '#500724', plate: '#e11d48', core: '#fb7185', eye: '#ffffff', style: 'god' }
+  ];
+  for (const bs of fallBosses) {
+    const bw = 64, bh2 = 64;
+    const bc = new PixelCanvas(bw * 6, bh2);
+    for (let f = 0; f < 6; f++) {
+      const ox = f * bw, step = f % 4, isAtk = f >= 4;
+      const bob = step % 2 === 1 ? -2 : 0;
+      const cx = ox + 32, by = 58 + bob;
+      bc.ellipse(ox + 32, 59, 19, 5, '#00000072');
+      const lOff = step === 1 ? -3 : 0, rOff = step === 3 ? -3 : 0;
+      bc.brickRect(cx - 13, by - 16 + lOff, 10, 15, bs.body, '#111827', bs.plate);
+      bc.brickRect(cx + 3, by - 16 + rOff, 10, 15, bs.body, '#111827', bs.plate);
+      bc.ellipse(cx, by - 29, 16, 14, bs.body);
+      bc.brickRect(cx - 12, by - 39, 24, 18, bs.plate, bs.body, '#ffffff44');
+      bc.circle(cx, by - 30, 4 + (f % 3), bs.core);
+      bc.circle(cx, by - 30, 2, '#ffffff');
+      bc.circle(cx - 17, by - 37, 7, bs.body);
+      bc.circle(cx + 17, by - 37, 7, bs.body);
+      if (bs.style === 'king') { bc.rect(cx + 16, by - 50, 5, 24, '#d4d4d8'); bc.line(cx - 12, by - 52, cx - 18, by - 60, '#f43f5e', 3); bc.line(cx + 12, by - 52, cx + 18, by - 60, '#f43f5e', 3); }
+      else if (bs.style === 'golem') { bc.rect(cx - 21, by - 56, 9, 12, '#a5f3fc'); bc.rect(cx + 12, by - 56, 9, 12, '#a5f3fc'); bc.line(cx - 8, by - 38, cx - 26, by - 50, '#22d3ee', 3); bc.line(cx + 8, by - 38, cx + 26, by - 50, '#22d3ee', 3); }
+      else { bc.line(cx - 14, by - 50, cx - 24, by - 62, '#fb7185', 3); bc.line(cx + 14, by - 50, cx + 24, by - 62, '#fb7185', 3); bc.circle(cx, by - 56, 5 + (f % 2), '#ffffff'); bc.rect(cx + 16, by - 48, 5, 22, '#fda4af'); }
+      const slamY = isAtk ? -8 : 0;
+      bc.rect(cx - 25, by - 35 + slamY, 8, 17, bs.body);
+      bc.rect(cx + 17, by - 35 + slamY, 8, 17, bs.body);
+      bc.circle(cx, by - 45, 9, bs.body);
+      bc.rect(cx - 6, by - 47, 4, 2, bs.eye);
+      bc.rect(cx + 2, by - 47, 4, 2, bs.eye);
+      bc.outlineRegion(ox, 0, bw, bh2, PAL.outline);
+    }
+    bc.save(`bosses/${bs.file}`);
+  }
+
+  // 4 клинка «Падения Древних»
+  const fallWeapons = [
+    ['flame_sword.png', '#fb923c', '#7f1d1d'],
+    ['void_blade.png', '#c084fc', '#2e1065'],
+    ['twin_daggers.png', '#e2e8f0', '#1e293b'],
+    ['ancients_blade.png', '#fde047', '#713f12']
+  ];
+  for (const [file, colA, colB] of fallWeapons) {
+    const wc = new PixelCanvas(32, 16);
+    wc.line(4, 13, 9, 9, colB, 3); wc.line(9, 9, 28, 2, colA, 2); wc.line(10, 8, 27, 2, '#ffffff', 1);
+    wc.circle(24, 4, 2.5, colA);
+    wc.outlineRegion(0, 0, 32, 16, PAL.outline);
+    wc.save(`weapons/${file}`);
+  }
+
+  // Тайлы трёх новых локаций
+  const mkTile = (base, a1, a2, name) => {
+    const t = new PixelCanvas(32, 32);
+    t.rect(0, 0, 32, 32, base);
+    for (let i = 0; i < 40; i++) { const x = (i * 17 + 4) % 30, y = (i * 13 + 3) % 30; t.rect(x, y, 2, 1, i % 2 ? a1 : a2); }
+    t.save(`tiles/${name}`);
+  };
+  mkTile('#2e2a33', '#221e27', '#453e50', 'catacombs.png');
+  mkTile('#123243', '#0c2434', '#1d5470', 'crystal.png');
+  mkTile('#33091d', '#260613', '#57102f', 'citadel.png');
+}
+
 generateHeroSheet();
 generateEnemySheets();
 generateNpcs();
@@ -1713,5 +1815,6 @@ generateTiles();
 generateVexmoraExpansion();
 generateAbyssExpansion();
 generateFallenGodsExpansion();
+generateFallenAncientsExpansion();
 
 console.log('generate-pixel-assets: обновлены текстурированные PNG-спрайты VEXMORA (RISE OF THE ABYSS)!');

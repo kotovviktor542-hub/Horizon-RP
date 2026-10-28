@@ -5,16 +5,15 @@
 export const GAME_TITLE = 'VEXMORA';
 
 export const UPDATE_ANNOUNCEMENT = {
-  version: '3.0',
-  title: 'VEXMORA: AGE OF THE FALLEN GODS — МАСШТАБНОЕ ОБНОВЛЕНИЕ 3.0',
-  lead: 'Боги исчезли. Мир треснул по швам. 8 регионов, 20 боссов, фракции, испытания и финал Эпохи Павших Богов ждут героя!',
+  version: '2.0',
+  title: 'VEXMORA 2.0 «ПАДЕНИЕ ДРЕВНИХ»',
+  lead: 'Эпоха огнестрела закончилась. В мрачном мире остались только клинки, луки и магия — и трое новых владык тьмы!',
   sections: [
-    { icon: '🗺️', title: '8 регионов мира', text: 'Пепельные земли, Затерянный лес, Ледяная пустошь, Королевство мёртвых, Бездна, Небесные руины, Подземное царство и Земли павших богов — со своей музыкой, врагами и секретами.' },
-    { icon: '👹', title: '20 боссов и секретный Павший Бог', text: 'Пепельный король, Королева Корней, Ледяной колосс, Пожиратель душ и финальный Павший Бог. 3 фазы, телеграфы, интро и легендарные награды.' },
-    { icon: '⚔️', title: '48 видов оружия и уязвимости стихий', text: 'Огонь, лёд, молния и тьма: подбирай стихию под врага. Слабые места дают +35% урона!' },
-    { icon: '🏳️', title: '5 фракций и репутация', text: 'Орден Рассвета, Стражи Леса, Гильдия охотников, Ковен Бездны и Наследники королей. Победы над боссами регионов укрепляют твою репутацию.' },
-    { icon: '🛡️', title: 'Легендарные комплекты брони', text: '6 комплектов с защитой и особыми свойствами — добывай у боссов, покупай и крафти.' },
-    { icon: '🏰', title: 'Испытания и сюжет «Эпоха павших богов»', text: 'Волновые испытания арен, новые главы кампании, развилки фракций и повышенная сложность после финала.' }
+    { icon: '⚔️', title: 'Огнестрел полностью убран', text: 'Весь арсенал — холодное оружие, луки и магия. Новые клинки: Огненный Меч, Клинок Пустоты, Парные Кинжалы и легендарный Меч Древних Королей. Старое огнестрельное оружие в сохранениях заменено монетами.' },
+    { icon: '👹', title: '3 новых босса', text: 'Король Забытых Катакомб, Кристальный Левиафан и Владыка Цитадели Бездны. Фазы, телеграфы, интро и легендарные награды.' },
+    { icon: '🗺️', title: '3 новые локации', text: 'Забытые Катакомбы, Кристальные Пещеры и Цитадель Бездны — со своими врагами, музыкой, ловушками и сундуками.' },
+    { icon: '💀', title: '8 новых врагов', text: 'Скелеты катакомб, гробничные рыцари, кристальные маги и големы, дуэлянты Бездны и чернокнижники Цитадели.' },
+    { icon: '🏰', title: 'Всё лучшее сохранено', text: 'Спасение пленников, задания, торговец и Кузнец Горн, фракции, броня, испытания и весь прогресс — на месте. Сохранения совместимы!' }
   ]
 };
 
@@ -128,6 +127,21 @@ export const LOCATIONS = {
     id: 'fallen_gods', name: 'Земли Павших Богов', subtitle: 'Финал Эпохи · сильнейшие твари и сам Павший Бог',
     x: 5600, y: 4900, radius: 430, tile: 'gods', groundBase: '#3d2c10', groundAlt: '#2b1f0a', accent: '#facc15', music: 'gods',
     enemies: ['shadow_killer', 'cursed_knight', 'magma_golem', 'frost_giant', 'soul_wraith']
+  },
+  catacombs: {
+    id: 'catacombs', name: 'Забытые Катакомбы', subtitle: 'Король Катакомб · скелеты, рыцари гробниц и лучники тьмы',
+    x: 550, y: 4800, radius: 430, tile: 'catacombs', groundBase: '#2e2a33', groundAlt: '#221e27', accent: '#f43f5e', music: 'under',
+    enemies: ['crypt_skeleton', 'tomb_knight', 'crypt_archer', 'cursed_wraith']
+  },
+  crystal_caves: {
+    id: 'crystal_caves', name: 'Кристальные Пещеры', subtitle: 'Кристальный Левиафан · маги, гарпии и големы из живого кристалла',
+    x: 4800, y: 2400, radius: 430, tile: 'crystal', groundBase: '#123243', groundAlt: '#0c2434', accent: '#22d3ee', music: 'sky',
+    enemies: ['crystal_mage', 'crystal_harpy', 'crystal_golem', 'ice_archer']
+  },
+  abyss_citadel: {
+    id: 'abyss_citadel', name: 'Цитадель Бездны', subtitle: 'Владыка Цитадели · дуэлянты, чернокнижники и теневые убийцы',
+    x: 2500, y: 5900, radius: 430, tile: 'citadel', groundBase: '#33091d', groundAlt: '#260613', accent: '#fb7185', music: 'abyss',
+    enemies: ['abyss_duelist', 'citadel_warlock', 'shadow_killer', 'void_cultist']
   }
 };
 
@@ -144,7 +158,9 @@ export const CAMPFIRES = [
   { id: 'camp_abyss',     name: 'Перевал Крепости Бездны',        x: 5660, y: 660,  biome: 'mountains', unlockedByDefault: false },
   { id: 'camp_ash',       name: 'Пепельный Привал',               x: 1230, y: 3120, biome: 'desert',    unlockedByDefault: false },
   { id: 'camp_sky',       name: 'Причал Небесных Руин',           x: 1830, y: 4940, biome: 'forest',    unlockedByDefault: false },
-  { id: 'camp_gods',      name: 'Последний Лагерь Богов',         x: 5300, y: 4640, biome: 'mountains', unlockedByDefault: false }
+  { id: 'camp_gods',      name: 'Последний Лагерь Богов',         x: 5300, y: 4640, biome: 'mountains', unlockedByDefault: false },
+  { id: 'camp_catacombs', name: 'Привал у Катакомб',              x: 880, y: 5030,  biome: 'forest',    unlockedByDefault: false },
+  { id: 'camp_crystal',   name: 'Лагерь Кристальных Пещер',       x: 4490, y: 2620,  biome: 'city',      unlockedByDefault: false }
 ];
 
 // Специалисты Главной Базы (Убежища VEXMORA)
@@ -243,11 +259,11 @@ export const NPCS = [
 export const WEAPON_MODS = {
   mod_scope: {
     id: 'mod_scope',
-    name: 'Лазерный Коллиматор',
+    name: 'Руна Меткости',
     icon: '🎯',
     costCoins: 140,
     costScrap: 4,
-    desc: '+15% к шансу критического попадания и +18% к дальности стрельбы.'
+    desc: '+15% к шансу критического попадания и +18% к дальности атаки.'
   },
   mod_mag: {
     id: 'mod_mag',
@@ -363,7 +379,7 @@ export const WEAPONS = {
     id: 'bow', name: 'Композитный Лук', rarity: 'uncommon', tier: 1,
     sprite: 'bow', icon: 'assets/sprites/weapons/bow.png',
     category: 'bow', classLabel: 'Лук и арбалет',
-    ammoCost: 0, magSize: 0, reloadTime: 0,
+    ammoCost: 1, magSize: 8, reloadTime: 0.8,
     baseDamage: 28, cooldown: 0.36, range: 375, projSpeed: 660, pierce: 1, critBonus: 0.16, knockback: 135, price: 150,
     desc: 'Бесшумные оперенные стрелы, пробивающие двух врагов без расхода патронов.'
   },
@@ -377,167 +393,11 @@ export const WEAPONS = {
   },
 
   // ── Пистолеты и Револьверы (3) ──────────────────────────────────────
-  pistol: {
-    id: 'pistol', name: 'Тактический Пистолет', rarity: 'common', tier: 1,
-    sprite: 'pistol', icon: 'assets/sprites/weapons/pistol.png',
-    category: 'gun', classLabel: 'Пистолеты',
-    ammoCost: 1, magSize: 12, reloadTime: 1.0,
-    baseDamage: 24, cooldown: 0.26, range: 365, projSpeed: 760, spread: 0.04, pellets: 1, critBonus: 0.12, knockback: 115, price: 85,
-    desc: 'Надёжный стартовый пистолет с быстрой сменой обоймы на 12 патронов.'
-  },
-  revolver: {
-    id: 'revolver', name: 'Револьвер «Магнум .44»', rarity: 'uncommon', tier: 1,
-    sprite: 'revolver', icon: 'assets/sprites/weapons/revolver.png',
-    category: 'gun', classLabel: 'Револьверы',
-    ammoCost: 1, magSize: 6, reloadTime: 1.25,
-    baseDamage: 48, cooldown: 0.42, range: 400, projSpeed: 880, spread: 0.02, pellets: 1, pierce: 1, critBonus: 0.25, knockback: 220, price: 195,
-    desc: 'Шестизарядный тяжёлый револьвер: мощнейший останавливающий удар и +25% крита.'
-  },
-  autopistol: {
-    id: 'autopistol', name: 'Авто-пистолет «Шершень»', rarity: 'rare', tier: 2,
-    sprite: 'autopistol', icon: 'assets/sprites/weapons/autopistol.png',
-    category: 'gun', classLabel: 'Пистолеты',
-    ammoCost: 1, magSize: 20, reloadTime: 1.05,
-    baseDamage: 21, cooldown: 0.13, range: 345, projSpeed: 780, spread: 0.09, pellets: 1, critBonus: 0.10, knockback: 85, price: 250,
-    desc: 'Скорострельный автоматический пистолет спецназа на 20 патронов.'
-  },
-
-  // ── Пистолеты-пулемёты (3) ──────────────────────────────────────────
-  smg_compact: {
-    id: 'smg_compact', name: 'ПП «Вектор-9»', rarity: 'uncommon', tier: 2,
-    sprite: 'smg_compact', icon: 'assets/sprites/weapons/smg_compact.png',
-    category: 'gun', classLabel: 'Пистолеты-пулемёты',
-    ammoCost: 1, magSize: 28, reloadTime: 1.15,
-    baseDamage: 19, cooldown: 0.10, range: 340, projSpeed: 800, spread: 0.10, pellets: 1, critBonus: 0.10, knockback: 75, price: 240,
-    desc: 'Бешеный темп огня на ближней и средней дистанции (обойма 28).'
-  },
-  smg_storm: {
-    id: 'smg_storm', name: 'Штурмовой ПП «Вихрь»', rarity: 'rare', tier: 3,
-    sprite: 'smg_storm', icon: 'assets/sprites/weapons/smg_storm.png',
-    category: 'gun', classLabel: 'Пистолеты-пулемёты',
-    ammoCost: 1, magSize: 36, reloadTime: 1.2,
-    baseDamage: 25, cooldown: 0.10, range: 365, projSpeed: 830, spread: 0.08, pellets: 1, critBonus: 0.14, knockback: 90, price: 370,
-    desc: 'Улучшенный ПП с барабаном на 36 патронов и высокой кучностью.'
-  },
-  smg_plasma: {
-    id: 'smg_plasma', name: 'Плазменный ПП «Неон»', rarity: 'epic', tier: 4,
-    sprite: 'smg_plasma', icon: 'assets/sprites/weapons/smg_plasma.png',
-    category: 'gun', classLabel: 'Пистолеты-пулемёты',
-    ammoCost: 1, magSize: 34, reloadTime: 1.1,
-    baseDamage: 33, cooldown: 0.10, range: 380, projSpeed: 880, spread: 0.06, pellets: 1, critBonus: 0.18, knockback: 105, projColor: '#c084fc', price: 560,
-    desc: 'Выпускает перегретые сгустки плазмы, прожигающие броню щитоносцев!'
-  },
-
-  // ── Дробовики (2) ───────────────────────────────────────────────────
-  shotgun: {
-    id: 'shotgun', name: 'Помповый Дробовик', rarity: 'rare', tier: 2,
-    sprite: 'shotgun', icon: 'assets/sprites/weapons/shotgun.png',
-    category: 'gun', classLabel: 'Дробовики',
-    ammoCost: 2, magSize: 8, reloadTime: 1.45,
-    baseDamage: 16, cooldown: 0.56, range: 260, projSpeed: 730, spread: 0.34, pellets: 5, critBonus: 0.09, knockback: 260, price: 280,
-    desc: 'Веер из 5 крупных картечин: сносит группы зомби и мутантов в упор.'
-  },
-  auto_shotgun: {
-    id: 'auto_shotgun', name: 'Авто-дробовик «Цербер»', rarity: 'epic', tier: 4,
-    sprite: 'auto_shotgun', icon: 'assets/sprites/weapons/auto_shotgun.png',
-    category: 'gun', classLabel: 'Дробовики',
-    ammoCost: 2, magSize: 12, reloadTime: 1.5,
-    baseDamage: 19, cooldown: 0.30, range: 275, projSpeed: 760, spread: 0.30, pellets: 6, critBonus: 0.12, knockback: 280, price: 590,
-    desc: 'Барабанный штурмовой дробовик: 6 дробин каждые 0.3 секунды!'
-  },
-
-  // ── Штурмовые винтовки (3) ──────────────────────────────────────────
-  rifle: {
-    id: 'rifle', name: 'Автомат «Калаш-М»', rarity: 'rare', tier: 2,
-    sprite: 'rifle', icon: 'assets/sprites/weapons/rifle.png',
-    category: 'gun', classLabel: 'Штурмовые винтовки',
-    ammoCost: 1, magSize: 30, reloadTime: 1.35,
-    baseDamage: 26, cooldown: 0.13, range: 415, projSpeed: 860, spread: 0.07, pellets: 1, critBonus: 0.12, knockback: 110, price: 340,
-    desc: 'Классическая штурмовая винтовка с отличным балансом урона и точности.'
-  },
-  burst_rifle: {
-    id: 'burst_rifle', name: 'Карабин «Сокол-3»', rarity: 'rare', tier: 3,
-    sprite: 'burst_rifle', icon: 'assets/sprites/weapons/burst_rifle.png',
-    category: 'gun', classLabel: 'Штурмовые винтовки',
-    ammoCost: 2, magSize: 24, reloadTime: 1.25,
-    baseDamage: 24, cooldown: 0.32, range: 455, projSpeed: 930, spread: 0.05, pellets: 3, critBonus: 0.16, knockback: 135, price: 430,
-    desc: 'Выпускает кучный залп из 3 экспансивных пуль одним нажатием!'
-  },
-  laser_rifle: {
-    id: 'laser_rifle', name: 'Лазерная Винтовка «Луч-7»', rarity: 'epic', tier: 4,
-    sprite: 'laser_rifle', icon: 'assets/sprites/weapons/laser_rifle.png',
-    category: 'gun', classLabel: 'Штурмовые винтовки',
-    ammoCost: 1, magSize: 28, reloadTime: 1.15,
-    baseDamage: 38, cooldown: 0.14, range: 480, projSpeed: 1120, spread: 0.015, pellets: 1, pierce: 1, critBonus: 0.20, knockback: 120, projColor: '#22d3ee', price: 660,
-    desc: 'Высокоточный фотонный луч почти без разброса, прошивающий врагов.'
-  },
-
-  // ── Снайперские винтовки (2) ────────────────────────────────────────
-  sniper: {
-    id: 'sniper', name: 'Снайперка «Коршун»', rarity: 'epic', tier: 3,
-    sprite: 'sniper', icon: 'assets/sprites/weapons/sniper.png',
-    category: 'gun', classLabel: 'Снайперские винтовки',
-    ammoCost: 2, magSize: 6, reloadTime: 1.55,
-    baseDamage: 96, cooldown: 0.72, range: 560, projSpeed: 1150, spread: 0.008, pellets: 1, pierce: 3, critBonus: 0.34, knockback: 290, price: 520,
-    desc: 'Крупнокалиберная винтовка: пробивает 4 врагов насквозь (+34% крит).'
-  },
-  railgun: {
-    id: 'railgun', name: 'Рельсотрон «Горизонт»', rarity: 'legendary', tier: 5,
-    sprite: 'railgun', icon: 'assets/sprites/weapons/railgun.png',
-    category: 'gun', classLabel: 'Снайперские винтовки',
-    ammoCost: 3, magSize: 5, reloadTime: 1.6,
-    baseDamage: 155, cooldown: 0.80, range: 620, projSpeed: 1380, spread: 0, pellets: 1, pierce: 6, critBonus: 0.42, knockback: 340, projColor: '#38bdf8', price: 980,
-    desc: 'Электромагнитный гиперзвуковой снаряд, прошивающий всю линию врагов!'
-  },
-
-  // ── Пулемёты (2) ────────────────────────────────────────────────────
-  lmg: {
-    id: 'lmg', name: 'Пулемёт «Бастион»', rarity: 'epic', tier: 3,
-    sprite: 'lmg', icon: 'assets/sprites/weapons/lmg.png',
-    category: 'gun', classLabel: 'Пулемёты',
-    ammoCost: 1, magSize: 50, reloadTime: 1.85,
-    baseDamage: 29, cooldown: 0.11, range: 430, projSpeed: 880, spread: 0.09, pellets: 1, critBonus: 0.11, knockback: 145, price: 540,
-    desc: 'Тяжёлый ручной пулемёт с коробкой на 50 патронов для сдерживания орд.'
-  },
-  minigun: {
-    id: 'minigun', name: 'Миниган «Шквал»', rarity: 'legendary', tier: 5,
-    sprite: 'minigun', icon: 'assets/sprites/weapons/minigun.png',
-    category: 'gun', classLabel: 'Пулемёты',
-    ammoCost: 1, magSize: 80, reloadTime: 2.1,
-    baseDamage: 26, cooldown: 0.065, range: 410, projSpeed: 920, spread: 0.13, pellets: 1, critBonus: 0.14, knockback: 120, price: 950,
-    desc: 'Шестиствольный ураган свинца: 15 выстрелов в секунду и лента на 80 патронов!'
-  },
-
-  // ── Взрывчатка и Специальные устройства (4) ─────────────────────────
-  grenade_launcher: {
-    id: 'grenade_launcher', name: 'Гранатомёт «Гром-6»', rarity: 'epic', tier: 3,
-    sprite: 'grenade_launcher', icon: 'assets/sprites/weapons/grenade_launcher.png',
-    category: 'explosive', classLabel: 'Взрывчатка',
-    ammoCost: 2, magSize: 6, reloadTime: 1.65,
-    baseDamage: 78, cooldown: 0.58, range: 390, projSpeed: 580, splashRadius: 96, critBonus: 0.15, knockback: 260, price: 610,
-    desc: 'Барабанный гранатомёт: каждый выстрел взрывается огненной волной по площади!'
-  },
-  rocket_launcher: {
-    id: 'rocket_launcher', name: 'Ракетница «Титан»', rarity: 'legendary', tier: 5,
-    sprite: 'rocket_launcher', icon: 'assets/sprites/weapons/rocket_launcher.png',
-    category: 'explosive', classLabel: 'Взрывчатка',
-    ammoCost: 3, magSize: 3, reloadTime: 1.9,
-    baseDamage: 140, cooldown: 0.85, range: 470, projSpeed: 640, splashRadius: 132, critBonus: 0.20, knockback: 340, price: 920,
-    desc: 'Тяжёлый противотанковый ракетомёт с колоссальным радиусом взрыва!'
-  },
-  tesla_cannon: {
-    id: 'tesla_cannon', name: 'Тесла-Излучатель «Разряд»', rarity: 'legendary', tier: 4,
-    sprite: 'tesla_cannon', icon: 'assets/sprites/weapons/tesla_cannon.png',
-    category: 'tesla', classLabel: 'Спецустройства',
-    ammoCost: 1, magSize: 20, reloadTime: 1.4,
-    baseDamage: 56, cooldown: 0.30, range: 350, chainCount: 4, critBonus: 0.22, knockback: 140, price: 820,
-    desc: 'Бьёт дугой молнии, мгновенно перескакивающей сразу по 4 ближайшим врагам!'
-  },
   magic_staff: {
     id: 'magic_staff', name: 'Эфирный Излучатель VEXMORA', rarity: 'legendary', tier: 5,
     sprite: 'magic_staff', icon: 'assets/sprites/weapons/magic_staff.png',
     category: 'magic', classLabel: 'Спецустройства',
-    ammoCost: 0, magSize: 0, reloadTime: 0,
+    ammoCost: 1, magSize: 6, reloadTime: 1.0,
     baseDamage: 64, cooldown: 0.34, range: 430, projSpeed: 560, splashRadius: 82, critBonus: 0.22, knockback: 190, price: 1050,
     desc: 'Секретный прототип VEXMORA: самонаводящиеся сферы эфира без расхода патронов!'
   },
@@ -571,9 +431,41 @@ export const WEAPONS = {
     id: 'thorn_bow', name: 'Шипастый Лук Проклятого Леса', rarity: 'rare', tier: 3,
     sprite: 'thorn_bow', icon: 'assets/sprites/weapons/thorn_bow.png',
     category: 'bow', classLabel: 'Лук и арбалет', effect: 'burn',
-    ammoCost: 0, magSize: 0, reloadTime: 0,
+    ammoCost: 1, magSize: 10, reloadTime: 0.9,
     baseDamage: 40, cooldown: 0.32, range: 410, projSpeed: 720, pierce: 2, critBonus: 0.20, knockback: 150, price: 390,
     desc: 'Отравленные стрелы-шипы поджигают и отравляют цели: урон продолжается после попадания.'
+  },
+  flame_sword: {
+    id: 'flame_sword', name: 'Огненный Меч Падших', rarity: 'epic', tier: 3,
+    sprite: 'flame_sword', icon: 'assets/sprites/weapons/flame_sword.png',
+    category: 'melee', classLabel: 'Мечи стихий', effect: 'fire', element: 'fire',
+    ammoCost: 0, magSize: 0, reloadTime: 0,
+    baseDamage: 56, cooldown: 0.34, range: 78, arc: 1.5, critBonus: 0.22, knockback: 210, price: 540,
+    desc: 'Клинок, выкованный в пепле падших королей: поджигает врагов каждым ударом.'
+  },
+  void_blade: {
+    id: 'void_blade', name: 'Клинок Пустоты', rarity: 'epic', tier: 4,
+    sprite: 'void_blade', icon: 'assets/sprites/weapons/void_blade.png',
+    category: 'melee', classLabel: 'Клинки Бездны', effect: 'lifesteal', element: 'dark',
+    ammoCost: 0, magSize: 0, reloadTime: 0,
+    baseDamage: 64, cooldown: 0.3, range: 76, arc: 1.45, critBonus: 0.28, knockback: 180, price: 680,
+    desc: 'Клинок из осколка Пустоты вытягивает жизнь и особенно смертелен против теней и призраков.'
+  },
+  twin_daggers: {
+    id: 'twin_daggers', name: 'Парные Кинжалы Тени', rarity: 'rare', tier: 2,
+    sprite: 'twin_daggers', icon: 'assets/sprites/weapons/twin_daggers.png',
+    category: 'melee', classLabel: 'Кинжалы',
+    ammoCost: 0, magSize: 0, reloadTime: 0,
+    baseDamage: 30, cooldown: 0.13, range: 62, arc: 1.3, critBonus: 0.38, knockback: 80, price: 320,
+    desc: 'Два кинжала ассасина: самый быстрый темп в игре и огромный шанс крита.'
+  },
+  ancients_blade: {
+    id: 'ancients_blade', name: 'ЛЕГЕНДА: Меч Древних Королей', rarity: 'legendary', tier: 5,
+    sprite: 'ancients_blade', icon: 'assets/sprites/weapons/ancients_blade.png',
+    category: 'melee', classLabel: 'Легендарные клинки', effect: 'lifesteal',
+    ammoCost: 0, magSize: 0, reloadTime: 0,
+    baseDamage: 88, cooldown: 0.37, range: 86, arc: 1.6, critBonus: 0.3, knockback: 300, price: 1950,
+    desc: 'Меч первых королей мира: золотое пламя рун выпивает силы врагов.'
   },
   vex_blade: {
     id: 'vex_blade', name: 'ЛЕГЕНДА: Клинок Бездны VEXMORA', rarity: 'legendary', tier: 5,
@@ -611,7 +503,7 @@ export const WEAPONS = {
     id: 'ice_bow', name: 'Лук Ледяной Пустоши', rarity: 'rare', tier: 3,
     sprite: 'ice_bow', icon: 'assets/sprites/weapons/ice_bow.png',
     category: 'bow', classLabel: 'Луки', effect: 'abyss',
-    ammoCost: 0, magSize: 0, reloadTime: 0,
+    ammoCost: 1, magSize: 10, reloadTime: 0.9,
     baseDamage: 44, cooldown: 0.34, range: 430, projSpeed: 740, pierce: 2, critBonus: 0.22, knockback: 150, price: 410,
     desc: 'Стрелы стужи замедляют цели и пробивают двоих врагов насквозь.'
   },
@@ -635,7 +527,7 @@ export const WEAPONS = {
     id: 'root_bow', name: 'Лук Живых Корней', rarity: 'rare', tier: 3,
     sprite: 'root_bow', icon: 'assets/sprites/weapons/root_bow.png',
     category: 'bow', classLabel: 'Луки', effect: 'burn',
-    ammoCost: 0, magSize: 0, reloadTime: 0,
+    ammoCost: 1, magSize: 10, reloadTime: 0.9,
     baseDamage: 42, cooldown: 0.3, range: 420, projSpeed: 730, pierce: 2, critBonus: 0.2, knockback: 140, price: 400,
     desc: 'Стрелы-корни поджигают и опутывают врагов Затерянного Леса.'
   },
@@ -663,22 +555,6 @@ export const WEAPONS = {
     baseDamage: 78, cooldown: 0.55, range: 80, arc: 1.5, critBonus: 0.16, knockback: 380, price: 740,
     desc: 'Молот древних механизмов: сокрушительный удар и огромный отброс.'
   },
-  under_rail: {
-    id: 'under_rail', name: 'Подземный Рельсотрон', rarity: 'epic', tier: 4,
-    sprite: 'under_rail', icon: 'assets/sprites/weapons/under_rail.png',
-    category: 'gun', classLabel: 'Рельсотроны', element: 'lightning',
-    ammoCost: 1, magSize: 10, reloadTime: 1.6,
-    baseDamage: 96, cooldown: 0.62, range: 560, projSpeed: 1250, spread: 0.008, pellets: 1, pierce: 3, critBonus: 0.3, knockback: 240, projColor: '#e2e8f0', price: 820,
-    desc: 'Секрет лабораторий Подземного Царства: пробивает троих врагов насквозь.'
-  },
-  magma_rifle: {
-    id: 'magma_rifle', name: 'Магмовая Винтовка', rarity: 'epic', tier: 4,
-    sprite: 'magma_rifle', icon: 'assets/sprites/weapons/magma_rifle.png',
-    category: 'gun', classLabel: 'Штурмовые винтовки', effect: 'fire',
-    ammoCost: 1, magSize: 28, reloadTime: 1.4,
-    baseDamage: 40, cooldown: 0.16, range: 460, projSpeed: 960, spread: 0.05, pellets: 1, pierce: 1, critBonus: 0.22, knockback: 150, projColor: '#fb923c', price: 760,
-    desc: 'Раскалённые снаряды вулкана поджигают всё на линии огня.'
-  },
   god_blade: {
     id: 'god_blade', name: 'ЛЕГЕНДА: Клинок Павшего Бога', rarity: 'legendary', tier: 5,
     sprite: 'god_blade', icon: 'assets/sprites/weapons/god_blade.png',
@@ -699,7 +575,7 @@ export const WEAPONS = {
     id: 'queen_thorn', name: 'ЛЕГЕНДА: Шип Королевы Корней', rarity: 'legendary', tier: 5,
     sprite: 'queen_thorn', icon: 'assets/sprites/weapons/queen_thorn.png',
     category: 'bow', classLabel: 'Легендарные лук', effect: 'burn',
-    ammoCost: 0, magSize: 0, reloadTime: 0,
+    ammoCost: 1, magSize: 12, reloadTime: 1.0,
     baseDamage: 58, cooldown: 0.3, range: 460, projSpeed: 790, pierce: 3, critBonus: 0.3, knockback: 180, price: 1650,
     desc: 'Лук Сильваны: стрелы-шипы пробивают троих и поджигают лес врагов.'
   },
@@ -723,23 +599,16 @@ export const WEAPONS = {
     id: 'rune_crossbow', name: 'Рунный Арбалет Охотников', rarity: 'epic', tier: 4,
     sprite: 'rune_crossbow', icon: 'assets/sprites/weapons/rune_crossbow.png',
     category: 'bow', classLabel: 'Арбалеты', element: 'lightning',
-    ammoCost: 0, magSize: 0, reloadTime: 0,
+    ammoCost: 1, magSize: 6, reloadTime: 1.1,
     baseDamage: 66, cooldown: 0.5, range: 500, projSpeed: 900, pierce: 2, critBonus: 0.34, knockback: 220, price: 780,
     desc: 'Арбалет Гильдии охотников: редкие, но смертоносные рунные болты.'
   },
-  phoenix_rifle: {
-    id: 'phoenix_rifle', name: 'ЛЕГЕНДА: Винтовка «Феникс Бездны»', rarity: 'legendary', tier: 5,
-    sprite: 'phoenix_rifle', icon: 'assets/sprites/weapons/phoenix_rifle.png',
-    category: 'gun', classLabel: 'Штурмовые винтовки (легендарное)', effect: 'fire',
-    ammoCost: 1, magSize: 32, reloadTime: 1.3,
-    baseDamage: 44, cooldown: 0.15, range: 470, projSpeed: 980, spread: 0.045, pellets: 1, pierce: 1, critBonus: 0.24, knockback: 150, projColor: '#fb923c', price: 1250,
-    desc: 'Зажигательные снаряды Феникса поджигают врагов и пробивают строй насквозь.'
-  }
+
 };
 
 export const ITEMS = {
   medkit:   { id: 'medkit',   name: 'Аптечка',            icon: 'assets/sprites/items/medkit.png',   rarity: 'uncommon', price: 35,  desc: 'Мгновенно восстанавливает 55% макс. здоровья (+бонус Медблока).' },
-  ammo:     { id: 'ammo',     name: 'Боекомплект (×24)',  icon: 'assets/sprites/items/ammo.png',     rarity: 'common',   price: 25,  desc: 'Пополняет запас патронов для всего стрелкового оружия и гранатомётов.' },
+  ammo:     { id: 'ammo',     name: 'Стрелы и болты (×24)',  icon: 'assets/sprites/items/ammo.png',     rarity: 'common',   price: 25,  desc: 'Пополняет запас стрел и болтов для луков и арбалетов героя.' },
   grenade:  { id: 'grenade',  name: 'Осколочная граната', icon: 'assets/sprites/items/grenade.png',  rarity: 'rare',     price: 45,  desc: 'Мощный бросок по площади! Разносит укрытия, бочки и отряды врагов.' },
   food:     { id: 'food',     name: 'Армейский паёк',     icon: 'assets/sprites/items/food.png',     rarity: 'common',   price: 20,  desc: '+65 сытости, +22% HP и ускоренное восстановление выносливости.' },
   potion:   { id: 'potion',   name: 'Энерго-Стимулятор',  icon: 'assets/sprites/items/potion.png',   rarity: 'rare',     price: 55,  desc: '+35% HP, 100% стамины и силовой энергощит (-42% урона) на 12 сек.' },
@@ -763,17 +632,17 @@ export const RECIPES = [
   { id: 'rc_grenade',  resultId: 'grenade',  amount: 2,  costCoins: 20, ingredients: { scrap: 3, stone: 2 }, desc: 'Собрать 2 осколочные гранаты.' },
   { id: 'rc_potion',   resultId: 'potion',   amount: 1,  costCoins: 25, ingredients: { herb: 2, scrap: 2 },  desc: 'Создать Энерго-Стимулятор силового щита.' },
   { id: 'rc_key',      resultId: 'key',      amount: 1,  costCoins: 55, ingredients: { scrap: 4, stone: 3 }, desc: 'Собрать универсальную Ключ-карту для клеток и бункеров.' },
-  { id: 'rc_revolver', weaponId: 'revolver', amount: 1,  costCoins: 95, ingredients: { scrap: 5, stone: 2 }, desc: 'Выковать тяжёлый Револьвер «Магнум .44».' },
+  { id: 'rc_flame', weaponId: 'flame_sword', amount: 1,  costCoins: 150, ingredients: { scrap: 6, crystal: 2 }, desc: 'Выковать Огненный Меч Падших в кузнице Горна.' },
   { id: 'rc_crossbow', weaponId: 'crossbow', amount: 1,  costCoins: 140, ingredients: { wood: 7, scrap: 4 }, desc: 'Собрать бронебойный Осадный Арбалет «Болт».' },
-  { id: 'rc_smg',      weaponId: 'smg_compact', amount: 1, costCoins: 150, ingredients: { scrap: 7, stone: 3 }, desc: 'Собрать скорострельный ПП «Вектор-9».' },
-  { id: 'rc_shotgun',  weaponId: 'shotgun',  amount: 1,  costCoins: 170, ingredients: { scrap: 8, wood: 4 }, desc: 'Собрать Помповый Дробовик.' },
-  { id: 'rc_rifle',    weaponId: 'rifle',    amount: 1,  costCoins: 230, ingredients: { scrap: 11, stone: 5 }, desc: 'Собрать Автомат «Калаш-М».' },
-  { id: 'rc_gl',       weaponId: 'grenade_launcher', amount: 1, costCoins: 380, ingredients: { scrap: 15, stone: 10 }, desc: 'Собрать барабанный Гранатомёт «Гром-6».' },
+  { id: 'rc_katana2',  weaponId: 'katana', amount: 1, costCoins: 150, ingredients: { scrap: 7, stone: 3 }, desc: 'Выковать острую Катану в кузнице Горна.' },
+  { id: 'rc_daggers',  weaponId: 'twin_daggers',  amount: 1,  costCoins: 170, ingredients: { scrap: 8, wood: 4 }, desc: 'Выковать Парные Кинжалы Тени.' },
+  { id: 'rc_void',    weaponId: 'void_blade',    amount: 1,  costCoins: 260, ingredients: { scrap: 9, crystal: 3 }, desc: 'Выковать Клинок Пустоты из осколков Бездны.' },
+  { id: 'rc_hammer2',  weaponId: 'storm_hammer', amount: 1, costCoins: 380, ingredients: { scrap: 12, stone: 10 }, desc: 'Выковать Грозовой Молот древних механизмов.' },
   { id: 'rc_backpack', resultId: 'backpack', amount: 1,  costCoins: 130, ingredients: { wood: 4, herb: 4, scrap: 4 }, desc: 'Сшить Тактический Рюкзак (+патроны и +25 HP).' },
   { id: 'rc_dagger',   weaponId: 'shadow_dagger', amount: 1, costCoins: 120, ingredients: { scrap: 5, crystal: 1 }, desc: 'Выковать Теневой Кинжал из деталей и Кристалла Бездны.' },
   { id: 'rc_axe',      weaponId: 'war_axe',    amount: 1,  costCoins: 190, ingredients: { scrap: 8, stone: 5, crystal: 2 }, desc: 'Выковать Боевой Топор «Крушитель Рун».' },
   { id: 'rc_staff',    weaponId: 'abyss_staff', amount: 1, costCoins: 260, ingredients: { scrap: 7, herb: 5, crystal: 3 }, desc: 'Собрать Посох Бездны с самонаводящимися сферами.' },
-  { id: 'rc_phoenix',  weaponId: 'phoenix_rifle', amount: 1, costCoins: 420, ingredients: { scrap: 14, stone: 8, crystal: 5 }, desc: 'ЛЕГЕНДА: собрать зажигательную винтовку «Феникс Бездны».' },
+  { id: 'rc_ancients',  weaponId: 'ancients_blade', amount: 1, costCoins: 420, ingredients: { scrap: 12, stone: 8, crystal: 5 }, desc: 'ЛЕГЕНДА: выковать Меч Древних Королей.' },
   { id: 'rc_ash_blade', weaponId: 'ash_greatsword', amount: 1, costCoins: 300, ingredients: { scrap: 10, stone: 6, crystal: 3 }, desc: 'Выковать Двуручный Меч Пепла из вулканической стали.' },
   { id: 'rc_frost_spear', weaponId: 'frost_spear', amount: 1, costCoins: 200, ingredients: { scrap: 6, stone: 4, crystal: 2 }, desc: 'Собрать Копьё Стужи с ледяным наконечником.' },
   { id: 'rc_storm_hammer', weaponId: 'storm_hammer', amount: 1, costCoins: 340, ingredients: { scrap: 12, stone: 8, crystal: 4 }, desc: 'Собрать Грозовой Молот древних механизмов.' },
@@ -816,7 +685,7 @@ export const SKILLS = {
 
 // Дерево перков (3 ветки × 3 узла)
 export const SKILL_TREE = [
-  { id: 'perk_hollow_point', branch: 'Штурм',     name: 'Экспансивный калибр', icon: '🔫', maxRank: 3, desc: '+8% к урону всего огнестрельного и взрывного оружия за ранг.' },
+  { id: 'perk_hollow_point', branch: 'Штурм',     name: 'Заточка Клинка', icon: '⚔️', maxRank: 3, desc: '+8% к урону всего оружия за ранг.' },
   { id: 'perk_fast_hands',   branch: 'Штурм',     name: 'Ловкая перезарядка',  icon: '🔄', maxRank: 3, desc: '-15% ко времени перезарядки и +10% к темпу атаки за ранг.' },
   { id: 'perk_exec_crit',    branch: 'Штурм',     name: 'Точка уязвимости',    icon: '🎯', maxRank: 3, desc: '+5% к шансу крита и +15% урона по боссам и мини-боссам за ранг.' },
   { id: 'perk_kevlar',       branch: 'Защита',    name: 'Кевларовые пластины', icon: '🛡️', maxRank: 3, desc: '-8% получаемого урона и +30 к макс. здоровью за ранг.' },
@@ -1088,6 +957,54 @@ export const ENEMIES = {
     behavior: 'stealth_stalker',
     drops: [{ res: 'crystal', chance: 0.3 }, { id: 'potion', chance: 0.35 }]
   },
+  crypt_skeleton: {
+    id: 'crypt_skeleton', name: 'Скелет Катакомб', sprite: 'crypt_skeleton', role: 'Страж забытых гробниц',
+    hp: 175, damage: 23, speed: 120, radius: 15, armorMult: 0.82, xp: 60, coins: [14, 27], weak: 'fire',
+    behavior: 'melee',
+    drops: [{ res: 'stone', chance: 0.5 }, { res: 'crystal', chance: 0.12 }, { id: 'ammo', chance: 0.3 }]
+  },
+  tomb_knight: {
+    id: 'tomb_knight', name: 'Рыцарь Гробниц', sprite: 'tomb_knight', role: 'Бронированный палач катакомб',
+    hp: 360, damage: 31, speed: 94, radius: 16, armorMult: 0.6, xp: 98, coins: [21, 40], weak: 'lightning',
+    behavior: 'melee',
+    drops: [{ res: 'scrap', chance: 0.6 }, { res: 'crystal', chance: 0.2 }, { id: 'key', chance: 0.08 }]
+  },
+  crystal_mage: {
+    id: 'crystal_mage', name: 'Кристальный Маг', sprite: 'crystal_mage', role: 'Веер ледяных осколков',
+    hp: 165, damage: 24, speed: 108, radius: 14, xp: 72, coins: [16, 31], weak: 'fire',
+    behavior: 'mage_shooter', attackRange: 330, projSpeed: 410,
+    drops: [{ res: 'crystal', chance: 0.45 }, { id: 'potion', chance: 0.3 }]
+  },
+  crystal_harpy: {
+    id: 'crystal_harpy', name: 'Кристальная Гарпия', sprite: 'crystal_harpy', role: 'Летающий страж пещер',
+    hp: 145, damage: 22, speed: 172, radius: 13, flying: true, xp: 64, coins: [15, 29], weak: 'lightning',
+    behavior: 'drone_strafe', attackRange: 290, projSpeed: 510,
+    drops: [{ res: 'crystal', chance: 0.4 }, { id: 'ammo', chance: 0.35 }]
+  },
+  crystal_golem: {
+    id: 'crystal_golem', name: 'Кристальный Голем', sprite: 'crystal_golem', role: 'Танк: удар по земле (телеграф)',
+    hp: 720, damage: 41, speed: 71, radius: 21, armorMult: 0.7, xp: 138, coins: [30, 56], weak: 'fire',
+    behavior: 'golem', attackRange: 78,
+    drops: [{ res: 'crystal', chance: 0.7 }, { res: 'stone', chance: 0.5 }, { id: 'medkit', chance: 0.3 }]
+  },
+  abyss_duelist: {
+    id: 'abyss_duelist', name: 'Дуэлянт Бездны', sprite: 'abyss_duelist', role: 'Быстрый клинок Цитадели',
+    hp: 210, damage: 29, speed: 166, radius: 13, xp: 88, coins: [18, 35], weak: 'dark',
+    behavior: 'dasher',
+    drops: [{ res: 'crystal', chance: 0.3 }, { id: 'potion', chance: 0.3 }]
+  },
+  crypt_archer: {
+    id: 'crypt_archer', name: 'Лучник Тьмы', sprite: 'crypt_archer', role: 'Стрелок катакомб',
+    hp: 150, damage: 21, speed: 112, radius: 14, xp: 60, coins: [13, 26], weak: 'fire',
+    behavior: 'shooter', attackRange: 330, projSpeed: 560,
+    drops: [{ id: 'ammo', chance: 0.5 }, { res: 'crystal', chance: 0.1 }]
+  },
+  citadel_warlock: {
+    id: 'citadel_warlock', name: 'Чернокнижник Цитадели', sprite: 'citadel_warlock', role: 'Маг поддержки тьмы',
+    hp: 180, damage: 21, speed: 104, radius: 14, xp: 80, coins: [17, 33], weak: 'dark',
+    behavior: 'healer_support', attackRange: 280, projSpeed: 450,
+    drops: [{ res: 'crystal', chance: 0.35 }, { id: 'potion', chance: 0.4 }]
+  },
   void_cultist: {
     id: 'void_cultist', name: 'Культист Пустоты', sprite: 'void_cultist', role: 'Ритуальные залпы Бездны',
     hp: 165, damage: 28, speed: 122, radius: 15, xp: 78, coins: [22, 42],
@@ -1105,7 +1022,7 @@ export const BOSSES = {
     sprite: 'boss_mutant_king',
     biome: 'forest', x: 1120, y: 2220, arenaRadius: 340,
     hp: 1350, damage: 28, speed: 130, radius: 28, xp: 360, coins: 260,
-    rewardWeapon: 'shotgun',
+    rewardWeapon: 'flame_sword',
     rewardItems: [{ id: 'key', count: 1 }, { id: 'ammo', count: 36 }],
     unlocksZone: 'Восточный Блокпост Города',
     desc: 'Прыгает с кислотными ударными кольцами и призывает стаю мутантов-гончих.'
@@ -1117,7 +1034,7 @@ export const BOSSES = {
     sprite: 'boss_commander',
     biome: 'city', x: 4860, y: 3220, arenaRadius: 350,
     hp: 1950, damage: 34, speed: 124, radius: 29, xp: 520, coins: 360,
-    rewardWeapon: 'burst_rifle',
+    rewardWeapon: 'twin_daggers',
     rewardItems: [{ id: 'key', count: 1 }, { id: 'grenade', count: 3 }],
     unlocksZone: 'Промзона Химзавода',
     desc: 'Прикрывается силовым щитом, бросает кассетные гранаты и вызывает штурмовиков.'
@@ -1129,7 +1046,7 @@ export const BOSSES = {
     sprite: 'boss_destroyer',
     biome: 'desert', x: 1160, y: 4920, arenaRadius: 360,
     hp: 2550, damage: 38, speed: 136, radius: 30, xp: 680, coins: 460,
-    rewardWeapon: 'smg_storm',
+    rewardWeapon: 'shadow_dagger',
     rewardItems: [{ id: 'backpack', count: 1 }, { id: 'ammo', count: 48 }],
     unlocksZone: 'Высотные Руины Снайпера',
     desc: 'Идёт на таран циркулярной пилой по линии предупреждения и накрывает арену миномётом.'
@@ -1141,7 +1058,7 @@ export const BOSSES = {
     sprite: 'boss_sniper',
     biome: 'city', x: 5620, y: 1920, arenaRadius: 370,
     hp: 2900, damage: 52, speed: 148, radius: 27, xp: 820, coins: 560,
-    rewardWeapon: 'sniper',
+    rewardWeapon: 'rune_crossbow',
     rewardItems: [{ id: 'key', count: 1 }, { id: 'potion', count: 2 }],
     unlocksZone: 'Южный Каньон Пустыни',
     desc: 'Наводит смертоносный лазерный луч, уходит в дымовую завесу и минирует подходы.'
@@ -1153,7 +1070,7 @@ export const BOSSES = {
     sprite: 'boss_giant_beast',
     biome: 'desert', x: 3560, y: 5680, arenaRadius: 370,
     hp: 3600, damage: 46, speed: 158, radius: 31, xp: 980, coins: 680,
-    rewardWeapon: 'lmg',
+    rewardWeapon: 'war_axe',
     rewardItems: [{ id: 'backpack', count: 1 }, { id: 'food', count: 4 }],
     unlocksZone: 'Секретная Химлаборатория',
     desc: 'Совершает серию из трёх сокрушительных прыжков и сотрясает землю огненными волнами.'
@@ -1165,7 +1082,7 @@ export const BOSSES = {
     sprite: 'boss_mad_scientist',
     biome: 'desert', x: 2260, y: 5720, arenaRadius: 360,
     hp: 4100, damage: 48, speed: 134, radius: 28, xp: 1150, coins: 800,
-    rewardWeapon: 'tesla_cannon',
+    rewardWeapon: 'soul_staff',
     rewardItems: [{ id: 'key', count: 2 }, { id: 'potion', count: 3 }],
     unlocksZone: 'Ночной Квартал Теней',
     desc: 'Мечет колбы с кислотой и плазмой, включает энергокупол и выпускает боевых дронов.'
@@ -1189,7 +1106,7 @@ export const BOSSES = {
     sprite: 'boss_war_robot',
     biome: 'city', x: 5680, y: 4620, arenaRadius: 380,
     hp: 5500, damage: 58, speed: 128, radius: 33, xp: 1650, coins: 1200,
-    rewardWeapon: 'laser_rifle',
+    rewardWeapon: 'ice_bow',
     rewardItems: [{ id: 'backpack', count: 1 }, { id: 'ammo', count: 80 }],
     unlocksZone: 'Северный Штаб Армии',
     desc: 'Поливает арену сдвоенными пулемётами и накрывает зоны ракетными залпами!'
@@ -1201,7 +1118,7 @@ export const BOSSES = {
     sprite: 'boss_general',
     biome: 'mountains', x: 4320, y: 860, arenaRadius: 380,
     hp: 6600, damage: 64, speed: 144, radius: 31, xp: 2050, coins: 1550,
-    rewardWeapon: 'minigun',
+    rewardWeapon: 'ash_greatsword',
     rewardItems: [{ id: 'key', count: 2 }, { id: 'medkit', count: 4 }],
     unlocksZone: 'Цитадель Ядра VEXMORA',
     desc: 'Вызывает ковровую артподготовку по квадратам и командует элитной гвардией.'
@@ -1213,7 +1130,7 @@ export const BOSSES = {
     sprite: 'boss_vexmora',
     biome: 'mountains', x: 5660, y: 760, arenaRadius: 410,
     hp: 8500, damage: 72, speed: 154, radius: 34, xp: 3500, coins: 3000,
-    rewardWeapon: 'railgun',
+    rewardWeapon: 'ancients_blade',
     rewardItems: [{ id: 'backpack', count: 1 }, { id: 'potion', count: 5 }],
     unlocksZone: 'Полное освобождение Зоны VEXMORA',
     desc: '3 фазы боя: орбитальные удары, перекрёстные лучи, порталы подкреплений и сверхновая Эфира!'
@@ -1266,7 +1183,7 @@ export const BOSSES = {
     sprite: 'boss_abyss_warlord',
     biome: 'mountains', x: 5780, y: 430, arenaRadius: 360,
     hp: 6800, damage: 62, speed: 142, radius: 32, xp: 2600, coins: 1750,
-    rewardWeapon: 'phoenix_rifle', rewardArtifact: 'art_blood',
+    rewardWeapon: 'void_blade', rewardArtifact: 'art_blood',
     rewardItems: [{ id: 'key', count: 2 }, { id: 'grenade', count: 5 }],
     unlocksZone: 'Врата Сердца Бездны',
     intro: 'Крепость содрогается от боевого рога. Владыка Кзаргот спускается с трона Пустоты с клинком из застывшей лавы.',
@@ -1337,6 +1254,45 @@ export const BOSSES = {
     intro: 'Небо гаснет. Бог, которого мир забыл из страха, вспоминает своё имя.',
     faction: 'kings'
   },
+  boss_catacomb_king: {
+    id: 'boss_catacomb_king', order: 21,
+    name: 'Король Забытых Катакомб «Морт»',
+    title: 'Владыка Гробниц',
+    sprite: 'boss_catacomb_king',
+    biome: 'forest', x: 550, y: 4800, arenaRadius: 350,
+    hp: 8600, damage: 62, speed: 100, radius: 34, xp: 3400, coins: 2100,
+    rewardWeapon: 'twin_daggers', rewardArmor: 'set_shadow',
+    rewardItems: [{ id: 'key', count: 2 }, { id: 'potion', count: 2 }],
+    unlocksZone: 'Гробницы Забытых Катакомб',
+    intro: 'Саркофаги трещат. Король, правивший мёртвыми тысячу лет, встаёт с трона из костей.',
+    faction: 'kings'
+  },
+  boss_crystal_leviathan: {
+    id: 'boss_crystal_leviathan', order: 22,
+    name: 'Кристальный Левиафан «Сиарис»',
+    title: 'Сердце Кристальных Пещер',
+    sprite: 'boss_crystal_leviathan',
+    biome: 'city', x: 4800, y: 2400, arenaRadius: 350,
+    hp: 9400, damage: 66, speed: 88, radius: 36, xp: 3800, coins: 2400,
+    rewardWeapon: 'flame_sword', rewardArmor: 'set_storm',
+    rewardItems: [{ id: 'key', count: 2 }, { id: 'medkit', count: 3 }],
+    unlocksZone: 'Кристальное Сердце Пещер',
+    intro: 'Пещера звенит, как колокол. Левиафан из живого кристалла открывает глаза-алмазы.',
+    faction: 'hunters'
+  },
+  boss_citadel_lord: {
+    id: 'boss_citadel_lord', order: 23,
+    name: 'Владыка Цитадели Бездны «Некс»',
+    title: 'Правая Рука Павшего Бога',
+    sprite: 'boss_citadel_lord',
+    biome: 'mountains', x: 2500, y: 5900, arenaRadius: 360,
+    hp: 10800, damage: 72, speed: 112, radius: 35, xp: 4600, coins: 3000,
+    rewardWeapon: 'void_blade', rewardArmor: 'set_god',
+    rewardItems: [{ id: 'key', count: 3 }, { id: 'potion', count: 3 }],
+    unlocksZone: 'Тронный Зал Цитадели Бездны',
+    intro: 'Врата Цитадели закрываются сами. Некс ждал героя, чтобы отнять у него имя.',
+    faction: 'coven'
+  },
   boss_abyss_heart: {
     id: 'boss_abyss_heart', order: 15,
     name: 'СЕРДЦЕ БЕЗДНЫ (Секретный Босс)',
@@ -1365,7 +1321,7 @@ export const RESCUE_MISSIONS = [
     x: 3780, y: 2920,
     hasAlarm: true,
     requiresKey: false, // первую клетку рядом со стартом можно вскрыть после зачистки охраны/сигнализации
-    rewardCoins: 140, rewardXp: 150, rewardWeapon: 'revolver',
+    rewardCoins: 140, rewardXp: 150, rewardWeapon: 'sword',
     desc: 'Отключи терминал сигнализации, перебей охрану и освободи Инженера Кая из клетки!'
   },
   {
@@ -1388,7 +1344,7 @@ export const RESCUE_MISSIONS = [
     x: 4580, y: 2560,
     hasAlarm: true,
     requiresKey: true,
-    rewardCoins: 200, rewardXp: 220, rewardWeapon: 'smg_compact',
+    rewardCoins: 200, rewardXp: 220, rewardWeapon: 'sword',
     desc: 'Обезвредь сигнализацию тюремного блока в Городе и открой камеру Сержанта Ключ-картой!'
   },
   {
@@ -1410,7 +1366,7 @@ export const RESCUE_MISSIONS = [
     timeLimit: 45,
     sprite: 'npc_fighter',
     x: 1960, y: 4420,
-    rewardCoins: 260, rewardXp: 280, rewardWeapon: 'grenade_launcher',
+    rewardCoins: 260, rewardXp: 280, rewardWeapon: 'crossbow',
     desc: 'Успей за 45 секунд уничтожить подрывников у Завода и разминировать клетку Сапёра!'
   },
   {
@@ -1444,7 +1400,7 @@ export const RESCUE_MISSIONS = [
     sprite: 'npc_engineer',
     x: 2420, y: 4860,
     destX: 1860, destY: 4680,
-    rewardCoins: 320, rewardXp: 360, rewardWeapon: 'smg_plasma',
+    rewardCoins: 320, rewardXp: 360, rewardWeapon: 'vine_blade',
     desc: 'Прикрой учёного-перебежчика на пути до безопасного Аванпоста Промзоны!'
   },
   {
@@ -1455,7 +1411,7 @@ export const RESCUE_MISSIONS = [
     timeLimit: 50,
     sprite: 'npc_fighter',
     x: 4920, y: 1580,
-    rewardCoins: 380, rewardXp: 420, rewardWeapon: 'auto_shotgun',
+    rewardCoins: 380, rewardXp: 420, rewardWeapon: 'storm_hammer',
     desc: 'Прорвись к сбитому вертолёту за 50 секунд и спаси Пилота Веру от спецназа!'
   },
   {
@@ -1467,7 +1423,7 @@ export const RESCUE_MISSIONS = [
     x: 3780, y: 1180,
     hasAlarm: true,
     requiresKey: true,
-    rewardCoins: 450, rewardXp: 500, rewardWeapon: 'rocket_launcher',
+    rewardCoins: 450, rewardXp: 500, rewardWeapon: 'ash_greatsword',
     desc: 'Штурмуй северный изолятор в Горах, отключи тревогу и освободи Ветерана!'
   },
   {
@@ -1514,7 +1470,7 @@ export const SECRETS = [
     name: 'Секретный Бункер «Альфа-7»',
     hint: 'Открой гермодверь Бункера на северо-западе Леса Ключ-картой',
     x: 1380, y: 1380, requiresKey: true,
-    rewardWeapon: 'rifle',
+    rewardWeapon: 'frost_spear',
     rewardMod: 'mod_scope',
     rewardItems: [{ id: 'backpack', count: 1 }, { id: 'ammo', count: 48 }],
     coins: 240
@@ -1524,7 +1480,7 @@ export const SECRETS = [
     name: 'Оружейная Спецсклада Полиции',
     hint: 'Вскрой запертый Склад в Мегаполисе Ключ-картой',
     x: 4980, y: 2420, requiresKey: true,
-    rewardWeapon: 'autopistol',
+    rewardWeapon: 'twin_daggers',
     rewardMod: 'mod_mag',
     rewardItems: [{ id: 'ammo', count: 60 }, { id: 'grenade', count: 4 }],
     coins: 260
@@ -1534,7 +1490,7 @@ export const SECRETS = [
     name: 'Подземное Хранилище Лаборатории',
     hint: 'Найди занесённый песком Бункер на юге Пустыни (нужна Ключ-карта)',
     x: 2820, y: 5860, requiresKey: true,
-    rewardWeapon: 'smg_plasma',
+    rewardWeapon: 'vine_blade',
     rewardMod: 'mod_cryo',
     rewardItems: [{ id: 'potion', count: 3 }, { id: 'backpack', count: 1 }],
     coins: 380
@@ -1554,7 +1510,7 @@ export const SECRETS = [
     name: 'Секретный Арсенал Цитадели',
     hint: 'Вскрой бронированный бункер в Снежных Горах Ключ-картой',
     x: 5180, y: 980, requiresKey: true,
-    rewardWeapon: 'rocket_launcher',
+    rewardWeapon: 'ash_greatsword',
     rewardMod: 'mod_barrel',
     rewardItems: [{ id: 'ammo', count: 90 }, { id: 'medkit', count: 4 }],
     coins: 550
@@ -1592,7 +1548,7 @@ export const SECRETS = [
     name: 'Лаборатория Подземного Царства',
     hint: 'Вскрой забытую лабораторию Подземного Царства Ключ-картой',
     x: 3150, y: 5080, requiresKey: true,
-    rewardWeapon: 'under_rail',
+    rewardWeapon: 'sky_lance',
     rewardItems: [{ id: 'medkit', count: 3 }],
     coins: 580
   },
@@ -1601,7 +1557,7 @@ export const SECRETS = [
     name: 'Сокровищница Крепости Бездны',
     hint: 'Вскрой обсидиановый бункер Крепости Бездны Ключ-картой',
     x: 6040, y: 560, requiresKey: true,
-    rewardWeapon: 'phoenix_rifle',
+    rewardWeapon: 'void_blade',
     rewardArtifact: 'art_storm',
     rewardItems: [{ id: 'ammo', count: 70 }, { id: 'grenade', count: 4 }],
     coins: 620
@@ -1629,7 +1585,7 @@ export const ARMORS = {
 
 // VEXMORA 3.0: волновые испытания арен (подземелья и рейды)
 export const TRIALS = {
-  trial_ash:   { id: 'trial_ash',   name: 'Испытание Пепла',    icon: '🔥', waves: 3, perWave: 3, kinds: ['ash_imp', 'fire_elemental', 'magma_golem'], rewardCoins: 700,  rewardWeapon: 'magma_rifle', desc: '3 волны огненных тварей Пепельных земель. Награда: Магмовая Винтовка.' },
+  trial_ash:   { id: 'trial_ash',   name: 'Испытание Пепла',    icon: '🔥', waves: 3, perWave: 3, kinds: ['ash_imp', 'fire_elemental', 'magma_golem'], rewardCoins: 700,  rewardWeapon: 'flame_sword', desc: '3 волны огненных тварей Пепельных земель. Награда: Огненный Меч древних королей.' },
   trial_frost: { id: 'trial_frost', name: 'Испытание Стужи',    icon: '❄️', waves: 3, perWave: 3, kinds: ['ice_archer', 'frost_giant', 'frost_revenant'], rewardCoins: 750,  rewardWeapon: 'ice_bow',     desc: '3 волны стужи Ледяной Пустоши. Награда: Лук Ледяной Пустоши.' },
   trial_dead:  { id: 'trial_dead',  name: 'Испытание Мёртвых',  icon: '💀', waves: 4, perWave: 3, kinds: ['cursed_knight', 'soul_wraith', 'skeleton_warrior'], rewardCoins: 1000, rewardWeapon: 'storm_hammer', desc: '4 волны мёртвых королей. Награда: Грозовой Молот.' }
 };
@@ -1815,6 +1771,27 @@ export const QUESTS = [
       { kind: 'boss', bossId: 'boss_fallen_god', target: 1, label: 'ПАВШИЙ БОГ АЗАРОТ (секрет)' }
     ],
     rewards: { xp: 8000, coins: 6000, items: [{ id: 'potion', count: 5 }] }
+  },
+  {
+    id: 'q_fall_ch1',
+    title: 'ПАДЕНИЕ ДРЕВНИХ I: Катакомбы и Кристалл',
+    desc: 'Эпоха огнестрела мертва — правят клинки. Сокруши Короля Забытых Катакомб Морта и Кристального Левиафана Сиариса!',
+    targetPos: { x: 550, y: 4800 },
+    goals: [
+      { kind: 'boss', bossId: 'boss_catacomb_king', target: 1, label: 'Король Катакомб' },
+      { kind: 'boss', bossId: 'boss_crystal_leviathan', target: 1, label: 'Кристальный Левиафан' }
+    ],
+    rewards: { xp: 3600, coins: 2400, items: [{ id: 'key', count: 2 }] }
+  },
+  {
+    id: 'q_fall_ch2',
+    title: 'ПАДЕНИЕ ДРЕВНИХ II: Цитадель Бездны',
+    desc: 'Штурмуй Цитадель Бездны и сразись с её Владыкой Нексом — правой рукой самого Павшего Бога!',
+    targetPos: { x: 2500, y: 5900 },
+    goals: [
+      { kind: 'boss', bossId: 'boss_citadel_lord', target: 1, label: 'Владыка Цитадели Бездны' }
+    ],
+    rewards: { xp: 5000, coins: 3600, items: [{ id: 'potion', count: 4 }] }
   }
 ];
 
@@ -1846,5 +1823,7 @@ export const ACHIEVEMENTS = [
   { id: 'ach_boss_20',     name: 'УБИЙЦА БОГОВ',        icon: '⚡', desc: 'Победить всех 20 боссов, включая Павшего Бога!', reward: 5000, check: (s) => s.defeatedBosses.length >= 20 },
   { id: 'ach_faction_100', name: 'Друг Фракций',        icon: '🏳️', desc: 'Набрать 100 репутации любой фракции.',          reward: 500,  check: (s) => Object.values(s.factionRep || {}).some(v => v >= 100) },
   { id: 'ach_trials_3',    name: 'Чемпион Арен',        icon: '🏟️', desc: 'Пройти все 3 испытания арен.',                 reward: 650,  check: (s) => (s.trialsDone || []).length >= 3 },
-  { id: 'ach_armor_3',     name: 'Легендарный Доспех',  icon: '🛡️', desc: 'Собрать 3 комплекта легендарной брони.',        reward: 550,  check: (s) => (s.ownedArmors || []).length >= 3 }
+  { id: 'ach_armor_3',     name: 'Легендарный Доспех',  icon: '🛡️', desc: 'Собрать 3 комплекта легендарной брони.',        reward: 550,  check: (s) => (s.ownedArmors || []).length >= 3 },
+  { id: 'ach_boss_23',     name: 'ПАДЕНИЕ ДРЕВНИХ',     icon: '🏰', desc: 'Победить всех 23 боссов мира VEXMORA!',            reward: 6000, check: (s) => s.defeatedBosses.length >= 23 },
+  { id: 'ach_blades',      name: 'Мастер Клинка',       icon: '⚔️', desc: 'Собрать все 4 клинка «Падения Древних».',          reward: 800,  check: (s) => ['flame_sword', 'void_blade', 'twin_daggers', 'ancients_blade'].every(w => s.inventory.weapons.includes(w)) }
 ];

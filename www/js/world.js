@@ -283,6 +283,26 @@ export function createWorld(seed = 20261025) {
     nodes.push(makeNode(nextId++, 'crystal_node', cx, cy));
   }
 
+  // ПАДЕНИЕ ДРЕВНИХ: ловушки, сундуки и жилы катакомб, пещер и цитадели
+  const trapDefsF = [
+    ['trap_spikes', 480, 4720], ['trap_spikes', 630, 4900], ['trap_poison', 4700, 2310],
+    ['trap_spikes', 4910, 2500], ['trap_fire', 2420, 5810], ['trap_fire', 2590, 5990]
+  ];
+  for (const [kind, tx, ty] of trapDefsF) {
+    traps.push({ id: `trap_${nextId++}`, kind, x: tx, y: ty, radius: 26, damage: kind === 'trap_fire' ? 26 : kind === 'trap_spikes' ? 20 : 16, hitCd: 0 });
+  }
+  const chestDefsF = [
+    ['chest_cata_1', 640, 4690, false], ['chest_cata_2', 430, 4930, true],
+    ['chest_crys_1', 4690, 2510, false], ['chest_crys_2', 4930, 2280, true],
+    ['chest_cita_1', 2380, 6010, false], ['chest_cita_2', 2640, 5780, true]
+  ];
+  for (const [id, cx, cy, cursed] of chestDefsF) {
+    chests.push({ id, x: cx, y: cy, looted: false, cursed });
+  }
+  for (const [cx, cy] of [[660, 4910], [4680, 2290], [2610, 6020], [420, 4660]]) {
+    nodes.push(makeNode(nextId++, 'crystal_node', cx, cy));
+  }
+
   // Кристаллические жилы Бездны (редкий ресурс для легендарного крафта)
   for (const [cx, cy] of [[690, 840], [790, 610], [5000, 5600], [4760, 5900], [6000, 430], [5850, 560], [6150, 300], [430, 880]]) {
     nodes.push(makeNode(nextId++, 'crystal_node', cx, cy));

@@ -23,6 +23,10 @@ const ASSET_MANIFEST = {
   tile_sky:        'assets/sprites/tiles/sky.png',
   tile_under:      'assets/sprites/tiles/under.png',
   tile_gods:       'assets/sprites/tiles/gods.png',
+  // ПАДЕНИЕ ДРЕВНИХ: тайлы катакомб, пещер и цитадели
+  tile_catacombs:  'assets/sprites/tiles/catacombs.png',
+  tile_crystal:    'assets/sprites/tiles/crystal.png',
+  tile_citadel:    'assets/sprites/tiles/citadel.png',
 
   // Спрайт-листы персонажей, врагов, босса и NPC
   hero_sheet:    'assets/sprites/characters/hero_sheet.png',
@@ -83,6 +87,16 @@ const ASSET_MANIFEST = {
   frost_giant_sheet:    'assets/sprites/characters/frost_giant_sheet.png',
   soul_wraith_sheet:    'assets/sprites/characters/soul_wraith_sheet.png',
 
+  // ПАДЕНИЕ ДРЕВНИХ: 8 новых врагов
+  crypt_skeleton_sheet:  'assets/sprites/characters/crypt_skeleton_sheet.png',
+  tomb_knight_sheet:     'assets/sprites/characters/tomb_knight_sheet.png',
+  crystal_mage_sheet:    'assets/sprites/characters/crystal_mage_sheet.png',
+  crystal_harpy_sheet:   'assets/sprites/characters/crystal_harpy_sheet.png',
+  crystal_golem_sheet:   'assets/sprites/characters/crystal_golem_sheet.png',
+  abyss_duelist_sheet:   'assets/sprites/characters/abyss_duelist_sheet.png',
+  crypt_archer_sheet:    'assets/sprites/characters/crypt_archer_sheet.png',
+  citadel_warlock_sheet: 'assets/sprites/characters/citadel_warlock_sheet.png',
+
   // VEXMORA 2.0: 10 уникальных боссов (64x64 x 6 кадров)
   boss_mutant_king:    'assets/sprites/bosses/boss_mutant_king.png',
   boss_commander:      'assets/sprites/bosses/boss_commander.png',
@@ -108,6 +122,11 @@ const ASSET_MANIFEST = {
   boss_ice_colossus: 'assets/sprites/bosses/boss_ice_colossus.png',
   boss_soul_eater:   'assets/sprites/bosses/boss_soul_eater.png',
   boss_fallen_god:   'assets/sprites/bosses/boss_fallen_god.png',
+
+  // ПАДЕНИЕ ДРЕВНИХ: 3 новых босса
+  boss_catacomb_king:      'assets/sprites/bosses/boss_catacomb_king.png',
+  boss_crystal_leviathan:  'assets/sprites/bosses/boss_crystal_leviathan.png',
+  boss_citadel_lord:       'assets/sprites/bosses/boss_citadel_lord.png',
 
   // Все 8 видов оружия
   wpn_pistol:      'assets/sprites/weapons/pistol.png',
@@ -164,6 +183,12 @@ const ASSET_MANIFEST = {
   wpn_colossus_maul:  'assets/sprites/weapons/colossus_maul.png',
   wpn_soul_reaper:    'assets/sprites/weapons/soul_reaper.png',
   wpn_rune_crossbow:  'assets/sprites/weapons/rune_crossbow.png',
+
+  // ПАДЕНИЕ ДРЕВНИХ: 4 новых клинка
+  wpn_flame_sword:    'assets/sprites/weapons/flame_sword.png',
+  wpn_void_blade:     'assets/sprites/weapons/void_blade.png',
+  wpn_twin_daggers:   'assets/sprites/weapons/twin_daggers.png',
+  wpn_ancients_blade: 'assets/sprites/weapons/ancients_blade.png',
 
   // Все 8 предметов
   itm_medkit:   'assets/sprites/items/medkit.png',

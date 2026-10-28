@@ -108,9 +108,9 @@ jobs:
         with:
           tag_name: v1.0.0-build${{ github.run_number }}
           target_commitish: ${{ github.sha }}
-          name: VEXMORA · AGE OF THE FALLEN GODS (3.0) · Сборка ${{ github.run_number }}
+          name: VEXMORA 2.0 · ПАДЕНИЕ ДРЕВНИХ · Сборка ${{ github.run_number }}
           body: |
-            ## 👑 VEXMORA: AGE OF THE FALLEN GODS — МАСШТАБНОЕ ОБНОВЛЕНИЕ 3.0 (Android APK, Сборка ${{ github.run_number }})
+            ## 🏰 VEXMORA 2.0 «ПАДЕНИЕ ДРЕВНИХ» (Android APK, Сборка ${{ github.run_number }})
 
             Масштабное расширение существующей 2D пиксельной Action-Survival RPG. Прогресс, стиль, управление и работающие механики сохранены; обновление Android ставится поверх прежней версии.
 

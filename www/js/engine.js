@@ -105,8 +105,8 @@ export class GameEngine {
       coins: 95,
       ammo: 54,
       backpackLevel: 0, // 0..4 (+вместимость боезапаса, +HP, +добыча)
-      equippedWeapon: 'pistol',
-      weapons: ['pistol', 'knife'],
+      equippedWeapon: 'sword',
+      weapons: ['sword', 'knife'],
       consumables: {
         medkit: 3,
         grenade: 2,
@@ -122,10 +122,10 @@ export class GameEngine {
       }
     };
 
-    this.weaponUpgrades = { pistol: 0, knife: 0 };
+    this.weaponUpgrades = { sword: 0, knife: 0 };
 
     // ── VEXMORA 2.0: магазины/перезарядка, модификации, перки, база, спасение, напарник, контракты ──
-    this.weaponMag = { pistol: WEAPONS.pistol.magSize, knife: 0 };
+    this.weaponMag = { sword: 0, knife: 0 };
     this.reloadTimer = 0;
     this.reloadWeaponId = null;
     this.weaponMods = {};            // weaponId -> [modId, ...]
@@ -356,9 +356,7 @@ export class GameEngine {
     }
     mult *= 1 + this.getPerkRank('perk_warrior_might') * 0.06;                // Ветка Воина: Мощь
     mult *= 1 + (this.baseLevels.workshop || 0) * 0.06;                       // Инженерный Цех Базы
-    if (w.category === 'gun' || w.category === 'explosive') {
-      mult *= 1 + this.getPerkRank('perk_hollow_point') * 0.08;               // перк «Экспансивный калибр»
-    }
+    mult *= 1 + this.getPerkRank('perk_hollow_point') * 0.08;                 // перк «Заточка Клинка»: +8% урона всего оружия
     if (this.hasMod(weaponId, 'mod_barrel')) mult *= 1.22;                    // Бронебойный Ствол
     if (this.hasMod(weaponId, 'mod_cryo')) mult *= 1.12;                      // Крио-Импульс
     return Math.round(w.baseDamage * mult);
@@ -645,15 +643,24 @@ export class GameEngine {
           coins: data.inventory.coins ?? 95,
           ammo: data.inventory.ammo ?? 54,
           backpackLevel: data.inventory.backpackLevel ?? 0,
-          equippedWeapon: WEAPONS[data.inventory.equippedWeapon] ? data.inventory.equippedWeapon : 'pistol',
+          equippedWeapon: WEAPONS[data.inventory.equippedWeapon] ? data.inventory.equippedWeapon : 'sword',
           weapons: Array.isArray(data.inventory.weapons) && data.inventory.weapons.length
             ? data.inventory.weapons.filter(w => !!WEAPONS[w])
-            : ['pistol', 'knife'],
+            : ['sword', 'knife'],
           consumables: Object.assign({ medkit: 2, grenade: 2, food: 2, potion: 1, key: 1 }, data.inventory.consumables || {}),
           resources: Object.assign({ wood: 0, stone: 0, scrap: 0, herb: 0 }, data.inventory.resources || {})
         };
       }
       if (!this.inventory.weapons.includes('knife')) this.inventory.weapons.push('knife');
+      if (!this.inventory.weapons.includes('sword')) this.inventory.weapons.push('sword');
+      // «ПАДЕНИЕ ДРЕВНИХ»: огнестрельное оружие изъято из мира — компенсация монетами за каждый ствол
+      const removedGuns = Array.isArray(data.inventory?.weapons)
+        ? data.inventory.weapons.filter(w => !WEAPONS[w]).length : 0;
+      if (removedGuns > 0) {
+        const compensation = removedGuns * 150;
+        this.inventory.coins += compensation;
+        this.pushToast(`⚔️ Эпоха огнестрела закончилась: ${removedGuns} ед. оружия заменено на +${compensation}🪙`, '#fbbf24');
+      }
 
       if (data.weaponUpgrades) Object.assign(this.weaponUpgrades, data.weaponUpgrades);
       if (data.weaponMag) Object.assign(this.weaponMag, data.weaponMag);
@@ -1374,14 +1381,14 @@ export class GameEngine {
         range: weapon.range, color: RARITIES[weapon.rarity].color, life: 0.16, maxLife: 0.16
       });
       this.applyMeleeHit(aim, weapon.range, weapon.arc, baseDmg, critChance, weapon.knockback, weapon.id);
-    } else if (weapon.category === 'tesla') {
+    } else if (weapon.category === 'tesla' || weapon.chainTargets) {
       // Тесла-Излучатель: мгновенная цепная молния по нескольким целям
       this.sound.play('skill');
       this.spawnSpriteEffect('magic', muzzleX, muzzleY, 0.9, 18);
       let targets = [];
       let fromX = p.x, fromY = p.y;
       const pool = [...this.bossEntities, ...this.enemies].filter(t => !t.isStealthed || dist2(fromX, fromY, t.x, t.y) < 160 * 160);
-      for (let c = 0; c < (weapon.chainCount || 4); c++) {
+      for (let c = 0; c < (weapon.chainTargets || weapon.chainCount || 4); c++) {
         let bestT = null, bestD2 = (c === 0 ? range : 190) ** 2;
         for (const t of pool) {
           if (targets.includes(t)) continue;
@@ -2519,6 +2526,27 @@ export class GameEngine {
         if (b.phase >= 3) {
           this.shockwaves.push({ x: b.x, y: b.y, radius: 26, maxRadius: 300, color: '#f0abfc', friendly: false, damage: b.damage, hitPlayer: false });
           summon('void_cultist', 2);
+        }
+        break;
+      case 'boss_catacomb_king': // КОРОЛЬ КАТАКОМБ: призыв скелетов, веера костей, удар гробниц
+        summon(b.phase >= 2 ? 'tomb_knight' : 'crypt_skeleton', b.phase >= 3 ? 3 : 2);
+        fan(b.phase >= 2 ? 7 : 5, 1.25, 390, 0.95, '#fda4af', 'bullet');
+        if (b.phase >= 2) this.spawnTelegraph(p.x, p.y, 100, 0.85, Math.round(b.damage * 1.25));
+        if (b.phase >= 3) ring(14, 350, '#e7e5e4');
+        break;
+      case 'boss_crystal_leviathan': // КРИСТАЛЬНЫЙ ЛЕВИАФАН: кольца осколков, ледяные веера, замедление
+        ring(b.phase >= 2 ? 18 : 14, 360, '#67e8f9');
+        fan(b.phase >= 2 ? 9 : 6, 1.5, 380, 0.9, '#a5f3fc');
+        if (b.phase >= 2 && this.equippedArmor !== 'set_ice') p.slowTimer = Math.max(p.slowTimer || 0, 1.1);
+        if (b.phase >= 3) summon('crystal_golem', 1);
+        break;
+      case 'boss_citadel_lord': // ВЛАДЫКА ЦИТАДЕЛИ: рывки, веера тьмы, призыв дуэлянтов, телеграфы
+        b.dashActive = 0.4; b.dashVx = nx * 480; b.dashVy = ny * 480;
+        fan(b.phase >= 2 ? 7 : 5, 1.15, 440, 1.0, '#fb7185', 'bullet');
+        if (b.phase >= 2) summon('abyss_duelist', 2);
+        if (b.phase >= 3) {
+          for (let k = 0; k < 3; k++) this.spawnTelegraph(p.x + randRange(-100, 100), p.y + randRange(-100, 100), 88, 0.85, Math.round(b.damage * 1.2));
+          ring(16, 380, '#e11d48');
         }
         break;
       default: // АРХОНТ VEXMORA: спирали, прицельные лучи, порталы и сверхновая по фазам

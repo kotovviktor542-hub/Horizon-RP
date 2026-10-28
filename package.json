@@ -1,7 +1,7 @@
 {
   "name": "vexmora",
-  "version": "3.0.1",
-  "description": "VEXMORA — БОЛЬШОЕ ОБНОВЛЕНИЕ ИГРЫ: 2D Pixel-Art Action-Survival RPG для Android (24 оружия, 16 врагов, 10 боссов, спасение NPC, база)",
+  "version": "2.0.0",
+  "description": "VEXMORA \u2014 \u0411\u041e\u041b\u042c\u0428\u041e\u0415 \u041e\u0411\u041d\u041e\u0412\u041b\u0415\u041d\u0418\u0415 \u0418\u0413\u0420\u042b: 2D Pixel-Art Action-Survival RPG \u0434\u043b\u044f Android (24 \u043e\u0440\u0443\u0436\u0438\u044f, 16 \u0432\u0440\u0430\u0433\u043e\u0432, 10 \u0431\u043e\u0441\u0441\u043e\u0432, \u0441\u043f\u0430\u0441\u0435\u043d\u0438\u0435 NPC, \u0431\u0430\u0437\u0430)",
   "type": "module",
   "scripts": {
     "start": "node tools/serve.js",

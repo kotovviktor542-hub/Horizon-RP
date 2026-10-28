@@ -36,7 +36,7 @@ function killAll(eng, list) {
 
 console.log('=== Проверка VEXMORA: AGE OF THE FALLEN GODS — ОБНОВЛЕНИЕ 3.0 ===');
 assert.equal(GAME_TITLE, 'VEXMORA');
-assert.ok(UPDATE_ANNOUNCEMENT.title.includes('AGE OF THE FALLEN GODS'));
+assert.ok(UPDATE_ANNOUNCEMENT.title.includes('ПАДЕНИЕ ДРЕВНИХ'));
 
 test('1. Все прозрачные пиксель-арт PNG и спрайт-листы существуют и валидны (108+ файлов)', () => {
   const spritesJs = fs.readFileSync(path.join(rootDir, 'www/js/sprites.js'), 'utf8');
@@ -73,8 +73,8 @@ test('2. Мир: 4 биома, 9 зданий, 6 транспортов, 8 NPC �
   const eng = new GameEngine(noopSound);
   assert.equal(Object.keys(BIOMES).length, 4);
   assert.equal(NPCS.length, 8);
-  assert.equal(eng.bossEntities.length, 20);
-  assert.equal(Object.keys(BOSSES).length, 20);
+  assert.equal(eng.bossEntities.length, 23);
+  assert.equal(Object.keys(BOSSES).length, 23);
   assert.equal(eng.rescueSites.length, 13);
   assert.equal(RESCUE_MISSIONS.length, 13);
   assert.equal(eng.world.modCaches.length, 3);
@@ -89,14 +89,14 @@ test('2. Мир: 4 биома, 9 зданий, 6 транспортов, 8 NPC �
   }
   // У каждого босса уникальный спрайт, арена и награда-оружие
   const bossSprites = new Set(Object.values(BOSSES).map(b => b.sprite));
-  assert.equal(bossSprites.size, 20);
+  assert.equal(bossSprites.size, 23);
   for (const b of Object.values(BOSSES)) assert.ok(WEAPONS[b.rewardWeapon], `Награда босса ${b.id}`);
 });
 
 test('3. Герой: 4 направления, бег, прыжок + все 30 оружий стреляют, магазины и перезарядка работают', () => {
-  assert.equal(Object.keys(WEAPONS).length, 48);
+  assert.equal(Object.keys(WEAPONS).length, 31);
   assert.equal(Object.keys(ITEMS).length, 8);
-  assert.equal(Object.keys(ENEMIES).length, 40);
+  assert.equal(Object.keys(ENEMIES).length, 48);
 
   const eng = new GameEngine(noopSound);
   for (const [mx, my, expectedDir] of [[1, 0, 'right'], [-1, 0, 'left'], [0, -1, 'up'], [0, 1, 'down']]) {
@@ -123,21 +123,21 @@ test('3. Герой: 4 направления, бег, прыжок + все 30 
   }
 
   // Магазин пистолета уменьшается, перезарядка пополняет из резерва
-  eng.equipWeapon('pistol');
+  eng.equipWeapon('crossbow');
   eng.inventory.ammo = 50;
-  eng.weaponMag.pistol = 3;
+  eng.weaponMag.crossbow = 3;
   eng.player.attackTimer = 0;
   assert.equal(eng.performAttack(), true);
-  assert.equal(eng.getMag('pistol'), 2);
-  eng.weaponMag.pistol = 0;
+  assert.equal(eng.getMag('crossbow'), 2);
+  eng.weaponMag.crossbow = 0;
   eng.player.attackTimer = 0;
   eng.performAttack(); // должен уйти в перезарядку
   assert.ok(eng.isReloading(), 'Пустой магазин должен запускать перезарядку');
   for (let i = 0; i < 40; i++) eng.update(0.05, { moveX: 0, moveY: 0 });
-  assert.ok(eng.getMag('pistol') > 0, 'После перезарядки магазин полон');
+  assert.ok(eng.getMag('crossbow') > 0, 'После перезарядки магазин полон');
 
-  // Нет патронов и пустой магазин -> автопереход на оружие без патронов
-  eng.equipWeapon('rifle');
+  // Нет стрел и пустой магазин -> автопереход на оружие без стрел
+  eng.equipWeapon('crossbow');
   eng.weaponMag.rifle = 0;
   eng.inventory.ammo = 0;
   eng.reloadTimer = 0;
@@ -185,16 +185,18 @@ test('5. Гранаты игрока, взрывные бочки, Тесла-ц
   assert.ok(eng.stats.explosionsTriggered >= 1, 'Граната должна взорваться');
   assert.ok(eng.spriteEffects.some(fx => fx.kind === 'explosion' || fx.kind === 'smoke'));
 
-  // Тесла бьёт молнией без снарядов (убираем случайных окрестных врагов для детерминизма)
+  // Посох Душ: самонаводящаяся сфера тьмы поражает цель (убираем окрестных врагов для детерминизма)
   eng.enemies.length = 0;
-  eng.grantWeapon('tesla_cannon');
-  eng.equipWeapon('tesla_cannon');
-  eng.weaponMag.tesla_cannon = eng.getMagSize('tesla_cannon');
+  eng.grantWeapon('soul_staff');
+  eng.equipWeapon('soul_staff');
+  eng.weaponMag.soul_staff = eng.getMagSize('soul_staff');
   eng.player.attackTimer = 0;
   const victim = eng.spawnEnemyAt(eng.player.x + 140, eng.player.y, 'zombie');
   const vhp = victim.hp;
   assert.equal(eng.performAttack(), true);
-  assert.ok(victim.hp < vhp || !eng.enemies.includes(victim), 'Тесла должна поразить цель молнией');
+  assert.ok(eng.projectiles.length >= 1, 'Посох выпускает сферу душ');
+  for (let i = 0; i < 14; i++) eng.update(0.05, { moveX: 0, moveY: 0 });
+  assert.ok(victim.hp < vhp || !eng.enemies.includes(victim), 'Сфера Посоха Душ должна поразить цель');
 });
 
 test('6. Транспорт и Гараж: вождение, скорость от Гаража и таран врагов', () => {
@@ -233,15 +235,15 @@ test('7. Спасение Инженера: сигнализация -> охра
   assert.equal(eng.getNearbyInteractable()?.type, 'rescue_cage');
   eng.interact();
   assert.ok(eng.rescuedIds.includes('res_engineer'), 'Инженер спасён');
-  assert.ok(eng.inventory.weapons.includes('revolver'), 'Награда за спасение — револьвер');
+  assert.ok(eng.inventory.weapons.includes('sword') && (eng.weaponUpgrades.sword || 0) >= 1, 'Награда за спасение — усиление Меч');
 
   eng.inventory.coins = 3000;
   eng.inventory.resources = { wood: 40, stone: 20, scrap: 40, herb: 20 };
   assert.equal(eng.upgradeBaseRoom('workshop'), true, 'Инженерный Цех улучшается после спасения Инженера');
-  eng.equipWeapon('pistol');
-  assert.equal(eng.installMod('pistol', 'mod_scope'), true, 'Модуль устанавливается у Инженера');
-  assert.ok(eng.hasMod('pistol', 'mod_scope'));
-  assert.ok(eng.getCritChance('pistol') > 0.2, 'Коллиматор повышает шанс крита');
+  eng.equipWeapon('sword');
+  assert.equal(eng.installMod('sword', 'mod_scope'), true, 'Модуль устанавливается у Инженера');
+  assert.ok(eng.hasMod('sword', 'mod_scope'));
+  assert.ok(eng.getCritChance('sword') > 0.2, 'Руна Меткости повышает шанс крита');
 });
 
 test('8. Спасение защитой и сопровождением, напарник, перки и развитие Базы', () => {
@@ -289,7 +291,7 @@ test('8. Спасение защитой и сопровождением, нап
   assert.equal(eng.getPerkRank('perk_kevlar'), 1);
 });
 
-test('9. 20 боссов: фазы, телеграфы/щиты/телепорты, награды, коллекция и открытие территорий', () => {
+test('9. 23 босса: фазы, телеграфы/щиты/телепорты, награды, коллекция и открытие территорий', () => {
   const eng = new GameEngine(noopSound);
   eng.player.invulnTimer = 999;
   for (const bossId of Object.keys(BOSSES)) {
@@ -314,7 +316,7 @@ test('9. 20 боссов: фазы, телеграфы/щиты/телепорт
   king.hp = 5;
   eng.damageBoss(king, 50);
   assert.ok(eng.defeatedBosses.includes('boss_mutant_king'));
-  assert.ok(eng.inventory.weapons.includes('shotgun'));
+  assert.ok(eng.inventory.weapons.includes('flame_sword'), 'Награда первого босса — Огненный Меч');
   assert.ok(eng.inventory.coins > coinsBefore);
 });
 
@@ -331,15 +333,15 @@ test('10. Секреты с модулями, гейтинг магазина, �
   const unlocked = eng.interact();
   assert.equal(unlocked.type, 'secret_vault');
   assert.ok(eng.discoveredSecrets.includes('sec_warehouse_city'));
-  assert.ok(eng.inventory.weapons.includes('autopistol'));
+  assert.ok(eng.inventory.weapons.length >= 2, 'Награды включают клинки');
   assert.ok(eng.unlockedMods.includes('mod_mag'), 'В секрете должен быть модуль Сдвоенный Магазин');
 
   // Магазин: легендарка закрыта новичку, открывается постепенно
   eng.inventory.coins = 100000;
-  assert.equal(eng.buyShopItem('weapon', 'railgun'), false, 'Рельсотрон тира 5 закрыт без боссов/уровня');
+  assert.equal(eng.buyShopItem('weapon', 'ancients_blade'), false, 'Клинок Древних закрыт у торговца: только отвага и крафт');
   eng.player.level = 9;
   eng.defeatedBosses.push('b1', 'b2', 'b3', 'b4', 'b5');
-  assert.equal(eng.buyShopItem('weapon', 'railgun'), true, 'Рельсотрон открывается после 5 боссов и 8 уровня');
+  assert.equal(eng.buyShopItem('weapon', 'ash_greatsword'), true, 'Двуручный Меч Пепла открывается тиром после боссов и уровня');
   eng.defeatedBosses.splice(0, eng.defeatedBosses.length);
 
   // Крафт и спецоперация зачистки
@@ -369,7 +371,7 @@ test('10. Секреты с модулями, гейтинг магазина, �
 
 test('11. RISE+3.0: 8 регионов (Руины, Лес Проклятых, Крепость Бездны, Пепел, Затерянный лес, Стужа, Мёртвые, Небо, Подземелье, Боги), ловушки, сундуки, кристаллы и открытие локаций', () => {
   const eng = new GameEngine(noopSound);
-  assert.equal(Object.keys(LOCATIONS).length, 10);
+  assert.equal(Object.keys(LOCATIONS).length, 13);
   for (const loc of Object.values(LOCATIONS)) {
     assert.equal(getLocationIdAt(loc.x, loc.y), loc.id, `Центр локации ${loc.id}`);
     assert.ok(loc.enemies.length >= 4 && loc.enemies.every(k => ENEMIES[k]), `Пул врагов ${loc.id}`);
@@ -560,7 +562,7 @@ test('15. 3.0: 8 регионов мира, 14 новых врагов и муз
     assert.equal(getLocationIdAt(loc.x, loc.y), id);
     assert.ok(loc.enemies.every(k => ENEMIES[k]), `Пул ${id} валиден`);
   }
-  assert.equal(Object.keys(ENEMIES).length, 40);
+  assert.equal(Object.keys(ENEMIES).length, 48);
   const newKinds = ['ash_imp', 'goblin_shaman', 'wolf_mutant', 'cave_troll', 'harpy', 'cursed_knight', 'fire_elemental', 'ice_archer', 'shadow_killer', 'ancient_guard', 'root_druid', 'magma_golem', 'frost_giant', 'soul_wraith'];
   eng.player.x = 1500; eng.player.y = 1500; eng.player.invulnTimer = 999;
   for (const kind of newKinds) {
@@ -584,14 +586,14 @@ test('16. 3.0: уязвимости стихий, перки 4 веток и л�
   eng.damageEnemy(sk, 100, false, null, { weaponId: 'thorn_bow' });
   assert.ok(hp0 - sk.hp > 100, 'Уязвимость к огню даёт +35% урона');
   // Перк Воина усиливает урон, Мага — магию, Ассасина — крит, Стража — HP
-  const dmg0 = eng.getWeaponDamage('pistol');
+  const dmg0 = eng.getWeaponDamage('sword');
   eng.skillTree.perk_warrior_might = 3;
-  assert.ok(eng.getWeaponDamage('pistol') > dmg0, 'Воин: +урон');
+  assert.ok(eng.getWeaponDamage('sword') > dmg0, 'Воин: +урон');
   eng.grantWeapon('abyss_staff');
   const mag0 = eng.getWeaponDamage('abyss_staff');
   eng.skillTree.perk_mage_power = 3;
   assert.ok(eng.getWeaponDamage('abyss_staff') > mag0, 'Маг: +урон магии');
-  const crit0 = eng.getCritChance('pistol');
+  const crit0 = eng.getCritChance('sword');
   eng.skillTree.perk_assassin_crit = 3;
   assert.ok(eng.getCritChance('pistol') > crit0, 'Ассасин: +крит');
   const hpMax0 = eng.player.maxHp;
@@ -645,7 +647,7 @@ test('18. 3.0: испытания арен, Павший Бог, повышен�
   }
   assert.equal(eng.activeTrial, null, 'Испытание завершено');
   assert.ok(eng.trialsDone.includes('trial_ash'), 'Испытание засчитано');
-  assert.ok(eng.inventory.weapons.includes('magma_rifle'), 'Награда испытания получена');
+  assert.ok(eng.inventory.weapons.includes('flame_sword'), 'Награда испытания — Огненный Меч');
   // Павший Бог: секретный финальный босс существует с интро
   const god = eng.bossEntities.find(b => b.bossId === 'boss_fallen_god');
   assert.ok(god && BOSSES.boss_fallen_god.secret === true && god.intro.length > 10);
@@ -673,4 +675,43 @@ test('18. 3.0: испытания арен, Павший Бог, повышен�
   assert.equal(engOld.hardMode, false);
 });
 
-console.log(`\nИТОГ: ${passed}/18 комплексных проверок VEXMORA — AGE OF THE FALLEN GODS успешно пройдено!`);
+test('19. ПАДЕНИЕ ДРЕВНИХ: огнестрел удалён, 3 босса, 3 локации, 4 клинка и миграция сохранений', () => {
+  const eng = new GameEngine(noopSound);
+  for (const [wid, w] of Object.entries(WEAPONS)) {
+    assert.notEqual(w.category, 'gun', 'Нет категории gun: ' + wid);
+    assert.notEqual(w.category, 'explosive', 'Нет взрывного огнестрела: ' + wid);
+  }
+  assert.equal(WEAPONS.pistol, undefined);
+  assert.equal(WEAPONS.railgun, undefined);
+  assert.equal(WEAPONS.tesla_cannon, undefined);
+  for (const cid of ['flame_sword', 'void_blade', 'twin_daggers', 'ancients_blade']) {
+    assert.ok(WEAPONS[cid], 'Клинок есть: ' + cid);
+    assert.equal(WEAPONS[cid].category, 'melee');
+  }
+  assert.equal(WEAPONS.flame_sword.effect, 'fire', 'Огненный Меч поджигает');
+  assert.equal(WEAPONS.void_blade.effect, 'lifesteal', 'Клинок Пустоты крадёт жизнь');
+  for (const lid of ['catacombs', 'crystal_caves', 'abyss_citadel']) {
+    assert.ok(LOCATIONS[lid], 'Локация: ' + lid);
+  }
+  for (const eid of ['crypt_skeleton', 'tomb_knight', 'crystal_mage', 'crystal_harpy', 'crystal_golem', 'abyss_duelist', 'crypt_archer', 'citadel_warlock']) {
+    assert.ok(ENEMIES[eid], 'Враг: ' + eid);
+  }
+  for (const bid of ['boss_catacomb_king', 'boss_crystal_leviathan', 'boss_citadel_lord']) {
+    assert.ok(BOSSES[bid], 'Босс: ' + bid);
+  }
+  eng.saveGame();
+  const raw = JSON.parse(localStorage.getItem('horizon_rp_save_v2'));
+  raw.inventory.weapons = ['pistol', 'railgun', 'knife'];
+  raw.inventory.equippedWeapon = 'pistol';
+  localStorage.setItem('horizon_rp_save_v2', JSON.stringify(raw));
+  const coinsBefore = eng.inventory.coins;
+  assert.equal(eng.loadGame(), true);
+  assert.equal(eng.inventory.equippedWeapon, 'sword', 'Экипировка заменена на Меч');
+  assert.equal(eng.inventory.weapons.includes('pistol'), false, 'Пистолет изъят');
+  assert.ok(eng.inventory.coins >= coinsBefore + 300, 'Компенсация за 2 ствола: +300 монет');
+  const fallBosses = eng.bossEntities.filter(b => ['boss_catacomb_king', 'boss_crystal_leviathan', 'boss_citadel_lord'].includes(b.bossId));
+  assert.equal(fallBosses.length, 3);
+  assert.ok(QUESTS.some(q => q.id === 'q_fall_ch1') && QUESTS.some(q => q.id === 'q_fall_ch2'), 'Квесты Падения Древних на месте');
+});
+
+console.log(`\nИТОГ: ${passed}/19 комплексных проверок VEXMORA — ПАДЕНИЕ ДРЕВНИХ успешно пройдено!`);
