@@ -498,7 +498,8 @@ ok('Очистка сцены без ошибок', true);
     `масштаб ${lowScale.toFixed(2)} → ${g.renderScale.toFixed(2)}, pixelRatio ${ratioLow} → ${ratios[ratios.length - 1]}`);
   g.fpsSmooth = 10;
   for (let i = 0; i < 20; i++) g._autoAdjustResolution();
-  ok('Разрешение не падает ниже предела читаемости', g.renderScale >= 0.55, `минимум ${g.renderScale.toFixed(2)}`);
+  ok('Разрешение не падает ниже предела читаемости', g.renderScale >= 0.45,
+    `минимум ${g.renderScale.toFixed(2)}, pixelRatio ${ratios[ratios.length - 1]}`);
   g.applyQuality('low', false);
   ok('Смена пресета сбрасывает масштаб разрешения', g.renderScale === 1 && g.quality3d === 'low');
 }

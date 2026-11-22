@@ -14,25 +14,33 @@ import { setDeferTextures, pendingMaterialNames, textureMaterial, materialNames 
 import { LightBudget } from '../actors/creatures.js';
 
 const QUALITY_PRESETS = {
+  // pixelRatio — потолок плотности пикселей. На телефоне devicePixelRatio = 3:
+  // рендер «высокого» в 1.35×3 = 4 млн пикселей на кадр съедал GPU. Теперь
+  // множитель привязан к DPR примерно как 0.5×–0.75×, а адаптивное разрешение
+  // (renderScale) добирает остальное, если кадры успевают.
   low: {
-    label: 'Низкое', pixelRatio: 0.75, shadows: false, shadowSize: 512,
-    viewRadius: 3, aa: false, anisotropy: 1, particles: 0.5, weather: false, grass: false,
-    dynamicLights: false, maxDynamic: 0, shadowDistance: 0
+    label: 'Низкое', pixelRatio: 0.7, shadows: false, shadowSize: 512,
+    viewRadius: 2, aa: false, anisotropy: 1, particles: 0.4, weather: false, grass: false, softShadows: false,
+    dynamicLights: false, maxDynamic: 0, shadowDistance: 0,
+    drawDistance: { boss: 55, enemy: 45 }
   },
   medium: {
-    label: 'Среднее', pixelRatio: 1, shadows: true, shadowSize: 1024,
-    viewRadius: 4, aa: true, anisotropy: 2, particles: 0.8, weather: true, grass: true,
-    dynamicLights: false, maxDynamic: 0, shadowDistance: 38
+    label: 'Среднее', pixelRatio: 0.9, shadows: true, shadowSize: 1024,
+    viewRadius: 3, aa: false, anisotropy: 2, particles: 0.7, weather: true, grass: true, softShadows: false,
+    dynamicLights: false, maxDynamic: 0, shadowDistance: 34,
+    drawDistance: { boss: 75, enemy: 60 }
   },
   high: {
-    label: 'Высокое', pixelRatio: 1.35, shadows: true, shadowSize: 2048,
-    viewRadius: 5, aa: true, anisotropy: 4, particles: 1, weather: true, grass: true,
-    dynamicLights: false, maxDynamic: 0, shadowDistance: 55
+    label: 'Высокое', pixelRatio: 1.1, shadows: true, shadowSize: 2048,
+    viewRadius: 4, aa: true, anisotropy: 4, particles: 1, weather: true, grass: true,
+    dynamicLights: false, maxDynamic: 0, shadowDistance: 48,
+    drawDistance: { boss: 90, enemy: 70 }
   },
   ultra: {
-    label: 'Ультра', pixelRatio: 2, shadows: true, shadowSize: 4096,
-    viewRadius: 6, aa: true, anisotropy: 8, particles: 1.4, weather: true, grass: true,
-    dynamicLights: true, maxDynamic: 6, shadowDistance: 70
+    label: 'Ультра', pixelRatio: 1.5, shadows: true, shadowSize: 2048,
+    viewRadius: 5, aa: true, anisotropy: 8, particles: 1.3, weather: true, grass: true,
+    dynamicLights: true, maxDynamic: 6, shadowDistance: 62,
+    drawDistance: { boss: 110, enemy: 85 }
   }
 };
 
@@ -61,7 +69,8 @@ export class Game3D {
     // Динамическое разрешение: если FPS низкий, сначала режем разрешение кадра,
     // а не весь пресет — картинка остаётся детальной, но плавность возвращается.
     this.renderScale = 1;
-    this._resScaleMin = 0.55;
+    this._resScaleMin = 0.45;       // на слабых GPU разрешение может упасть сильнее
+    this._fpsHistory = [];          // короткая история FPS для стабильных решений
     this._resTimer = 0;
     this.options = options;
 
@@ -164,6 +173,9 @@ export class Game3D {
     // каждый PointLight считается для всех материалов, поэтому их мало.
     LightBudget.dynamicLights = !!preset.dynamicLights;
     LightBudget.maxDynamic = preset.maxDynamic || 0;
+    // Дальность отрисовки существ: дальние модели не попадают в кадр,
+    // но логика движка их по-прежнему обрабатывает.
+    if (this.bridge) this.bridge.drawDistance = preset.drawDistance;
     // Фабрика рендерера позволяет подменять WebGL в автотестах и на сервере
     if (this.options.rendererFactory) {
       this.renderer = this.options.rendererFactory(THREE, preset);
@@ -186,7 +198,11 @@ export class Game3D {
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.05;
     renderer.shadowMap.enabled = preset.shadows;
-    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    // PCFSoft — 9 сэмплов на пиксель; на мобильном это заметно дороже. Мягкие
+    // тени оставляем только «Высокому» и «Ультре».
+    renderer.shadowMap.type = preset.softShadows === false
+      ? THREE.PCFShadowMap
+      : THREE.PCFSoftShadowMap;
     renderer.info.autoReset = true;
     this.renderer = renderer;
 
@@ -256,6 +272,15 @@ export class Game3D {
     r.shadowMap.needsUpdate = true;
     this.sky.setQuality(level);
     this.terrain.setQuality(level);
+    // Дальность отрисовки существ и бюджет света следуют за пресетом
+    if (this.bridge) this.bridge.drawDistance = preset.drawDistance;
+    LightBudget.dynamicLights = !!preset.dynamicLights;
+    LightBudget.maxDynamic = preset.maxDynamic || 0;
+    if (this.worldBuilder) {
+      const lamps = { low: 0, medium: 2, high: 4, ultra: 7 };
+      this.worldBuilder.maxLampLights = lamps[level] ?? 4;
+      this.worldBuilder.maxFireLights = level === 'low' ? 1 : 3;
+    }
     // Тени: пересоздаём карту нужного размера
     const sun = this.sky.sunLight || this.sky.sun;
     if (sun && sun.shadow) {
@@ -582,16 +607,19 @@ export class Game3D {
   _autoAdjustResolution() {
     if (!this.renderer) return;
     let changed = false;
-    if (this.fpsSmooth < 40 && this.renderScale > this._resScaleMin) {
-      this.renderScale = Math.max(this._resScaleMin, this.renderScale - 0.1);
+    // Просадка — режем разрешение быстрее, чем поднимаем: стабильные 30–45 FPS
+    // важнее периодических всплесков до 60 с провалами.
+    if (this.fpsSmooth < 45 && this.renderScale > this._resScaleMin) {
+      this.renderScale = Math.max(this._resScaleMin, this.renderScale - 0.12);
       changed = true;
-    } else if (this.fpsSmooth > 57 && this.renderScale < 1) {
-      this.renderScale = Math.min(1, this.renderScale + 0.05);
+    } else if (this.fpsSmooth > 55 && this.renderScale < 1) {
+      this.renderScale = Math.min(1, this.renderScale + 0.06);
       changed = true;
     }
     if (changed) {
       this._applyPixelRatio();
       this.resize();
+      this._resChanges = (this._resChanges || 0) + 1;
     }
   }
 
@@ -599,7 +627,7 @@ export class Game3D {
     const order = ['low', 'medium', 'high', 'ultra'];
     const idx = order.indexOf(this.quality3d);
     if (this._qualityPinned) return;
-    if (this.fpsSmooth < 32 && idx > 0) {
+    if (this.fpsSmooth < 42 && idx > 0) {
       this.applyQuality(order[idx - 1], false);
       this.onAutoQuality?.(this.quality3d);
     } else if (this.fpsSmooth > 57 && idx < order.length - 1 && !this._qualityPinned) {
@@ -700,7 +728,13 @@ export class Game3D {
       e.camera.shake *= 0.85;
     }
 
-    this._updateHud3D();
+    // HUD и мини-карта пересчитываются не каждый кадр: getNearbyInteractable
+    // перебирает здания/спасательных/транспорт, а это чистый CPU-налог.
+    this._uiTimer = (this._uiTimer || 0) + dt;
+    if (this._uiTimer > 0.2) {
+      this._uiTimer = 0;
+      this._updateHud3D();
+    }
   }
 
   _resolveWeather(e) {
@@ -719,7 +753,13 @@ export class Game3D {
 
   render(dt) {
     this.renderer.render(this.scene, this.camera);
-    this._drawOverlay();
+    // Мини-карта — отдельный 2D-канвас: 15 Гц достаточно, а каждый кадр
+    // рисовать атлас 108×108 незачем.
+    this._mapTimer = (this._mapTimer || 0) + (dt || 0.016);
+    if (this._mapTimer > 0.066) {
+      this._mapTimer = 0;
+      this._drawOverlay();
+    }
   }
 
   // ── Мини-карта 3D (canvas поверх) ───────────────────────────────────────
@@ -738,15 +778,15 @@ export class Game3D {
       try {
         if (!this._offCanvas) {
           this._offCanvas = document.createElement('canvas');
-          this._offCanvas.width = 128;
-          this._offCanvas.height = 128;
+          this._offCanvas.width = 108;
+          this._offCanvas.height = 108;
           this._offCtx = this._offCanvas.getContext('2d');
         }
         const prevCanvas = this.renderer2d.minimapCanvas;
         const prevCtx = this.renderer2d.mmCtx;
         this.renderer2d.minimapCanvas = this._offCanvas;
         this.renderer2d.mmCtx = this._offCtx;
-        this._offCtx.clearRect(0, 0, 128, 128);
+        this._offCtx.clearRect(0, 0, 108, 108);
         this.renderer2d.renderMinimap(this.engine);
         this.renderer2d.minimapCanvas = prevCanvas;
         this.renderer2d.mmCtx = prevCtx;

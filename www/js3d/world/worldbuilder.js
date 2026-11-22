@@ -626,20 +626,17 @@ export class WorldBuilder {
 
     // Дальность отрисовки инстансов: отсекаем далёкие секции
     const px = playerPos.x, pz = playerPos.z;
+    const _tmpMat = this._tmpMat || (this._tmpMat = new THREE.Matrix4());
     for (const inst of this.instanced) {
       const maxD = inst.opts.maxRenderDist || 0;
       if (!maxD) continue;
-      // расстояние до ближайшего объекта в списке (по сетке не нужно — грубая оценка)
-      let near = false;
-      const list = inst.list;
-      const step = list.length > 400 ? 9 : list.length > 120 ? 5 : 2;
-      for (let i = 0; i < list.length; i += step) {
-        const o = list[i];
-        const dx = o.x * WORLD_SCALE - px;
-        const dz = o.y * WORLD_SCALE - pz;
-        if (dx * dx + dz * dz < maxD * maxD * 1.6) { near = true; break; }
-      }
-      inst.mesh.visible = near;
+      // Батч нарезан по ячейкам (40 м), поэтому достаточно проверить его центр:
+      // раньше перебирали до 400 объектов на каждый батч каждый кадр.
+      const count = inst.mesh.count || 0;
+      inst.mesh.getMatrixAt(Math.floor(count / 2), _tmpMat);
+      const dx = _tmpMat.elements[12] - px;
+      const dz = _tmpMat.elements[14] - pz;
+      inst.mesh.visible = (dx * dx + dz * dz) < maxD * maxD;
     }
   }
 

@@ -285,7 +285,8 @@ if (scenario === 'forced2d') {
   skillBtn.dispatchEvent(new window.MouseEvent('mousedown', { bubbles: true }));
   check('Навык применяется из 3D-HUD', game.engine.skills.slash_wave.cd > 0,
     `откат: ${game.engine.skills.slash_wave.cd.toFixed(1)} с`);
-  g3.update(1 / 60);
+  // HUD обновляется не каждый кадр (0.2 с) — прокручиваем время, чтобы увидеть откат
+  for (let i = 0; i < 20; i++) g3.update(1 / 60);
   check('Кнопка навыка показывает откат', skillBtn.classList.contains('cooling'));
   check('Неизученный навык помечен замком',
     window.document.querySelector('[data-skill3d="ice_blast"]').classList.contains('locked'));
@@ -310,6 +311,86 @@ if (scenario === 'forced2d') {
   game.engine.timeOfDay = 0.5;
   g3.update(1 / 60);
   check('Дневное освещение корректно', g3.bridge.hero.lantern.intensity <= 0.05);
+
+  // ── Плавность движения героя ──────────────────────────────────────────
+  // Скорость должна нарастать ограниченно (accel), а не прыгать на максимум:
+  // именно мгновенное присваивание скорости давало «рывки» при ходьбе.
+  game.engine.player.x = 3160;
+  game.engine.player.y = 3240;
+  game.engine.player.vx = 0;
+  game.engine.player.vy = 0;
+  g3._stickMove = { x: 1, y: 0 };
+  let maxSpeedJump = 0;
+  let prevSpeed = 0;
+  for (let i = 0; i < 40; i++) {
+    game.engine.update(1 / 60, g3.buildInputState(1 / 60));
+    const sp = Math.hypot(game.engine.player.vx, game.engine.player.vy);
+    maxSpeedJump = Math.max(maxSpeedJump, Math.abs(sp - prevSpeed));
+    prevSpeed = sp;
+  }
+  check('Разгон героя плавный (нет рывка скорости)', maxSpeedJump < 40,
+    `макс. прирост ${maxSpeedJump.toFixed(1)} ед/с за кадр`);
+
+  // Торможение: скорость гаснет постепенно, а не обнуляется в кадре
+  g3._stickMove = { x: 0, y: 0 };
+  const speedBeforeStop = Math.hypot(game.engine.player.vx, game.engine.player.vy);
+  game.engine.update(1 / 60, g3.buildInputState(1 / 60));
+  const speedAfterStop = Math.hypot(game.engine.player.vx, game.engine.player.vy);
+  check('Торможение плавное (не обнуляется мгновенно)', speedAfterStop > 0 && speedAfterStop < speedBeforeStop,
+    `${speedBeforeStop.toFixed(0)} → ${speedAfterStop.toFixed(0)} ед/с`);
+  for (let i = 0; i < 40; i++) game.engine.update(1 / 60, g3.buildInputState(1 / 60));
+  check('Герой полностью останавливается', Math.hypot(game.engine.player.vx, game.engine.player.vy) < 1);
+
+  // Поворот корпуса: все четыре направления дают верный facingDir
+  const dirs = [[1, 0, 'right'], [-1, 0, 'left'], [0, -1, 'up'], [0, 1, 'down']];
+  let dirOk = true;
+  for (const [mx, my, expected] of dirs) {
+    game.engine.player.x = 3160; game.engine.player.y = 3240;
+    for (let i = 0; i < 12; i++) game.engine.update(1 / 60, { moveX: mx, moveY: my, sprintHeld: false, attackHeld: false });
+    if (game.engine.player.facingDir !== expected) dirOk = false;
+  }
+  check('Поворот на все 4 направления', dirOk, [...new Set(dirs.map((d) => d[2]))].join('/'));
+
+  // ── Спавн у костра ─────────────────────────────────────────────────────
+  const camp = game.engine.world.campfires?.[0] || { x: 3160, y: 3180 };
+  const spot = game.engine.findSpawnPoint(camp.x, camp.y);
+  const distFromFire = Math.hypot(spot.x - camp.x, spot.y - camp.y);
+  check('Точка спавна не внутри костра', distFromFire > 30, `смещение ${distFromFire.toFixed(0)} ед.`);
+  const inBuilding = game.engine.world.buildings.some((b) =>
+    Math.abs(spot.x - b.x) < b.colW * 0.5 && Math.abs(spot.y - (b.y - b.colH * 0.5)) < b.colH * 0.5);
+  const inProp = game.engine.world.props.some((pr) =>
+    Math.hypot(spot.x - pr.x, spot.y - pr.y) < (pr.radius || 10));
+  check('Точка спавна свободна от объектов', !inBuilding && !inProp, `здание:${inBuilding} проп:${inProp}`);
+
+  // Возрождение: герой стоит вертикально на земле, без анимации смерти
+  game.engine.player.hp = 1;
+  game.engine.player.dead = true;
+  game.engine.respawnPlayer();
+  g3._heroVis = null;
+  for (let i = 0; i < 60; i++) {
+    game.engine.update(1 / 60, g3.buildInputState(1 / 60));
+    g3.update(1 / 60);
+  }
+  const hero3 = g3.bridge.hero;
+  const groundAtHero = g3.terrain.heightAt3D(hero3.root.position.x, hero3.root.position.z);
+  check('После возрождения модель стоит вертикально', Math.abs(hero3.root.rotation.x) < 0.05,
+    `наклон ${hero3.root.rotation.x.toFixed(3)}`);
+  check('После возрождения герой на земле, не под ней',
+    hero3.root.position.y >= groundAtHero - 0.6 && hero3.root.position.y <= groundAtHero + 1.2,
+    `y=${hero3.root.position.y.toFixed(2)} земля=${groundAtHero.toFixed(2)}`);
+  check('После возрождения нет анимации смерти', hero3.state !== 'death', `состояние: ${hero3.state}`);
+  check('После возрождения нет остаточной скорости',
+    Math.hypot(game.engine.player.vx, game.engine.player.vy) < 1,
+    `v=${Math.hypot(game.engine.player.vx, game.engine.player.vy).toFixed(0)}`);
+
+  // ── Дальность отрисовки: далёкие существа не рисуются ────────────────
+  let farVisible = 0;
+  for (const [, c] of g3.bridge.bossCreatures) {
+    const dx = c.root.position.x - hero3.root.position.x;
+    const dz = c.root.position.z - hero3.root.position.z;
+    if (Math.hypot(dx, dz) > 120 && c.root.visible) farVisible++;
+  }
+  check('Далёкие боссы не рисуются', farVisible === 0, `видимых далёких: ${farVisible}`);
 
   // Длительная работа
   const t0 = Date.now();

@@ -16,6 +16,12 @@ const damp = (c, t, l, dt) => c + (t - c) * (1 - Math.exp(-l * dt));
 // 2D-координаты движка → 3D (world units)
 const to3 = (x, y, h = 0) => ({ x: x * WORLD_SCALE, z: y * WORLD_SCALE });
 
+// Дальность отрисовки боссов (3D-метры). Боссы далеко за ней не рисуются,
+// но логика движка продолжает их обрабатывать.
+const BOSS_DRAW_RADIUS = 90;
+// Дальность отрисовки обычных врагов (3D-метры)
+const ENEMY_DRAW_RADIUS = 70;
+
 export class World3D {
   constructor(engine, scene, terrain, effects, options = {}) {
     this.engine = engine;
@@ -120,13 +126,30 @@ export class World3D {
 
     // Направление взгляда: при атаке — на цель, иначе по движению
     let facing = p.facing || 0;
-    if (speed2D < 5 && p.attackAnimTimer <= 0) facing = this.heroFacing;
+    if (speed2D < 5 && p.attackAnimTimer <= 0 && typeof this.heroFacing === 'number') facing = this.heroFacing;
     // Перевод угла 2D (в плоскости XY) в 3D-поворот вокруг Y
     const facing3D = Math.PI / 2 - facing;
 
     // Скорость в 3D-метрах в секунду: 2D-скорость * масштаб мира
+    // Сглаженная позиция модели: логика игры двигает героя дискретными шагами
+    // (2D-мир, 6400/40 единиц на клетку), и без интерполяции это выглядело как
+    // рывки. Сглаживаем только визуальную позицию, физика остаётся точной.
+    const vis = this._heroVis || (this._heroVis = { x: hp.x, y: groundY, z: hp.z });
+    if (p.teleported || Math.hypot(hp.x - vis.x, hp.z - vis.z) > 30) {
+      // Рывок (возрождение, телепорт, быстрый переход) — не догоняем плавно
+      vis.x = hp.x; vis.y = groundY; vis.z = hp.z;
+      p.teleported = false;
+      this.heroFacing = undefined;
+    } else {
+      const k = 1 - Math.exp(-24 * dt);
+      vis.x += (hp.x - vis.x) * k;
+      vis.z += (hp.z - vis.z) * k;
+      // По вертикали сглаживаем ТОЛЬКО землю: высоту прыжка hero.js добавляет сам
+      vis.y += (groundY - vis.y) * (1 - Math.exp(-18 * dt));
+    }
+
     this.hero.update(dt, {
-      position: { x: hp.x, y: groundY, z: hp.z },
+      position: { x: vis.x, y: vis.y, z: vis.z },
       facing: facing3D,
       speed: speed2D * WORLD_SCALE,
       maxSpeed: maxSpeed * WORLD_SCALE,
@@ -179,6 +202,7 @@ export class World3D {
   _syncEnemies(dt) {
     const e = this.engine;
     const p = e.player;
+    const hp3 = to3(p.x, p.y);
     const alive = new Set();
 
     for (const enemy of e.enemies) {
@@ -202,6 +226,9 @@ export class World3D {
         vel3 = Math.hypot(pos.x - prev.x, pos.z - prev.z) / dt;
       }
       c._prevPos = { x: pos.x, z: pos.z };
+      // Дальние враги не рисуются: модель остаётся в сцене, но без draw call
+      const radius = (this.drawDistance && (this.drawDistance.enemy ?? ENEMY_DRAW_RADIUS)) || ENEMY_DRAW_RADIUS;
+      c.root.visible = (Math.hypot(pos.x - hp3.x, pos.z - hp3.z) < radius);
       const speed = Math.max(Math.hypot(enemy.vx || 0, enemy.vy || 0) * WORLD_SCALE, vel3);
       // 2D-угол (atan2(y, x)) → поворот вокруг оси Y в three.js
       const facing2D = Math.abs(speed) > 0.02
@@ -250,6 +277,7 @@ export class World3D {
   _syncBosses(dt) {
     const e = this.engine;
     const p = e.player;
+    const hp3 = to3(p.x, p.y);
     this.bossCreatures = this.bossCreatures || new Map();
     const alive = new Set();
 
@@ -288,12 +316,27 @@ export class World3D {
         attacking: boss.attackCd > 0.2 && boss.attackCd < 0.7
       });
 
+      // ── Дальность отрисовки боссов ──────────────────────────────────────
+      // В мире 23 босса, и раньше все они висели в сцене постоянно — каждый со
+      // своей моделью и PointLight. Ближайший мог быть в 170 м, но GPU честно
+      // рисовал все 23. Дальше DRAW_RADIUS прячем модель и гасим ауру.
+      const distM = Math.hypot(pos.x - hp3.x, pos.z - hp3.z);
+      // Дальность по пресету: эконом экономит и на боссах
+      const radius = (this.drawDistance && (this.drawDistance.boss ?? BOSS_DRAW_RADIUS)) || BOSS_DRAW_RADIUS;
+      const visible = distM < radius;
+      c.root.visible = visible;
+
       const light = this.bossLights.get(boss);
       if (light) {
-        // Цвет ауры зависит от фазы
-        const phaseColors = [0xff4d4d, 0xc084fc, 0x22d3ee];
-        light.color.setHex(phaseColors[Math.min(2, (boss.phase || 1) - 1)]);
-        light.intensity = 2.2 + Math.sin(this.time * 4) * 0.6;
+        light.visible = visible;
+        if (visible) {
+          // Цвет ауры зависит от фазы
+          const phaseColors = [0xff4d4d, 0xc084fc, 0x22d3ee];
+          light.color.setHex(phaseColors[Math.min(2, (boss.phase || 1) - 1)]);
+          light.intensity = 2.2 + Math.sin(this.time * 4) * 0.6;
+        } else {
+          light.intensity = 0;
+        }
       }
 
       const prevHp = this._lastBossHp.get(boss);

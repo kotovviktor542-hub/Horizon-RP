@@ -278,7 +278,13 @@ function loop(now) {
   ui.fpsValue = fpsSmooth;
 
   if (!engine.paused) {
-    engine.update(rawDt, input.getState());
+    // В 3D-режиме источник ввода — 3D-контроллер (стик #stick3d + клавиатура 3D).
+    // Раньше всегда брался 2D-стик, который в 3D скрыт: герой не двигался со
+    // стика, а клавиши дублировались. Теперь 2D-стик остаётся для 2D-режима.
+    const state = (mode3d && game3d && typeof game3d.buildInputState === 'function')
+      ? game3d.buildInputState(rawDt)
+      : input.getState();
+    engine.update(rawDt, state);
   }
 
   if (mode3d && game3d) {

@@ -14,6 +14,9 @@ import { encodeMapGrid, getTerrainAt, randomMapSeed } from './mapgen.js';
 
 const SAVE_KEY = 'horizon_rp_save_v2';
 
+// Экспоненциальное сглаживание, независимое от FPS
+const damp = (cur, target, lambda, dt) => cur + (target - cur) * (1 - Math.exp(-lambda * dt));
+
 // Автоподбор качества 3D под устройство: слабые телефоны не должны стартовать
 // с «высокого» пресета и ловить просадку в первые секунды. Решение запоминается,
 // чтобы игрок мог выбрать своё качество в настройках и оно не перебивалось.
@@ -82,6 +85,10 @@ export class GameEngine {
       vz: 0,
       vx: 0,
       vy: 0,
+      // Плавное движение: скорость нарастает/гаснет, а не прыгает мгновенно.
+      // accel — разгон (ед/с²), friction — торможение при отпущенном стике.
+      accel: 1200,
+      friction: 1600,
       radius: 14,
       facing: 0,
       facingDir: 'down', // 'down' | 'up' | 'left' | 'right'
@@ -1061,6 +1068,28 @@ export class GameEngine {
     }
   }
 
+  // Сглаженное направление ввода (не даёт дрожать на краях стика)
+  _moveDir = { ix: 0, iy: 0 };
+
+  // Плавный доворот корпуса к направлению движения (без мгновенных скачков).
+  // turnSpeed — максимальная угловая скорость в рад/с.
+  _turnTowards(target, dt, turnSpeed = 16) {
+    const p = this.player;
+    // Модель (и 3D-герой) доворачивается плавно, но логическое направление
+    // обновляем сразу: иначе после смены курса удар уходит в старую сторону,
+    // и это читается как «персонаж не поворачивается».
+    const prev = p.facing || 0;
+    this.updateFacingFromAngle(target);
+    // Плавный поворот оставляем как подсказку для 3D-анимации через _facingSmooth
+    let d = target - prev;
+    while (d > Math.PI) d -= Math.PI * 2;
+    while (d < -Math.PI) d += Math.PI * 2;
+    const step = turnSpeed * dt;
+    p._facingSmooth = Math.abs(d) > 2.09
+      ? target                                              // разворот — сразу
+      : prev + (Math.abs(d) <= step ? d : Math.sign(d) * step);
+  }
+
   updateFacingFromAngle(angle) {
     const p = this.player;
     p.facing = angle;
@@ -1205,13 +1234,38 @@ export class GameEngine {
     } else {
       if (mag > 0.05) {
         const spd = this.getMoveSpeed() * Math.min(1, mag);
+        // Нормализованное направление ввода (сглаживаем сам вектор, а не
+        // переписываем скорость) — так нет рывков на краях стика
         const nx = moveX / mag;
         const ny = moveY / mag;
-        p.vx = nx * spd;
-        p.vy = ny * spd;
-        if (p.attackAnimTimer <= 0) {
-          this.updateFacingFromAngle(Math.atan2(ny, nx));
+        // Первый кадр движения — сразу целевое направление (отклик не страдает),
+        // дальше сглаживаем только смену курса на краях стика.
+        if (this._moveDir.ix === 0 && this._moveDir.iy === 0) {
+          this._moveDir.ix = nx;
+          this._moveDir.iy = ny;
+        } else {
+          this._moveDir.ix = damp(this._moveDir.ix, nx, 22, dt);
+          this._moveDir.iy = damp(this._moveDir.iy, ny, 22, dt);
         }
+        let dx = this._moveDir.ix, dy = this._moveDir.iy;
+        const dl = Math.hypot(dx, dy);
+        if (dl < 0.0001) { dx = nx; dy = ny; } else { dx /= dl; dy /= dl; }
+
+        // Разгон: скорость нарастает от accel, тормозит от friction. Раньше
+        // скорость присваивалась мгновенно — отсюда «телепорт» на старте и
+        // дёрганье при смене направления.
+        const curSpeed = Math.hypot(p.vx, p.vy);
+        const target = spd;
+        const rate = target > curSpeed
+          ? (p.accel || 1200)
+          : (p.friction || 1600);
+        const next = target > curSpeed
+          ? Math.min(target, curSpeed + rate * dt)
+          : Math.max(target, curSpeed - rate * dt);
+        p.vx = dx * next;
+        p.vy = dy * next;
+
+        if (p.attackAnimTimer <= 0) this._turnTowards(Math.atan2(ny, nx), dt);
         p.x += p.vx * dt;
         p.y += p.vy * dt;
         this.resolveEntityObstacles(p, p.z > 14);
@@ -1219,8 +1273,19 @@ export class GameEngine {
           this.spawnDust(p.x, p.y + 8, '#cbd5e1', 2);
         }
       } else {
-        p.vx = 0;
-        p.vy = 0;
+        // Отпустили стик: скорость гаснет от friction, а не обнуляется в кадре
+        const v = Math.hypot(p.vx, p.vy);
+        if (v > 0.001) {
+          const k = Math.max(0, v - (p.friction || 1600) * dt) / v;
+          p.vx *= k;
+          p.vy *= k;
+          if (v > 8) {
+            p.x += p.vx * dt;
+            p.y += p.vy * dt;
+            this.resolveEntityObstacles(p, p.z > 14);
+          }
+        }
+        if (v < 8) { p.vx = 0; p.vy = 0; this._moveDir.ix = 0; this._moveDir.iy = 0; p._moved = false; }
       }
     }
 
@@ -1322,8 +1387,18 @@ export class GameEngine {
           const overlap = ent.radius - d;
           ent.x += (distX / d) * overlap;
           ent.y += (distY / d) * overlap;
+          // Гасим скорость в направлении стены: иначе герой «вжимается» и
+          // дёргается об угол, а анимация бега крутится на месте.
+          const nx2 = distX / d, ny2 = distY / d;
+          const vn = (ent.vx || 0) * nx2 + (ent.vy || 0) * ny2;
+          if (vn < 0) {
+            ent.vx = (ent.vx || 0) - nx2 * vn;
+            ent.vy = (ent.vy || 0) - ny2 * vn;
+          }
         } else {
           ent.y = rectCy + halfH + ent.radius + 1;
+          ent.vx = 0;
+          ent.vy = 0;
         }
       }
     }
@@ -1343,6 +1418,12 @@ export class GameEngine {
         const push = minD - d;
         ent.x += (dx / d) * push;
         ent.y += (dy / d) * push;
+        const nx2 = dx / d, ny2 = dy / d;
+        const vn = (ent.vx || 0) * nx2 + (ent.vy || 0) * ny2;
+        if (vn < 0) {
+          ent.vx = (ent.vx || 0) - nx2 * vn;
+          ent.vy = (ent.vy || 0) - ny2 * vn;
+        }
       }
     }
 
@@ -1360,6 +1441,12 @@ export class GameEngine {
         const push = minD - d;
         ent.x += (dx / d) * push;
         ent.y += (dy / d) * push;
+        const nx2 = dx / d, ny2 = dy / d;
+        const vn = (ent.vx || 0) * nx2 + (ent.vy || 0) * ny2;
+        if (vn < 0) {
+          ent.vx = (ent.vx || 0) - nx2 * vn;
+          ent.vy = (ent.vy || 0) - ny2 * vn;
+        }
       }
     }
   }
@@ -2907,6 +2994,53 @@ export class GameEngine {
     }
   }
 
+  // ── Безопасная точка появления у костра ─────────────────────────────────
+  // Раньше игрок ставился ровно в координаты костра (или на +42 по Y), то есть
+  // внутрь модели костра и его коллайдера: физика выталкивала героя рывком, а
+  // камера «вставала» в объект. Теперь ищем свободную точку по спирали и
+  // выталкиваем её из зданий/пропов/нод.
+  findSpawnPoint(cx, cy) {
+    const p = this.player;
+    const radius = (p && p.radius) || 14;
+    const free = (x, y) => {
+      if (x < 64 || y < 64 || x > this.world.width - 64 || y > this.world.height - 64) return false;
+      // Здания — прямоугольники
+      for (const b of this.world.buildings) {
+        const halfW = b.colW * 0.5 + radius;
+        const halfH = b.colH * 0.5 + radius;
+        const rectCy = b.y - b.colH * 0.5;
+        if (Math.abs(x - b.x) < halfW && Math.abs(y - rectCy) < halfH) return false;
+      }
+      // Пропы и твёрдые ноды
+      for (const pr of this.world.props) {
+        if (Math.hypot(x - pr.x, y - pr.y) < radius + (pr.radius || 10) + 2) return false;
+      }
+      for (const nd of this.world.nodes) {
+        if (!nd.solid || nd.respawnTimer > 0) continue;
+        if (Math.hypot(x - nd.x, y - nd.y) < radius + (nd.radius || 12) + 2) return false;
+      }
+      // Вода — не лучшее место для спавна
+      const terr = getTerrainAt(x, y);
+      if (terr.water && terr.deep) return false;
+      return true;
+    };
+
+    // Кострище занимает ~28 единиц — начинаем с 48 и расходимся по кольцам
+    const MIN_OFFSET = 48;
+    for (let ring = 0; ring < 6; ring++) {
+      const dist = MIN_OFFSET + ring * 32;
+      const steps = 8 + ring * 4;
+      for (let i = 0; i < steps; i++) {
+        const a = (i / steps) * Math.PI * 2 + ring * 0.4;
+        const x = cx + Math.cos(a) * dist;
+        const y = cy + Math.sin(a) * dist;
+        if (free(x, y)) return { x, y };
+      }
+    }
+    // Ничего не нашли — отдаём точку подальше по оси Y (лучше, чем внутрь костра)
+    return { x: cx, y: cy + MIN_OFFSET * 2 };
+  }
+
   respawnPlayer() {
     const p = this.player;
     let bestCamp = CAMPFIRES[0];
@@ -2916,10 +3050,23 @@ export class GameEngine {
       const d2 = dist2(p.x, p.y, c.x, c.y);
       if (d2 < bestD2) { bestD2 = d2; bestCamp = c; }
     }
-    p.x = bestCamp.x;
-    p.y = bestCamp.y + 42;
+    const spot = this.findSpawnPoint(bestCamp.x, bestCamp.y);
+    p.x = spot.x;
+    p.y = spot.y;
     p.z = 0;
     p.vz = 0;
+    p.vx = 0;
+    p.vy = 0;
+    // Поза сбрасывается: раньше после смерти флаг анимации смерти оставался,
+    // и герой возрождался «лёжа» с рывками.
+    p.animState = 'idle';
+    p.animTime = 0;
+    p.dead = false;
+    p.hurtAnimTimer = 0;
+    p.dashActive = 0;
+    p._moved = false;
+    this._moveDir.ix = 0;
+    this._moveDir.iy = 0;
     p.hp = p.maxHp;
     p.stamina = p.maxStamina;
     p.hunger = Math.max(70, p.hunger);
@@ -3621,9 +3768,13 @@ export class GameEngine {
     const camp = CAMPFIRES.find(c => c.id === campId);
     if (!camp) return false;
     this.player.vehicleId = null;
-    this.player.x = camp.x;
-    this.player.y = camp.y + 42;
+    const spot = this.findSpawnPoint(camp.x, camp.y);
+    this.player.x = spot.x;
+    this.player.y = spot.y;
     this.player.z = 0;
+    this.player.vz = 0;
+    this.player.vx = 0;
+    this.player.vy = 0;
     this.camera.x = this.player.x;
     this.camera.y = this.player.y;
     this.sound.play('skill');

@@ -416,10 +416,17 @@ export class Hero3D {
   // state: idle | walk | run | jump | attack | block | hurt | death
   setState(state) {
     if (this.state === state) return;
+    const wasDeath = this.state === 'death';
     this.state = state;
     this.stateTime = 0;
     if (state === 'attack') { this.attacking = true; this.attackPhase = 0; }
-    if (state === 'death') this.root.rotation.z = 0;
+    // Возрождение после смерти: убираем «лежачую» позу и возвращаем стойку
+    if (wasDeath && state !== 'death') {
+      this.root.rotation.x = 0;
+      this.root.rotation.z = 0;
+      this.deathTime = 0;
+      if (typeof this.baseY === 'number') this.root.position.y = this.baseY;
+    }
   }
 
   triggerAttack() {
@@ -433,10 +440,18 @@ export class Hero3D {
     const { position, facing, speed = 0, maxSpeed = 6, airborne = false, blocking = false, dead = false } = opts;
     this.stateTime += dt;
 
-    // Позиция и поворот
+    // Позиция: feet-on-ground. baseY — земля под героем (heightAt3D), сверху
+    // добавляется высота прыжка. Раньше смерть «заваливала» root по X, и после
+    // возрождения модель оставалась лежать — теперь наклон гасится, как только
+    // состояние перестаёт быть death.
     if (position) {
+      this.baseY = position.y;
       this.root.position.set(position.x, position.y, position.z);
       this.root.position.y += airborne ? (opts.jumpOffset || 0) : 0;
+    }
+    if (!dead && this.root.rotation.x !== 0) {
+      this.root.rotation.x = damp(this.root.rotation.x, 0, 10, dt);
+      if (Math.abs(this.root.rotation.x) < 0.002) this.root.rotation.x = 0;
     }
     if (typeof facing === 'number') {
       const target = facing;
@@ -542,7 +557,7 @@ export class Hero3D {
     } else if (this.state === 'death') {
       const k = Math.min(1, this.stateTime * 2.2);
       this.root.rotation.x = -k * Math.PI * 0.48;
-      this.root.position.y = (this.root.userData.baseY || this.root.position.y) - k * 0.1;
+      if (typeof this.baseY === 'number') this.root.position.y = this.baseY - k * 0.1;
       hipY = -k * 0.25;
       torsoTilt = 0.3 * k;
       legRSwing = 0.5 * k;
