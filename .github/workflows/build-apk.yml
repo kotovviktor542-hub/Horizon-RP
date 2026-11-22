@@ -56,6 +56,9 @@ jobs:
       - name: Run 3D scene tests
         run: npm run test:3d
 
+      - name: Run 3D end-to-end tests (jsdom)
+        run: npm run e2e3d
+
       - name: Generate & patch Capacitor Android project
         run: |
           npx cap add android

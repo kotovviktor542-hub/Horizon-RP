@@ -12,12 +12,17 @@
     "patch-android": "node tools/patch-android.js",
     "build:web": "node tools/generate-pixel-assets.js && node tools/generate-icons.js && node tools/check.js && node tools/check3d.js",
     "test:2d": "node tools/check.js",
-    "test:3d": "node tools/check3d.js"
+    "test:3d": "node tools/check3d.js",
+    "e2e3d": "node tools/e2e3d.mjs",
+    "test:all": "node tools/check.js && node tools/check3d.js && node tools/e2e3d.mjs"
   },
   "dependencies": {
     "@capacitor/android": "^6.2.0",
     "@capacitor/cli": "^6.2.0",
     "@capacitor/core": "^6.2.0",
     "three": "^0.187.0"
+  },
+  "devDependencies": {
+    "jsdom": "^31.0.1"
   }
 }
