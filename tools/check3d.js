@@ -1,7 +1,7 @@
 // VEXMORA 3D — headless-проверки трёхмерных сцен без WebGL.
 // Сцена собирается в Node с минимальным DOM-шимом, рендерится через SVGRenderer,
 // а мост «движок ↔ 3D» проверяется на настоящем GameEngine.
-// Запуск: node tools/check3d.js
+// Запуск: node tools/check3d.js  (VEXMORA_NO_CANVAS=1 — без нативного canvas)
 //
 // В среде без нативного canvas (CI без @napi-rs/canvas) проверки выполняются
 // в упрощённом режиме: сцены строятся, анимации прогоняются, SVG-вывод пропускается.
@@ -16,10 +16,12 @@ const OUT = path.join(ROOT, 'tools', '.out');
 fs.mkdirSync(OUT, { recursive: true });
 
 let createCanvas = null;
-try {
-  ({ createCanvas } = await import('@napi-rs/canvas'));
-} catch {
-  createCanvas = null;   // режим без растеризации
+if (!process.env.VEXMORA_NO_CANVAS) {
+  try {
+    ({ createCanvas } = await import('@napi-rs/canvas'));
+  } catch {
+    createCanvas = null;   // режим без растеризации (CI без нативного canvas)
+  }
 }
 
 // Минимальный DOM-шим для three.js (canvas-текстуры и SVG-вывод)
@@ -99,7 +101,7 @@ const { Effects3D } = await import(`${ROOT}/www/js3d/core/effects.js`);
 const { World3D } = await import(`${ROOT}/www/js3d/game/worldbridge.js`);
 const { createWorld } = await import(`${ROOT}/www/js/world.js`);
 const { GameEngine } = await import(`${ROOT}/www/js/engine.js`);
-const { ENEMIES, BOSSES } = await import(`${ROOT}/www/js/data.js`);
+const { ENEMIES, BOSSES, CAMPFIRES } = await import(`${ROOT}/www/js/data.js`);
 
 let pass = 0, fail = 0;
 const ok = (name, cond, extra = '') => {
@@ -107,8 +109,8 @@ const ok = (name, cond, extra = '') => {
   else { fail++; console.log(`  \u2717 ${name}${extra ? ' \u2014 ' + extra : ''}`); }
 };
 
-// ── Сцена ────────────────────────────────────────────────────────────────
 console.log('=== VEXMORA 3D: headless-проверка сцен ===');
+// ── Сцена ────────────────────────────────────────────────────────────────
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(62, 1280 / 720, 0.1, 900);
 
@@ -118,7 +120,8 @@ sky.setQuality('high');
 const effects = new Effects3D(scene);
 
 // 1. Небо и освещение
-ok('Небо: купол, солнце, луна, звёзды созданы', !!sky.sky && !!sky.sun && !!sky.stars, `звёзд: ${sky.stars?.geometry?.attributes?.position?.count ?? 0}`);
+ok('Небо: купол, солнце, звёзды созданы', !!sky.sky && !!sky.sun && !!sky.stars,
+  `звёзд: ${sky.stars?.geometry?.attributes?.position?.count ?? 0}`);
 sky.update(0.016, new THREE.Vector3(0, 0, 0), 0.5, 'clear', 1);
 const noonSun = sky.sun ? sky.sun.intensity : 0;
 sky.update(0.016, new THREE.Vector3(0, 0, 0), 0.0, 'clear', 1);
@@ -135,13 +138,11 @@ terrain.update(start, 0.016, 'high');
 ok('Ландшафт: чанки построены', terrain.chunks.size >= 20, `чанков: ${terrain.chunks.size}`);
 const verts = [...terrain.chunks.values()].reduce((n, m) => n + m.geometry.attributes.position.count, 0);
 ok('Ландшафт: геометрия с высотами', verts > 5000, `вершин: ${verts}`);
-const waterOK = !!terrain.waterMesh;
-ok('Вода: плоскость с шейдером', waterOK);
+ok('Вода: плоскость с шейдером', !!terrain.waterMesh);
 const hAtSpawn = terrain.heightAt3D(start.x, start.z);
 ok('Высота поверхности вычисляется', Number.isFinite(hAtSpawn), `y=${hAtSpawn.toFixed(2)}`);
 
 // 3. Мир: растительность, здания, транспорт
-const { CAMPFIRES } = await import(`${ROOT}/www/js/data.js`);
 const builder = new WorldBuilder(scene, world, world.map, terrain, 'high', { campfires: CAMPFIRES });
 ok('Растительность: инстансы созданы', builder.instanced.length >= 3, `батчей: ${builder.instanced.length}`);
 let instances = 0;
@@ -163,7 +164,6 @@ let heroVerts = 0;
 hero.root.traverse(o => { if (o.isMesh) heroVerts += o.geometry.attributes.position.count; });
 ok('Герой: детализированная модель', heroVerts > 2000, `вершин: ${heroVerts}`);
 
-// Анимации: прогоняем все состояния и проверяем изменение углов костей
 const states = ['idle', 'walk', 'run', 'jump', 'block', 'hurt', 'death'];
 let animated = true;
 for (const st of states) {
@@ -175,14 +175,11 @@ for (const st of states) {
       maxSpeed: 6, airborne: st === 'jump', blocking: st === 'block', dead: st === 'death'
     });
   }
-  if (st === 'walk' || st === 'run') {
-    if (Math.abs(hero.parts.legR.hip.rotation.x - before) < 0.01) animated = false;
-  }
+  if ((st === 'walk' || st === 'run') && Math.abs(hero.parts.legR.hip.rotation.x - before) < 0.01) animated = false;
 }
 hero.setState('idle');
 ok('Анимации: ходьба/бег двигают конечности', animated);
 
-// Атака: три удара комбо
 hero.triggerAttack();
 let attackMoved = false;
 const axeBefore = hero.parts.armR.shoulder.rotation.x;
@@ -192,7 +189,6 @@ for (let i = 0; i < 30; i++) {
 }
 ok('Анимация атаки: замах и удар', attackMoved);
 
-// Оружие всех категорий
 for (const cat of ['melee', 'bow', 'magic', 'axe', 'dagger', 'spear']) {
   const w = Weapon3D.build(cat, 'legendary');
   let n = 0;
@@ -210,7 +206,7 @@ for (const kind of enemyKinds) {
   c.root.traverse(o => { if (o.isMesh) meshes++; });
   enemyMeshTotal += meshes;
   if (meshes < 4) { enemyOK = false; console.log(`    ! ${kind}: ${meshes} мешей`); }
-  for (let i = 0; i < 12; i++) c.update(0.016, { position: { x: i * 0.1, y: 0, z: 0 }, facing: 0.5, speed: 120 });
+  for (let i = 0; i < 12; i++) c.update(0.016, { position: { x: i * 0.1, y: 0, z: 0 }, facing: 0.5, speed: 1.2 });
   c.dispose();
 }
 ok('Враги: 3D-модели с анимацией', enemyOK, `${enemyKinds.length} видов, ${enemyMeshTotal} мешей`);
@@ -225,7 +221,7 @@ for (const id of bossIds) {
   c.root.traverse(o => { if (o.isMesh) meshes++; });
   bossMeshTotal += meshes;
   if (meshes < 8) { bossOK = false; console.log(`    ! ${id}: ${meshes} мешей`); }
-  c.update(0.016, { position: { x: 0, y: 0, z: 0 }, facing: 0, speed: 60 });
+  c.update(0.016, { position: { x: 0, y: 0, z: 0 }, facing: 0, speed: 0.6 });
   c.dispose();
 }
 ok('Боссы: модели крупнее обычных врагов', bossOK, `${bossIds.length} боссов, ${bossMeshTotal} мешей`);
@@ -254,27 +250,16 @@ try {
 } catch (err) {
   console.log('    ! SVG render error:', err.message);
 }
-ok('SVG-рендер сцены выполнен', !!svg && svg.length > 100, svg ? `элементов в SVG: ${renderer.domElement.childNodes.length}` : 'нет вывода');
+ok('SVG-рендер сцены выполнен', !!svg && svg.length > 100,
+  svg ? `элементов в SVG: ${renderer.domElement.childNodes.length}` : 'нет вывода');
 
 if (svg) {
   fs.writeFileSync(path.join(OUT, 'scene.svg'), svg);
-  // Растеризация SVG в PNG через canvas (упрощённо: фоновый градиент + контуры)
-  const png = createCanvas ? createCanvas(1280, 720) : null;
-  if (png) {
-    const ctx = png.getContext('2d');
-    const grad = ctx.createLinearGradient(0, 0, 0, 720);
-    grad.addColorStop(0, '#0b1220');
-    grad.addColorStop(1, '#1a2438');
-    ctx.fillStyle = grad;
-    ctx.fillRect(0, 0, 1280, 720);
-  }
-  // Считаем количество полигонов в SVG — реальная отрисовка сцены
   const polys = (svg.match(/<path/g) || []).length;
   ok('В сцене присутствуют полигоны', polys > 200, `path: ${polys}`);
-  if (png) fs.writeFileSync(path.join(OUT, 'preview.png'), png.toBuffer('image/png'));
 }
 
-// 9. Статистика производительности
+// 9. Производительность
 const t0 = performance.now();
 for (let i = 0; i < 100; i++) {
   hero.update(0.016, { position: { x: 0, y: 0, z: 0 }, facing: i * 0.01, speed: i % 5, maxSpeed: 6 });
@@ -286,7 +271,6 @@ const fxMs = (performance.now() - t1) / 200;
 ok('Производительность героя', heroMs < 4, `${heroMs.toFixed(2)} мс/кадр`);
 ok('Производительность эффектов', fxMs < 6, `${fxMs.toFixed(2)} мс/кадр`);
 
-
 // ── Мост «движок ↔ 3D» на настоящем GameEngine ──────────────────────────
 {
 console.log('--- Мост движок ↔ 3D-сцена ---');
@@ -294,23 +278,22 @@ const sound = { enabled: false, play() {}, unlock() {} };
 const engine = new GameEngine(sound);
 engine.paused = false;
 
-const scene = new THREE.Scene();
-const camera = new THREE.PerspectiveCamera(62, 1280 / 720, 0.1, 900);
-const terrain = new TerrainManager(scene, engine.world.map, 'high');
-const effects = new Effects3D(scene);
-const bridge = new World3D(engine, scene, terrain, effects, { quality: 'high' });
+const scene2 = new THREE.Scene();
+const camera2 = new THREE.PerspectiveCamera(62, 1280 / 720, 0.1, 900);
+const terrain2 = new TerrainManager(scene2, engine.world.map, 'high');
+const effects2 = new Effects3D(scene2);
+const bridge = new World3D(engine, scene2, terrain2, effects2, { quality: 'high' });
 
 const startTile = { x: engine.player.x * WORLD_SCALE, z: engine.player.y * WORLD_SCALE };
-terrain.update(startTile, 0.016, 'high');
+terrain2.update(startTile, 0.016, 'high');
 
-// Разгоняем игру: пусть враги подойдут, герой побегает и подерётся
 for (let i = 0; i < 240; i++) {
   engine.update(1 / 60, { moveX: 1, moveY: 0.3 });
-  if (i === 100) { engine.performAttack(); }
-  if (i === 140) { engine.performHeavyAttack(); }
-  if (i === 180) { engine.jump(); }
-  bridge.update(1 / 60, camera);
-  effects.update(1 / 60, camera, { x: startTile.x, y: 0, z: startTile.z });
+  if (i === 100) engine.performAttack();
+  if (i === 140) engine.performHeavyAttack();
+  if (i === 180) engine.jump();
+  bridge.update(1 / 60, camera2);
+  effects2.update(1 / 60, camera2, { x: startTile.x, y: 0, z: startTile.z });
 }
 
 const heroPos = bridge.hero.root.position;
@@ -330,71 +313,62 @@ ok('Враги имеют полноценные 3D-модели', meshCount >= 
 ok('Боссы получили 3D-модели', (bridge.bossCreatures?.size || 0) === (engine.bossEntities?.length || 0),
   `моделей ${bridge.bossCreatures?.size || 0} / боссов ${engine.bossEntities?.length || 0}`);
 
-// Урон врагу: проверяем вспышку и частицы
 const target = engine.enemies[0];
 if (target) {
   const before = target.hp;
   engine.damageEnemy(target, 40);
-  bridge.update(1 / 60, camera);
+  bridge.update(1 / 60, camera2);
   ok('Урон врагу отражён в 3D', target.hp < before, `HP ${before} → ${target.hp}`);
 }
 
-// Смерть врага: модель должна быть помечена на удаление
 const victim = engine.enemies[0];
 if (victim) {
   engine.damageEnemy(victim, 999999);
-  bridge.update(1 / 60, camera);
+  bridge.update(1 / 60, camera2);
   const model = bridge.creatures.get(victim);
   ok('Смерть врага запускает 3D-анимацию', !model || model.dead);
 }
 
-// Трофеи: подобранные/новые дропы становятся 3D-объектами
 engine.drops.push({ x: engine.player.x + 20, y: engine.player.y, kind: 'coin', amount: 25, life: 60 });
 engine.drops.push({ x: engine.player.x + 30, y: engine.player.y, kind: 'resource', resId: 'wood', amount: 2, life: 60 });
-bridge.update(1 / 60, camera);
+bridge.update(1 / 60, camera2);
 ok('Трофеи отображаются в 3D', bridge.dropMeshes.size >= 2, `моделей трофеев: ${bridge.dropMeshes.size}`);
 
-// Снаряды
 engine.projectiles.push({
   x: engine.player.x + 40, y: engine.player.y, vx: 300, vy: 0,
   damage: 20, life: 1, friendly: true, radius: 8, magic: true, kind: 'magic'
 });
-bridge.update(1 / 60, camera);
+bridge.update(1 / 60, camera2);
 ok('Снаряды визуализируются', bridge.projectileMeshes.size >= 1);
 
-// Оружие: смена экипировки меняет модель в руке
 const beforeWeapon = bridge.hero.weaponMesh;
 engine.inventory.weapons = ['sword', 'bow', 'magic_staff'];
 engine.inventory.equippedWeapon = 'bow';
-bridge.update(1 / 60, camera);
+bridge.update(1 / 60, camera2);
 ok('Смена оружия меняет 3D-модель', bridge.hero.weaponMesh !== beforeWeapon);
 engine.inventory.equippedWeapon = 'magic_staff';
-bridge.update(1 / 60, camera);
+bridge.update(1 / 60, camera2);
 ok('Магический посох в руке', !!bridge.hero.weaponMesh);
 
-// Броня
 engine.ownedArmors = ['set_iron'];
 engine.equippedArmor = 'set_iron';
-bridge.update(1 / 60, camera);
+bridge.update(1 / 60, camera2);
 ok('Экипировка брони видна на модели', bridge.hero.parts.helmet.visible && bridge.hero.parts.armor.visible);
 
-// Тяжёлая атака — новая механика движка
 engine.player.stamina = 100;
 engine.player.attackTimer = 0;
 const heavyOK = engine.performHeavyAttack();
 ok('Тяжёлая атака работает', heavyOK === true && engine.player.stamina < 100, `выносливость: ${engine.player.stamina.toFixed(0)}`);
 
-// Производительность кадра
-const t0 = performance.now();
+const t2 = performance.now();
 for (let i = 0; i < 120; i++) {
   engine.update(1 / 60, { moveX: 0.4, moveY: 0.4 });
-  bridge.update(1 / 60, camera);
-  effects.update(1 / 60, camera, { x: startTile.x, y: 0, z: startTile.z });
+  bridge.update(1 / 60, camera2);
+  effects2.update(1 / 60, camera2, { x: startTile.x, y: 0, z: startTile.z });
 }
-const ms = (performance.now() - t0) / 120;
+const ms = (performance.now() - t2) / 120;
 ok('Производительность кадра (логика + мост)', ms < 12, `${ms.toFixed(2)} мс/кадр`);
 
-// Сохранение с новыми настройками 3D
 engine.settings.quality3d = 'ultra';
 engine.saveGame(true);
 engine.settings.quality3d = 'low';
@@ -403,8 +377,7 @@ ok('Сохранение хранит качество 3D', engine.settings.qual
 
 bridge.dispose();
 ok('Очистка сцены без ошибок', true);
-
-
 }
+
 console.log(`\nИТОГ: ${pass}/${pass + fail} проверок 3D-сцен и моста успешно${fail ? `, провалено: ${fail}` : ''}`);
 if (fail) process.exitCode = 1;
