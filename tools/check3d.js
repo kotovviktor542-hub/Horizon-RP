@@ -505,35 +505,64 @@ ok('Очистка сцены без ошибок', true);
 }
 }
 
-// ── Камера: направление поворота и сглаживание ─────────────────────────
-// Регрессия: в camera.js стоял минус перед dx, и палец влево вращал камеру
-// вправо. Проверяем знак yaw для обоих путей ввода и то, что поворот
-// догоняет цель постепенно, а не одним скачком.
+// ── Камера: направление взгляда и сглаживание ──────────────────────────
+// Проверяем не знак yaw (он обратен повороту взгляда: камера стоит ПЕРЕД
+// героем), а то, куда реально уезжает сцена на экране. Именно на знаке yaw
+// можно обмануться и «починить» инверсию в обратную сторону.
 {
   const THREE = await import('three');
   const { ThirdPersonCamera } = await import(`${ROOT}/www/js3d/core/camera.js`);
-  const mkCam = () => new ThirdPersonCamera(new THREE.PerspectiveCamera(62, 1, 0.1, 1000), shimElement('canvas'));
   const heroPos = { x: 0, y: 0, z: 0 };
-  const step = (c, n = 10) => { for (let i = 0; i < n; i++) c.update(1 / 60, heroPos, () => 0, {}); };
+  const mkCam = () => new ThirdPersonCamera(new THREE.PerspectiveCamera(62, 16 / 9, 0.1, 1000), shimElement('canvas'));
 
-  const left = mkCam();
-  left.rotate(-0.2, 0);                    // палец влево
-  step(left);
-  const right = mkCam();
-  right.rotate(0.2, 0);                    // палец вправо
-  step(right);
-  ok('Камера: палец влево вращает камеру влево', left.yaw < -0.01, `yaw ${left.yaw.toFixed(3)}`);
-  ok('Камера: палец вправо вращает камеру вправо', right.yaw > 0.01, `yaw ${right.yaw.toFixed(3)}`);
-  ok('Камера: горизонталь не инвертирована', Math.sign(left.yaw) === -Math.sign(right.yaw));
+  // Один и тот же жест, что делает игра: dx/dy в пикселях → touchmove-события
+  const swipe = (cam, dxPix, dyPix, steps = 12) => {
+    for (let i = 0; i < steps; i++) {
+      cam.rotate(-dxPix / steps * 0.0042, dyPix / steps * 0.0032);
+      cam.update(1 / 60, heroPos, () => 0, {});
+    }
+  };
+  const landmark = new THREE.Vector3(0, 1.35, -40);
+  const screenX = (cam) => {
+    cam.camera.updateMatrixWorld();
+    cam.camera.updateProjectionMatrix();
+    return landmark.clone().project(cam.camera).x;
+  };
 
+  const base = mkCam(); base.update(1 / 60, heroPos, () => 0, {});
+  const x0 = screenX(base);
+
+  const right = mkCam(); right.update(1 / 60, heroPos, () => 0, {}); swipe(right, 40, 0);
+  const rightX = screenX(right) - x0;
+  ok('Камера: палец вправо поворачивает взгляд вправо', rightX < 0,
+    `сцена уехала по X на ${rightX.toFixed(3)} (влево = взгляд вправо)`);
+
+  const left = mkCam(); left.update(1 / 60, heroPos, () => 0, {}); swipe(left, -40, 0);
+  const leftX = screenX(left) - x0;
+  ok('Камера: палец влево поворачивает взгляд влево', leftX > 0,
+    `сцена уехала по X на ${leftX.toFixed(3)}`);
+  ok('Камера: горизонталь не инвертирована', Math.abs(rightX + leftX) < 0.01 && rightX !== 0);
+
+  const up = mkCam(); up.update(1 / 60, heroPos, () => 0, {});
+  const upPitch = up.pitch; swipe(up, 0, -40);
+  ok('Камера: палец вверх поднимает взгляд', up.pitch < upPitch,
+    `pitch ${upPitch.toFixed(2)} → ${up.pitch.toFixed(2)}`);
+
+  const down = mkCam(); down.update(1 / 60, heroPos, () => 0, {});
+  const downPitch = down.pitch; swipe(down, 0, 40);
+  ok('Камера: палец вниз опускает взгляд', down.pitch > downPitch,
+    `pitch ${downPitch.toFixed(2)} → ${down.pitch.toFixed(2)}`);
+
+  // Сглаживание: за кадр догоняется только часть накопленного хода
   const smooth = mkCam();
-  smooth.rotate(0.5, 0);
+  smooth.rotate(-0.5, 0);
   smooth.update(1 / 60, heroPos, () => 0, {});
-  const firstFrame = smooth.yaw;
+  const firstFrame = Math.abs(smooth.yaw);
   ok('Камера: поворот сглажен (за кадр не весь накопленный ход)',
     firstFrame > 0 && firstFrame < 0.5, `за кадр ${firstFrame.toFixed(3)} из 0.500`);
-  step(smooth, 20);
-  ok('Камера: поворот доводится до цели', Math.abs(smooth.yaw - 0.5) < 0.02, `итог ${smooth.yaw.toFixed(3)}`);
+  for (let i = 0; i < 30; i++) smooth.update(1 / 60, heroPos, () => 0, {});
+  ok('Камера: поворот доводится до цели', Math.abs(Math.abs(smooth.yaw) - 0.5) < 0.02,
+    `итог ${smooth.yaw.toFixed(3)}`);
 }
 
 // ── Коллизии: стволы деревьев и стены домов ────────────────────────────

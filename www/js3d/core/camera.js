@@ -49,9 +49,10 @@ export class ThirdPersonCamera {
       const dy = y - this.lastY;
       this.lastX = x;
       this.lastY = y;
-      // Ведём мышь/палец вправо → камера поворачивает вправо (yaw растёт).
-      // Раньше здесь стоял минус: горизонталь была инвертирована.
-      this.rotate(dx * this.sensitivity * this.sensitivityMultiplier,
+      // Палец вправо (dx>0) → взгляд ВПРАВО: камера стоит ПЕРЕД героем и смотрит
+      // на него, поэтому уменьшению yaw соответствует поворот взгляда вправо.
+      // Палец вверх (dy<0) → камера опускается и взгляд поднимается (pitch↓).
+      this.rotate(-dx * this.sensitivity * this.sensitivityMultiplier,
         dy * this.sensitivity * this.sensitivityMultiplier);
     };
     el.addEventListener('pointermove', (e) => {
