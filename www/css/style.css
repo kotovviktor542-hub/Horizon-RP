@@ -1284,6 +1284,41 @@ body.mode3d #hud .hud-bars-card { backdrop-filter: blur(4px); }
   .hud3d-top-right { top: 8px; right: 8px; }
 }
 
+/* ── Раскладка HUD в 3D: мини-карта справа, полосы по центру, меню слева ──
+   В 2D панель полос и мини-карта стоят в одном ряду .hud-top; в 3D мини-карта
+   ушла в #hud3d, поэтому ряд перестраиваем, иначе кнопки меню налезают на полосы. */
+body.mode3d #hud { z-index: 14; }
+body.mode3d .hud-top {
+  align-items: flex-start;
+  padding-top: 6px;
+  padding-right: calc(12px + 108px + 10px);   /* место под мини-карту 3D */
+}
+body.mode3d .hud-bars-card { max-width: 300px; }
+body.mode3d .hud-center-info {
+  position: absolute;
+  top: calc(6px + env(safe-area-inset-top));
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: 240px;
+}
+body.mode3d .hud-right-top { display: none; }          /* заменён мини-картой 3D */
+body.mode3d .hud3d-menu {
+  top: 8px;
+  left: 12px;
+  right: auto;
+  flex-direction: row;
+  flex-wrap: wrap;
+  max-width: 132px;
+}
+body.mode3d .icon-btn3d { width: 40px; height: 40px; font-size: 18px; }
+
+@media (max-width: 620px) {
+  body.mode3d .hud-bars-card { max-width: 148px; }
+  body.mode3d .hud-center-info { max-width: 132px; top: auto; bottom: 8px; }
+  body.mode3d .hud3d-menu { gap: 4px; max-width: 120px; }
+  body.mode3d .icon-btn3d { width: 36px; height: 36px; font-size: 16px; }
+}
+
 /* 3D-холст: отдельный canvas, чтобы WebGL-контекст не конфликтовал с 2D */
 #game-canvas-3d {
   position: fixed;
