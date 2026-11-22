@@ -1326,6 +1326,17 @@ body.mode3d #hud .hud-bars-card { backdrop-filter: blur(4px); }
   transition: width 0.35s ease;
 }
 #loading3d .load3d-hint { font-size: 13px; color: #8fa4c2; }
+#loading3d .load3d-skip {
+  margin-top: 6px;
+  padding: 10px 22px;
+  border-radius: 10px;
+  border: 1px solid rgba(140, 180, 240, 0.5);
+  background: #22304a;
+  color: #e7eefb;
+  font-size: 15px;
+  cursor: pointer;
+}
+#loading3d .load3d-skip:active { transform: scale(0.97); }
 
 /* Экран ошибки WebGL */
 #nolwebgl {

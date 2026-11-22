@@ -55,12 +55,38 @@ export class Game3D {
     this._resTimer = 0;
     this.options = options;
 
+    if (options.deferredInit) {
+      // Инициализация будет вызвана через initStaged() из main.js
+      this._deferred = true;
+      return;
+    }
     this._initRenderer();
     this._initScene();
     this._initWorld();
     this._initUI();
     this._bindResize();
   }
+
+  // Этапная инициализация для экрана загрузки: тяжёлая сборка мира идёт
+  // по шагам, между ними браузер успевает перерисовать прогресс.
+  async initStaged(onProgress = () => {}) {
+    onProgress(20, 'Подготовка рендерера…');
+    await Promise.resolve();
+    this._initRenderer();
+    onProgress(40, 'Создание неба и света…');
+    await Promise.resolve();
+    this._initScene();
+    onProgress(62, 'Генерация ландшафта и биомов…');
+    await Promise.resolve();
+    this._initWorld();
+    onProgress(88, 'Интерфейс и управление…');
+    await Promise.resolve();
+    this._initUI();
+    this._bindResize();
+    onProgress(100, 'Готово');
+    return this;
+  }
+
 
   // ── Рендерер ───────────────────────────────────────────────────────────
   _initRenderer() {

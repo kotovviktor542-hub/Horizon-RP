@@ -16,7 +16,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..', 'www');
 
 const scenarioArg = process.argv[2];
-const SCENARIOS = ['main', 'forced2d', 'forced3d'];
+const SCENARIOS = ['boot', 'main', 'forced2d', 'forced3d'];
 
 // Каждый сценарий — отдельный процесс: main.js кэшируется как ES-модуль,
 // а window/document подменяются, поэтому в одном процессе сценарии не уживаются.
@@ -43,6 +43,9 @@ const scenario = scenarioArg;
 const url = scenario === 'forced2d' ? 'http://localhost/?mode=2d'
   : scenario === 'forced3d' ? 'http://localhost/?mode=3d'
   : 'http://localhost/';
+
+// Сценарий boot проверяет только стартовый экран — до нажатия «Новая игра»
+const BOOT_ONLY = scenario === 'boot';
 
 const html = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
 const dom = new JSDOM(html, { url, pretendToBeVisual: true });
@@ -123,6 +126,40 @@ const game = window.__vexmoraGame;
 if (!game) {
   console.log('FAIL: игра не инициализирована (window.__vexmoraGame отсутствует)');
   process.exit(2);
+}
+
+if (BOOT_ONLY) {
+  await new Promise((r) => setTimeout(r, 700));
+  const doc = window.document;
+  const loading = doc.getElementById('loading3d');
+  const skip = doc.getElementById('btn3d-skip');
+  check('Титульный экран активен', !doc.getElementById('title-screen').classList.contains('hidden'));
+  check('Оверлей загрузки не перекрывает титул', loading.style.display === 'none',
+    `display=${loading.style.display || '(по умолчанию block)'}`);
+  check('Кнопка «Играть в 2D» скрыта до старта', skip.classList.contains('hidden'));
+
+  // Во время старта прогресс должен быть виден
+  doc.getElementById('btn-new-game').dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+  await new Promise((r) => setTimeout(r, 40));
+  check('При старте показывается прогресс', loading.style.display === 'flex',
+    `«${doc.getElementById('load3d-hint').textContent}»`);
+  await new Promise((r) => setTimeout(r, 2500));
+  check('После старта прогресс скрыт', loading.style.display === 'none' && loading.classList.contains('done'));
+  check('Игра запущена в 3D', doc.body.classList.contains('mode3d') && game.engine.paused === false);
+
+  // Долгая загрузка → предлагаем 2D и запускаем игру
+  game.debug.showLoading();
+  await new Promise((r) => setTimeout(r, 300));
+  check('Оверлей показан по запросу', loading.style.display === 'flex');
+  await new Promise((r) => setTimeout(r, 6300));
+  check('Через 6 с появляется кнопка «Играть в 2D»', !skip.classList.contains('hidden'),
+    doc.getElementById('load3d-hint').textContent);
+  game.debug.hideLoading();
+  check('Скрытие оверлея убирает кнопку', skip.classList.contains('hidden'));
+
+  check('Без ошибок в консоли', errors.length === 0, errors.slice(0, 2).join(' | '));
+  console.log(ok && errors.length === 0 ? '\nE2E 3D (boot) OK' : '\nE2E 3D (boot) FAILED');
+  process.exit(ok && errors.length === 0 ? 0 : 1);
 }
 
 window.document.getElementById('btn-new-game')

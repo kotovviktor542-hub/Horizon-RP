@@ -79,6 +79,45 @@ const webglAvailable = hasWebGL();
 let game3d = null;
 let mode3d = false;
 
+// Оверлей загрузки показываем ТОЛЬКО на время старта игры: если он висит
+// на титульном экране, он перекрывает кнопки «Новая игра»/«Продолжить».
+let loadingVisible = false;
+// Даёт браузеру перерисовать оверлей загрузки между тяжёлыми этапами:
+// без этого экран «замирает» на одном проценте, хотя работа идёт.
+const nextFrame = () => new Promise((resolve) => {
+  if (typeof requestAnimationFrame === 'function') requestAnimationFrame(() => resolve());
+  else setTimeout(resolve, 0);
+});
+
+let skipTimer = null;
+function showLoading() {
+  if (!loading3d || loadingVisible) return;
+  loadingVisible = true;
+  loading3d.classList.remove('done');
+  loading3d.style.display = 'flex';
+  setLoading(10, 'Подготовка 3D-движка…');
+  setLoading(12, 'Подготовка 3D-движка…');
+  // Если через 6 с всё ещё грузимся — предлагаем сразу играть в 2D
+  const skip = document.getElementById('btn3d-skip');
+  if (skip) skip.classList.add('hidden');
+  clearTimeout(skipTimer);
+  skipTimer = setTimeout(() => {
+    const btn = document.getElementById('btn3d-skip');
+    if (btn && loadingVisible) {
+      btn.classList.remove('hidden');
+      const hint = document.getElementById('load3d-hint');
+      if (hint) hint.textContent = 'Загрузка затянулась — можно играть в 2D';
+    }
+  }, 6000);
+}
+function hideLoading() {
+  loadingVisible = false;
+  clearTimeout(skipTimer);
+  if (!loading3d) return;
+  loading3d.classList.add('done');
+  loading3d.style.display = 'none';
+  document.getElementById('btn3d-skip')?.classList.add('hidden');
+}
 function setLoading(pct, text) {
   if (loadFill) loadFill.style.width = `${Math.max(8, Math.min(100, pct))}%`;
   if (loadHint && text) loadHint.textContent = text;
@@ -87,9 +126,12 @@ function setLoading(pct, text) {
 async function enable3D() {
   if (!webglAvailable || forcedMode === '2d') return false;
   try {
+    showLoading();
+    await nextFrame();                    // показываем «Подготовка 3D-движка…»
     setLoading(28, 'Генерация ландшафта и биомов…');
     // Динамический импорт: 2D-игра остаётся рабочей, если 3D-модули не загрузились
     const mod = await import('../js3d/game/game3d.js');
+    await nextFrame();
     setLoading(58, 'Построение лесов, крепостей и руин…');
     const quality3d = engine.settings.quality3d || 'high';
     if (engine.settings.quality3dAuto && !engine.hasSaveGame?.()) {
@@ -100,10 +142,13 @@ async function enable3D() {
         ui.toast?.(`🎚 Качество 3D подобрано под устройство: ${labels[detected]}`, '#7dd3fc');
       }
     }
+    await nextFrame();
+    // Конструктор без тяжёлой работы: сборка мира идёт этапами под прогресс-бар
     game3d = new mod.Game3D(canvas3d, engine, {
-      quality: engine.settings.quality, quality3d, externalLoop: true,
+      quality: engine.settings.quality, quality3d, externalLoop: true, deferredInit: true,
       rendererFactory: window.__VEXMORA_RENDERER_FACTORY || null
     });
+    await game3d.initStaged((pct, text) => setLoading(pct, text));
     game3d.attachRenderer2D(renderer);
     game3d._uiToggle = (tab) => {
       if (tab === null) { ui.closeModal(); return; }
@@ -122,6 +167,7 @@ async function enable3D() {
       engine.settings.quality3d = level;
     };
     setLoading(86, 'Компиляция шейдеров и текстур…');
+    await nextFrame();
     // Пробный кадр: ошибки WebGL/шейдеров ловятся до старта игры
     game3d.update(0.016);
     game3d.render(0.016);
@@ -133,17 +179,16 @@ async function enable3D() {
     ui.attach3D?.(game3d);
     window.__vexmora3d = game3d;
     setLoading(100, 'Готово');
-    if (loading3d) {
-      setTimeout(() => loading3d.classList.add('done'), 260);
-      setTimeout(() => { loading3d.style.display = 'none'; }, 900);
-    }
+    setTimeout(hideLoading, 400);
     return true;
   } catch (err) {
     console.error('[VEXMORA 3D] Не удалось запустить 3D-режим:', err);
     game3d = null;
     mode3d = false;
     document.body.classList.remove('mode3d');
-    if (loading3d) { loading3d.style.display = 'none'; }
+    hideLoading();
+    // Третья линия защиты: пробный кадр упал — играем в 2D, но не молчим
+    ui.toast?.('⚠️ 3D недоступен на этом устройстве — включён 2D-режим', '#f59e0b');
     return false;
   }
 }
@@ -161,16 +206,43 @@ function fallbackTo2D(reason) {
   if (reason) ui.toast?.(`⚠️ ${reason}. Включён 2D-режим`, '#f59e0b');
 }
 
+// Кнопка «играть в 2D» прямо на экране загрузки (если 3D не успел)
+let pendingStart = null;
+document.getElementById('btn3d-skip')?.addEventListener('click', () => {
+  const loadSaved = pendingStart === true;
+  pendingStart = null;
+  forcedMode = '2d';
+  hideLoading();
+  fallbackTo2D(null);
+  if (!document.getElementById('title-screen').classList.contains('hidden')) ui.startGame(loadSaved);
+});
+
 // Кнопка «играть в 2D» на экране отсутствия WebGL
 document.getElementById('btn-fallback-2d')?.addEventListener('click', () => {
   if (nolwebgl) nolwebgl.classList.remove('show');
-  if (loading3d) loading3d.style.display = 'none';
+  hideLoading();
   document.body.classList.add('mode2d');
 });
 
 // ── Старт игры ───────────────────────────────────────────────────────────
+// Страховка: если инициализация 3D зависла (тяжёлый телефон, драйвер WebGL),
+// через 20 с принудительно уходим в 2D — игра всегда запускается.
+let startWatchdog = null;
 async function startGame(loadSaved) {
+  pendingStart = !!loadSaved;
+  if (startWatchdog) clearTimeout(startWatchdog);
+  if (webglAvailable && forcedMode !== '2d') {
+    startWatchdog = setTimeout(() => {
+      if (!mode3d) {
+        console.warn('[VEXMORA 3D] Инициализация заняла слишком много времени — 2D-режим');
+        fallbackTo2D('3D-движок не успел запуститься');
+        hideLoading();
+      }
+    }, 20000);
+  }
   const ok3d = await enable3D();
+  if (startWatchdog) { clearTimeout(startWatchdog); startWatchdog = null; }
+  if (ok3d) hideLoading();
   if (!ok3d && !webglAvailable && forcedMode !== '2d') {
     // Показываем экран совместимости, игра всё равно доступна в 2D
     if (nolwebgl) nolwebgl.classList.add('show');
@@ -178,6 +250,7 @@ async function startGame(loadSaved) {
   } else if (!ok3d) {
     fallbackTo2D(forcedMode === '2d' ? 'Включён 2D-режим по запросу' : '3D недоступен на этом устройстве');
   }
+  pendingStart = null;
   ui.startGame(loadSaved);
 }
 
@@ -234,17 +307,20 @@ function loop(now) {
 renderer.render(engine);
 requestAnimationFrame(loop);
 
-// Прогреваем 3D-модуль заранее, чтобы старт игры был быстрым
+// Прогреваем 3D-модуль заранее (без оверлея): к моменту нажатия «Играть»
+// модуль уже в кеше, а титульный экран остаётся доступным.
+// Оверлей загрузки в разметке виден по умолчанию — на титуле он не нужен.
+hideLoading();
 if (webglAvailable) {
-  setLoading(14, 'Подготовка 3D-движка…');
-  setTimeout(() => { import('../js3d/game/game3d.js').catch(() => {}); }, 60);
+  setTimeout(() => { import('../js3d/game/game3d.js').catch(() => {}); }, 120);
 } else {
-  if (loading3d) loading3d.style.display = 'none';
   document.body.classList.add('mode2d');
 }
 
 window.__vexmoraGame = {
   engine, renderer, ui, input,
+  // Отладочные хуки (используются автотестами стартового экрана)
+  debug: { showLoading, hideLoading, setLoading },
   get game3d() { return game3d; },
   get is3D() { return mode3d; }
 };
