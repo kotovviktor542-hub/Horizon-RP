@@ -35,9 +35,9 @@ function killAll(eng, list) {
   for (const e of [...list]) eng.damageEnemy(e, 999999);
 }
 
-console.log('=== Проверка VEXMORA 2.1 — GLOBAL MAP & TRANSPORT ===');
+console.log('=== Проверка VEXMORA 3D — ГЛОБАЛЬНОЕ 3D-ОБНОВЛЕНИЕ ===');
 assert.equal(GAME_TITLE, 'VEXMORA');
-assert.ok(UPDATE_ANNOUNCEMENT.title.includes('GLOBAL MAP'), 'Анонс обновления должен описывать Global Map & Transport');
+assert.ok(/3D/i.test(UPDATE_ANNOUNCEMENT.title), 'Анонс обновления должен описывать 3D-обновление');
 
 test('1. Все прозрачные пиксель-арт PNG и спрайт-листы существуют и валидны (108+ файлов)', () => {
   const spritesJs = fs.readFileSync(path.join(rootDir, 'www/js/sprites.js'), 'utf8');
@@ -838,4 +838,110 @@ test('21. TRANSPORT: 9 классов техники, езда, повороты
   assert.equal(terr.swim, true, 'Глубину можно переплыть (мир полностью исследуем)');
 });
 
-console.log(`\nИТОГ: ${passed}/21 комплексных проверок VEXMORA — GLOBAL MAP & TRANSPORT успешно пройдено!`);
+test('22. ТЯЖЁЛЫЙ УДАР: новая боевая механика 3D-версии (урон по площади, выносливость, откат)', () => {
+  const eng = new GameEngine(noopSound);
+  eng.resetState();
+  const p = eng.player;
+  p.stamina = 100;
+  p.attackTimer = 0;
+  // ignoreSafeZone=true: спавн рядом с героем внутри безопасной зоны лагеря
+  const enemy = eng.spawnEnemyAt(p.x + 30, p.y, 'zombie', true, false);
+  assert.ok(enemy, 'Враг для проверки тяжёлого удара создан');
+  const hpBefore = enemy.hp;
+  assert.equal(eng.performHeavyAttack(), true, 'Тяжёлый удар должен срабатывать при полной выносливости');
+  assert.ok(p.stamina < 100, 'Тяжёлый удар расходует выносливость');
+  assert.ok(enemy.hp < hpBefore, 'Тяжёлый удар наносит урон врагу рядом');
+  assert.ok(eng.shockwaves.length > 0, 'Тяжёлый удар создаёт ударную волну');
+  // Нельзя спамить: откат и нехватка выносливости
+  assert.equal(eng.performHeavyAttack(), false, 'Во время отката тяжёлый удар недоступен');
+  p.attackTimer = 0;
+  p.stamina = 3;
+  assert.equal(eng.performHeavyAttack(), false, 'Без выносливости тяжёлый удар недоступен');
+});
+
+test('23. 3D-РЕЖИМ: настройка качества графики сохраняется и совместима со старыми сохранениями', () => {
+  const eng = new GameEngine(noopSound);
+  assert.equal(eng.settings.quality3d, 'high', 'По умолчанию качество 3D — высокое');
+  eng.settings.quality3d = 'ultra';
+  eng.saveGame(true);
+  const eng2 = new GameEngine(noopSound);
+  eng2.loadGame();
+  assert.equal(eng2.settings.quality3d, 'ultra', 'Качество 3D сохраняется в сейве');
+
+  // Старое сохранение без quality3d должно безопасно мигрировать
+  const raw = JSON.parse(localStorage.getItem('horizon_rp_save_v2'));
+  delete raw.settings.quality3d;
+  localStorage.setItem('horizon_rp_save_v2', JSON.stringify(raw));
+  const eng3 = new GameEngine(noopSound);
+  assert.equal(eng3.loadGame(), true, 'Старое сохранение загружается');
+  assert.equal(eng3.settings.quality3d, 'high', 'Качество 3D подставляется по умолчанию');
+});
+
+test('24. 3D-АРСЕНАЛ: все 31 оружие имеет 3D-категорию (клинок/топор/копьё/лук/магия)', () => {
+  const cats = { melee: 0, bow: 0, magic: 0 };
+  for (const w of Object.values(WEAPONS)) {
+    assert.ok(['melee', 'bow', 'magic'].includes(w.category), `Оружие ${w.name} должно иметь 3D-категорию`);
+    cats[w.category]++;
+  }
+  assert.ok(cats.melee >= 15, 'Должно быть минимум 15 клинков для 3D-боя');
+  assert.ok(cats.bow >= 5, 'Должно быть минимум 5 луков');
+  assert.ok(cats.magic >= 3, 'Должно быть минимум 3 магических оружия');
+});
+
+test('25. 3D-ИНТЕРФЕЙС: разметка и стили 3D-режима присутствуют', () => {
+  const html = fs.readFileSync(path.join(rootDir, 'www/index.html'), 'utf8');
+  for (const id of ['hud3d', 'stick3d', 'btn3d-attack', 'btn3d-heavy', 'btn3d-jump', 'btn3d-interact', 'minimap3d', 'loading3d']) {
+    assert.ok(html.includes(`id="${id}"`), `В разметке должен быть элемент #${id}`);
+  }
+  assert.ok(html.includes('type="importmap"') && html.includes('vendor/three/three.module.js'),
+    'Модуль three.js должен подключаться через importmap');
+  const css = fs.readFileSync(path.join(rootDir, 'www/css/style.css'), 'utf8');
+  assert.ok(css.includes('.hud3d') && css.includes('.actions3d') && css.includes('.stick3d'),
+    'Стили 3D-HUD должны быть заданы');
+  // 2D-слой управления остаётся для устройств без WebGL
+  assert.ok(html.includes('id="joystick-zone"') && html.includes('id="btn-attack"'),
+    'Классический 2D-слой управления должен сохраниться как резервный');
+});
+
+test('26. 3D-МОДУЛИ: все файлы движка на месте и содержат ключевые системы', () => {
+  const files = {
+    'www/js3d/core/sky.js': ['SkySystem', 'worldTo3D', 'HEIGHT_SCALE'],
+    'www/js3d/core/materials.js': ['createMaterial', 'MATERIAL_SPECS'],
+    'www/js3d/core/camera.js': ['ThirdPersonCamera'],
+    'www/js3d/core/effects.js': ['Effects3D', 'WeatherFX'],
+    'www/js3d/world/terrain.js': ['TerrainManager', 'heightAt'],
+    'www/js3d/world/models.js': ['Foliage', 'Structures', 'Vehicles3D'],
+    'www/js3d/world/worldbuilder.js': ['WorldBuilder'],
+    'www/js3d/actors/hero.js': ['Hero3D', 'Weapon3D'],
+    'www/js3d/actors/creatures.js': ['Creature3D', 'looksFor'],
+    'www/js3d/game/worldbridge.js': ['World3D'],
+    'www/js3d/game/game3d.js': ['Game3D', 'QUALITY_PRESETS']
+  };
+  for (const [file, tokens] of Object.entries(files)) {
+    const full = path.join(rootDir, file);
+    assert.ok(fs.existsSync(full), `Отсутствует 3D-модуль: ${file}`);
+    const src = fs.readFileSync(full, 'utf8');
+    for (const t of tokens) assert.ok(src.includes(t), `${file} должен содержать ${t}`);
+  }
+  // Вендоренный three.js должен лежать локально (работа офлайн в APK)
+  assert.ok(fs.existsSync(path.join(rootDir, 'www/vendor/three/three.module.js')), 'three.module.js должен быть вендорен');
+  assert.ok(fs.existsSync(path.join(rootDir, 'www/vendor/three/three.core.js')), 'three.core.js должен быть вендорен');
+  assert.ok(fs.statSync(path.join(rootDir, 'www/vendor/three/three.module.js')).size > 100000, 'three.js должен быть полным');
+});
+
+test('27. 3D-ГРАФИКА: 4 уровня качества, тени, погода и LOD описаны в конфигурации', () => {
+  const src = fs.readFileSync(path.join(rootDir, 'www/js3d/game/game3d.js'), 'utf8');
+  for (const q of ['low', 'medium', 'high', 'ultra']) {
+    assert.ok(src.includes(`${q}: {`), `Должен быть пресет качества «${q}»`);
+  }
+  assert.ok(src.includes('shadowMap.enabled'), 'Тени должны включаться настройкой качества');
+  assert.ok(src.includes('ACESFilmicToneMapping'), 'Должен использоваться кинематографичный tone mapping');
+  const sky = fs.readFileSync(path.join(rootDir, 'www/js3d/core/sky.js'), 'utf8');
+  for (const w of ['rain', 'storm', 'snow', 'fog']) {
+    assert.ok(sky.includes(`'${w}'`), `Погода «${w}» должна поддерживаться`);
+  }
+  const terrain = fs.readFileSync(path.join(rootDir, 'www/js3d/world/terrain.js'), 'utf8');
+  assert.ok(terrain.includes('lod'), 'Ландшафт должен использовать LOD');
+});
+
+console.log(`\nИТОГ: ${passed}/27 комплексных проверок VEXMORA 3D успешно пройдено!`);

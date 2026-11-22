@@ -141,6 +141,18 @@ export class InputController {
   bindTapButton(id, fn) {
     const el = document.getElementById(id);
     if (!el) return;
+    // Кнопки 3D-HUD перекрыты слоем #hud3d с pointer-events:none на контейнере,
+    // поэтому для них используем click (а не touch/mouse-пару).
+    if (el.classList.contains('a3d') || el.classList.contains('icon-btn3d') || el.closest?.('#hud3d')) {
+      el.addEventListener('click', (ev) => {
+        ev.preventDefault();
+        this.cb.onUnlockAudio?.();
+        el.classList.add('pressed');
+        setTimeout(() => el.classList.remove('pressed'), 120);
+        fn();
+      });
+      return;
+    }
     this.bindHoldButton(el, fn, null);
   }
 
@@ -165,10 +177,35 @@ export class InputController {
     this.bindTapButton('btn-skill-4', () => this.cb.onSkill?.('fire_strike'));
     this.bindTapButton('btn-skill-5', () => this.cb.onSkill?.('ice_blast'));
     this.bindTapButton('btn-skill-6', () => this.cb.onSkill?.('shadow_teleport'));
+
+    // ── Кнопки 3D-режима (тот же движок, другой интерфейс) ──
+    this.bindHoldButton(
+      document.getElementById('btn3d-attack'),
+      () => { this.attackHeld = true; this.cb.onAttack?.(); },
+      () => { this.attackHeld = false; }
+    );
+    this.bindTapButton('btn3d-heavy', () => this.cb.onHeavy?.());
+    this.bindTapButton('btn3d-jump', () => this.cb.onJump?.());
+    this.bindTapButton('btn3d-dodge', () => this.cb.onDash?.());
+    this.bindTapButton('btn3d-interact', () => this.cb.onInteract?.());
+    this.bindHoldButton(
+      document.getElementById('btn3d-block'),
+      () => { this.blockHeld = true; this.cb.onBlock?.(true); },
+      () => { this.blockHeld = false; this.cb.onBlock?.(false); }
+    );
+    document.querySelectorAll('#hud3d [data-open-tab]').forEach((btn) => {
+      btn.addEventListener('click', (ev) => {
+        ev.preventDefault();
+        this.cb.onUnlockAudio?.();
+        this.cb.onOpenTab?.(btn.dataset.openTab);
+      });
+    });
+    this.bindTapButton('btn3d-open-map', () => this.cb.onOpenTab?.('map'));
   }
 
   bindKeyboard() {
     window.addEventListener('keydown', (e) => {
+      if (this.keyboardEnabled === false) return;   // в 3D-режиме клавиатуру ведёт Game3D
       if (e.repeat) return;
       const k = e.key.toLowerCase();
       this.keys.add(k);
@@ -197,6 +234,7 @@ export class InputController {
     window.addEventListener('keyup', (e) => {
       const k = e.key.toLowerCase();
       this.keys.delete(k);
+      if (this.keyboardEnabled === false) return;
       if (e.key === 'Shift') this.sprintHeld = false;
       if (k === ' ' || k === 'j') this.attackHeld = false;
     });

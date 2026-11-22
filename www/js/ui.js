@@ -110,6 +110,9 @@ export class UIManager {
 
   bindEvents() {
     document.querySelectorAll('[data-open-tab]').forEach((btn) => {
+      // Кнопки 3D-HUD обрабатываются через InputController (переключение вкладки),
+      // иначе открытие и закрытие меню происходили бы одним нажатием.
+      if (btn.closest('#hud3d')) return;
       btn.addEventListener('click', () => this.openModal(btn.dataset.openTab));
     });
 
@@ -264,6 +267,13 @@ export class UIManager {
       addBtn('Закрыть', '', () => this.closeModal());
       this.els.dialogModal.classList.remove('hidden');
     }
+  }
+
+  // ── VEXMORA 3D: подключение 3D-рендерера (настройки качества) ──
+  attach3D(game3d) {
+    this.game3d = game3d;
+    const level = this.engine.settings.quality3d || 'high';
+    try { game3d.applyQuality(level, false); } catch (err) { console.warn('3D quality', err); }
   }
 
   updateHud(force = false) {
@@ -1180,8 +1190,19 @@ export class UIManager {
       <div class="section-title">⚙️ Настройки и Оптимизация под Android</div>
       <div class="grid-cards">
         <div class="item-card">
-          <div class="card-title">📱 Качество рендера</div>
-          <div class="card-desc">Режим «Низкое» фиксирует DPR 1.0 и лимит частиц для бюджетных телефонов.</div>
+          <div class="card-title">🎚 Качество 3D-графики</div>
+          <div class="card-desc">Тени, дальность прорисовки, плотность частиц и разрешение текстур. «Ультра» — тени 4096 и радиус обзора 6 чанков.</div>
+          <div class="card-actions">
+            <button class="action-btn ${(s.quality3d || 'high') === 'low' ? 'gold' : ''}" data-q3="low">Низкое</button>
+            <button class="action-btn ${(s.quality3d || 'high') === 'medium' ? 'gold' : ''}" data-q3="medium">Среднее</button>
+            <button class="action-btn ${(s.quality3d || 'high') === 'high' ? 'gold' : ''}" data-q3="high">Высокое</button>
+            <button class="action-btn ${(s.quality3d || 'high') === 'ultra' ? 'gold' : ''}" data-q3="ultra">Ультра</button>
+          </div>
+        </div>
+
+        <div class="item-card">
+          <div class="card-title">📱 Качество 2D-рендера</div>
+          <div class="card-desc">Используется на устройствах без WebGL и для мини-карты.</div>
           <div class="card-actions">
             <button class="action-btn ${s.quality === 'low' ? 'gold' : ''}" data-q="low">Низкое</button>
             <button class="action-btn ${s.quality === 'medium' ? 'gold' : ''}" data-q="medium">Среднее</button>
@@ -1236,6 +1257,13 @@ export class UIManager {
     body.querySelectorAll('[data-q]').forEach(b => b.addEventListener('click', () => {
       s.quality = b.dataset.q;
       this.renderer.resize(s.quality);
+      eng.saveGame(true);
+      this.renderModalTab();
+    }));
+
+    body.querySelectorAll('[data-q3]').forEach(b => b.addEventListener('click', () => {
+      s.quality3d = b.dataset.q3;
+      if (this.game3d) this.game3d.applyQuality(s.quality3d);
       eng.saveGame(true);
       this.renderModalTab();
     }));

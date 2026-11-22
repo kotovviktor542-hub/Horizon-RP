@@ -31,6 +31,13 @@ const server = http.createServer((req, res) => {
   }
 
   if (!fs.existsSync(filePath) || fs.statSync(filePath).isDirectory()) {
+    // Файлы с расширением не подменяем на index.html — иначе браузер получит HTML
+    // вместо JS-модуля и игра «молча» не запустится. Возвращаем честный 404.
+    if (path.extname(safePath)) {
+      res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
+      res.end(`Not found: ${safePath}`);
+      return;
+    }
     filePath = path.join(rootDir, 'index.html');
   }
 

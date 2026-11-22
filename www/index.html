@@ -6,39 +6,59 @@
   <meta name="theme-color" content="#0b1220" />
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
-  <title>VEXMORA — 2D Pixel Action-Survival RPG | Большое обновление 2.0</title>
+  <title>VEXMORA 3D — Dark Fantasy Action RPG</title>
   <link rel="icon" type="image/png" href="icon.png" />
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "./vendor/three/three.module.js",
+      "three/addons/": "./vendor/three/addons/"
+    }
+  }
+  </script>
   <link rel="stylesheet" href="css/style.css" />
 </head>
 <body>
+  <!-- 2D-слой: титульный фон, мини-карта и резервный режим без WebGL -->
   <canvas id="game-canvas"></canvas>
+  <!-- 3D-слой: основной рендер игры (three.js/WebGL) -->
+  <canvas id="game-canvas-3d"></canvas>
+
+  <!-- Экран загрузки 3D-движка -->
+  <div id="loading3d">
+    <div class="load3d-title">VEXMORA 3D</div>
+    <div class="load3d-bar"><div class="load3d-fill" id="load3d-fill"></div></div>
+    <div class="load3d-hint" id="load3d-hint">Загрузка мира…</div>
+  </div>
+
+  <!-- Экран совместимости -->
+  <div id="nolwebgl">
+    <div style="font-size:22px;font-weight:700">WebGL недоступен</div>
+    <p style="max-width:420px;color:#9fb2cc;font-size:14px;line-height:1.55">
+      Для 3D-режима VEXMORA нужен WebGL. Устройство или браузер его не поддерживает.
+      Можно продолжить в классическом 2D-режиме — весь прогресс сохраняется.
+    </p>
+    <button id="btn-fallback-2d">▶ Играть в 2D-режиме</button>
+  </div>
 
   <!-- ГЛАВНОЕ МЕНЮ -->
   <section id="title-screen" class="overlay-screen">
     <div class="title-card">
       <img src="icon.png" class="title-icon" alt="VEXMORA — AGE OF THE FALLEN GODS" />
-      <div class="title-badge">PIXEL-ART 2D SURVIVAL ACTION RPG · ОБНОВЛЕНИЕ 3.0</div>
-      <h1 class="game-logo">VEXMORA<span>AGE OF THE FALLEN GODS</span></h1>
+      <div class="title-badge">3D DARK FANTASY ACTION RPG · ГЛОБАЛЬНОЕ 3D-ОБНОВЛЕНИЕ</div>
+      <h1 class="game-logo">VEXMORA<span>3D · AGE OF THE FALLEN GODS</span></h1>
       <p class="game-subtitle">
-        Исследуй 10 особых территорий — от Пепельных Земель до Земель Павших Богов! Собирай арсенал из 48 видов оружия, вступай в 5 фракций, носи легендарную броню и сразись с 20 многофазными боссами — вплоть до секретного ПАВШЕГО БОГА Азарота!
+        Полноценный 3D-мир на движке three.js: объёмные леса, горы, крепости и подземелья, динамическое освещение, смена дня и ночи, погода, свободная камера от третьего лица. Холодное оружие, луки и магия, 48 видов врагов, 23 многофазных босса — вплоть до секретного ПАВШЕГО БОГА Азарота!
       </p>
-      <button id="btn-show-update" class="update-banner-btn" type="button">📣 VEXMORA: AGE OF THE FALLEN GODS · Что нового в 3.0?</button>
+      <button id="btn-show-update" class="update-banner-btn" type="button">📣 VEXMORA 3D · Что нового в глобальном 3D-обновлении?</button>
 
-      <div class="title-preview-strip">
-        <img src="assets/sprites/weapons/pistol.png" alt="Пистолет" class="px-img" />
-        <img src="assets/sprites/weapons/shotgun.png" alt="Дробовик" class="px-img" />
-        <img src="assets/sprites/weapons/rifle.png" alt="Автомат" class="px-img" />
-        <img src="assets/sprites/weapons/sniper.png" alt="Снайперка" class="px-img" />
-        <img src="assets/sprites/weapons/sword.png" alt="Меч" class="px-img" />
-        <img src="assets/sprites/weapons/magic_staff.png" alt="Магия" class="px-img" />
-        <img src="assets/sprites/weapons/minigun.png" alt="Миниган" class="px-img" />
-        <img src="assets/sprites/weapons/railgun.png" alt="Рельсотрон" class="px-img" />
-        <img src="assets/sprites/weapons/tesla_cannon.png" alt="Тесла-пушка" class="px-img" />
-        <img src="assets/sprites/weapons/katana.png" alt="Катана" class="px-img" />
-        <img src="assets/sprites/items/medkit.png" alt="Аптечка" class="px-img" />
-        <img src="assets/sprites/items/grenade.png" alt="Граната" class="px-img" />
-        <img src="assets/sprites/items/key.png" alt="Ключ" class="px-img" />
-        <img src="assets/sprites/items/backpack.png" alt="Рюкзак" class="px-img" />
+      <div class="title-preview-strip title-3d-chips">
+        <span class="c3d-chip">🌄 Объёмный мир · LOD</span>
+        <span class="c3d-chip">🌦 Динамическая погода</span>
+        <span class="c3d-chip">🌙 Смена дня и ночи</span>
+        <span class="c3d-chip">⚔️ 3D-бой и комбо</span>
+        <span class="c3d-chip">🏰 Крепости и руины</span>
+        <span class="c3d-chip">👹 23 босса</span>
       </div>
 
       <div class="title-actions">
@@ -47,10 +67,10 @@
       </div>
 
       <div class="title-features">
-        <span>🔫 24 оружия + Модификации</span>
-        <span>👹 10 боссов · 16 врагов</span>
+        <span>🗡 31 оружие · холодное и магия</span>
+        <span>👹 23 босса · 48 врагов</span>
         <span>🆘 Спасение NPC · 🏰 База</span>
-        <span>💾 Автосохранение прогресса</span>
+        <span>🎚 4 уровня графики (до Ультра)</span>
       </div>
     </div>
   </section>
@@ -128,8 +148,8 @@
     <!-- Контекстная кнопка взаимодействия (NPC, SHOP, Бункер, Машина, Костёр) -->
     <button id="btn-interact" class="interact-btn hidden">💬 Взаимодействовать</button>
 
-    <!-- Мобильное управление: Джойстик слева + Кнопки экшена справа -->
-    <div class="controls-layer">
+    <!-- Резервный 2D-слой управления: скрыт в 3D-режиме, включается при отсутствии WebGL -->
+    <div class="controls-layer legacy-2d-layer">
       <div id="joystick-zone" class="joystick-zone">
         <div id="joystick-base" class="joystick-base">
           <div id="joystick-knob" class="joystick-knob"></div>
@@ -137,42 +157,64 @@
       </div>
 
       <div class="combat-cluster">
-        <button id="btn-heal" class="ctrl-btn small heal" title="Аптечка (H)">
+        <button id="btn-heal" class="ctrl-btn small heal" title="Аптечка">
           <img src="assets/sprites/items/medkit.png" class="px-btn-img" alt="HP" />
           <span id="hud-medkits" class="count-pill">3</span>
         </button>
-
-        <button id="btn-reload" class="ctrl-btn small reload" title="Перезарядка (R)">
+        <button id="btn-reload" class="ctrl-btn small reload" title="Смена оружия">
           <span>🔄</span><small id="hud-mag">12</small>
         </button>
-
-        <button id="btn-grenade" class="ctrl-btn small grenade" title="Бросить гранату (G)">
-          <img src="assets/sprites/items/grenade.png" class="px-btn-img" alt="Граната" />
+        <button id="btn-grenade" class="ctrl-btn small grenade" title="Зелье">
+          <img src="assets/sprites/items/grenade.png" class="px-btn-img" alt="" />
           <span id="hud-grenades" class="count-pill">2</span>
         </button>
+        <button id="btn-skill-1" class="ctrl-btn skill s1" title="Навык 1"><span>⚔️</span><small id="cd-skill-1"></small></button>
+        <button id="btn-skill-2" class="ctrl-btn skill s2" title="Навык 2"><span>🌀</span><small id="cd-skill-2"></small></button>
+        <button id="btn-skill-3" class="ctrl-btn skill s3" title="Навык 3"><span>⚡</span><small id="cd-skill-3"></small></button>
+        <button id="btn-skill-4" class="ctrl-btn skill s4" title="Огненный Удар"><span>🔥</span><small id="cd-skill-4"></small></button>
+        <button id="btn-skill-5" class="ctrl-btn skill s5" title="Ледяной Взрыв"><span>❄️</span><small id="cd-skill-5"></small></button>
+        <button id="btn-skill-6" class="ctrl-btn skill s6" title="Теневой Телепорт"><span>🌑</span><small id="cd-skill-6"></small></button>
+        <button id="btn-dash" class="ctrl-btn medium dash" title="Рывок">💨<span>Рывок</span></button>
+        <button id="btn-jump" class="ctrl-btn medium jump" title="Прыжок">🦘<span>Прыжок</span></button>
+        <button id="btn-attack" class="ctrl-btn big attack" title="Атака">⚔<span>УДАР</span></button>
+      </div>
+    </div>
 
-        <button id="btn-skill-1" class="ctrl-btn skill s1" title="Навык 1">
-          <span>⚔️</span><small id="cd-skill-1"></small>
-        </button>
-        <button id="btn-skill-2" class="ctrl-btn skill s2" title="Навык 2">
-          <span>🌀</span><small id="cd-skill-2"></small>
-        </button>
-        <button id="btn-skill-3" class="ctrl-btn skill s3" title="Навык 3">
-          <span>⚡</span><small id="cd-skill-3"></small>
-        </button>
-        <button id="btn-skill-4" class="ctrl-btn skill s4" title="Огненный Удар (4)">
-          <span>🔥</span><small id="cd-skill-4"></small>
-        </button>
-        <button id="btn-skill-5" class="ctrl-btn skill s5" title="Ледяной Взрыв (5)">
-          <span>❄️</span><small id="cd-skill-5"></small>
-        </button>
-        <button id="btn-skill-6" class="ctrl-btn skill s6" title="Теневой Телепорт (6)">
-          <span>🌑</span><small id="cd-skill-6"></small>
-        </button>
+    <!-- ── 3D-управление: виртуальный стик слева, кластер действий справа ── -->
+    <div id="hud3d" class="hud3d hidden">
+      <div id="stick3d-zone" class="stick3d-zone">
+        <div id="stick3d" class="stick3d">
+          <div id="stick3d-knob" class="stick3d-knob"></div>
+        </div>
+        <div class="stick3d-hint">Движение</div>
+      </div>
 
-        <button id="btn-dash" class="ctrl-btn medium dash" title="Рывок (L)">💨<span>Рывок</span></button>
-        <button id="btn-jump" class="ctrl-btn medium jump" title="Прыжок (K)">🦘<span>Прыжок</span></button>
-        <button id="btn-attack" class="ctrl-btn big attack" title="Огонь / Удар (Пробел)">🎯<span>ОГОНЬ</span></button>
+      <div class="actions3d">
+        <button id="btn3d-block" class="a3d small block" title="Блок">🛡</button>
+        <button id="btn3d-dodge" class="a3d small dodge" title="Рывок">💨</button>
+        <button id="btn3d-jump" class="a3d small jump" title="Прыжок">⤴</button>
+        <button id="btn3d-interact" class="a3d small interact" title="Взаимодействие">✋<span id="btn3d-interact-label"></span></button>
+        <button id="btn3d-heavy" class="a3d medium heavy" title="Тяжёлая атака">💥<span>Тяж.</span></button>
+        <button id="btn3d-attack" class="a3d big attack3d" title="Атака">⚔<span>Удар</span></button>
+      </div>
+
+      <div class="hud3d-top-right">
+        <div class="minimap3d-wrap" id="btn3d-open-map">
+          <canvas id="minimap3d" width="108" height="108"></canvas>
+          <span id="hud3d-day" class="mm3d-day">☀️ День 1</span>
+        </div>
+        <div class="mm3d-meta">
+          <span id="hud3d-fps">60 FPS</span>
+          <span id="hud3d-quality">Высокое</span>
+        </div>
+      </div>
+
+      <div class="hud3d-menu">
+        <button class="icon-btn3d" data-open-tab="inventory" title="Арсенал">🎒</button>
+        <button class="icon-btn3d" data-open-tab="hero" title="Герой">⭐</button>
+        <button class="icon-btn3d" data-open-tab="quests" title="Задания">📜</button>
+        <button class="icon-btn3d" data-open-tab="map" title="Карта">🗺️</button>
+        <button class="icon-btn3d" data-open-tab="settings" title="Настройки">⚙️</button>
       </div>
     </div>
   </div>

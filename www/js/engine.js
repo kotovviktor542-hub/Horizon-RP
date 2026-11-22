@@ -35,7 +35,8 @@ export class GameEngine {
     this.paused = false;
 
     this.settings = {
-      quality: 'medium', // 'low' | 'medium' | 'high'
+      quality: 'medium',     // качество 2D-рендера: 'low' | 'medium' | 'high'
+      quality3d: 'high',     // качество 3D: 'low' | 'medium' | 'high' | 'ultra'
       sound: true,
       autoAim: true,
       showFps: false
@@ -671,6 +672,9 @@ export class GameEngine {
       this.timeOfDay = data.timeOfDay ?? 0.30;
       this.dayCount = data.dayCount ?? 1;
       if (data.settings) Object.assign(this.settings, data.settings);
+      // Совместимость со старыми сохранениями: качество 3D появилось в 3D-обновлении
+      if (!this.settings.quality3d) this.settings.quality3d = 'high';
+      if (!['low', 'medium', 'high', 'ultra'].includes(this.settings.quality3d)) this.settings.quality3d = 'high';
 
       Object.assign(this.player, data.player);
       this.player.z = 0;
@@ -1374,6 +1378,62 @@ export class GameEngine {
     this.equipWeapon(next);
     const w = WEAPONS[next];
     this.pushToast(`🔫 Экипировано: ${w.name}`, RARITIES[w.rarity].color);
+  }
+
+  // ── VEXMORA 3D: тяжёлая атака (мощный удар по площади) ──
+  // Полноценная механика, доступная и в 2D, и в 3D-режиме.
+  performHeavyAttack() {
+    const p = this.player;
+    if (p.dead || p.vehicleId) return false;
+    const weapon = WEAPONS[this.inventory.equippedWeapon] || WEAPONS.knife;
+    const isMelee = weapon.category === 'melee';
+    const cost = isMelee ? 24 : 18;
+    if (p.stamina < cost || p.attackTimer > 0.06) return false;
+
+    p.stamina = Math.max(0, p.stamina - cost);
+    p.attackTimer = Math.max(p.attackTimer, 0.62);
+    p.attackAnimTimer = 0.4;
+    p.heavyTimer = 0.5;
+    this.sound.play('swing');                 // мощный замах
+    this.camera.shake = Math.max(this.camera.shake, 5);
+
+    const range = this.getWeaponRange(weapon.id);
+    const aim = this.findAimAngle(range);
+    this.updateFacingFromAngle(aim);
+    const baseDmg = this.getWeaponDamage(weapon.id);
+    const critChance = this.getCritChance(weapon.id);
+
+    if (isMelee) {
+      // Широкий удар по дуге с пробитием и отбрасыванием
+      this.slashes.push({
+        x: p.x, y: p.y - p.z * 0.5, angle: aim, arc: Math.PI * 1.35,
+        range: range * 1.22, color: RARITIES[weapon.rarity].color, life: 0.26, maxLife: 0.26
+      });
+      this.applyMeleeHit(aim, range * 1.22, Math.PI * 1.35, baseDmg * 1.85, critChance + 0.1, (weapon.knockback || 0) * 1.8, weapon.id);
+    } else {
+      // Дальнобойное/магическое: залп из трёх снарядов
+      for (let i = -1; i <= 1; i++) {
+        const a = aim + i * 0.16;
+        this.projectiles.push({
+          x: p.x + Math.cos(a) * 22, y: p.y + Math.sin(a) * 22,
+          vx: Math.cos(a) * (weapon.projSpeed || 430),
+          vy: Math.sin(a) * (weapon.projSpeed || 430),
+          damage: Math.round(baseDmg * 0.9), life: 1.4,
+          friendly: true, radius: 9, color: RARITIES[weapon.rarity].color,
+          magic: weapon.category === 'magic', kind: weapon.category === 'magic' ? 'magic' : 'bullet',
+          weaponId: weapon.id, pierce: 1
+        });
+      }
+      this.spawnSpriteEffect('magic', p.x, p.y - 6, 1.1, 16);
+    }
+
+    // Ударная волна вокруг героя
+    this.shockwaves.push({
+      x: p.x, y: p.y, radius: 18, maxRadius: range * 0.8,
+      color: '#fbbf24', friendly: true, damage: 0
+    });
+    this.addFloatingText(p.x, p.y - 40, 'ТЯЖЁЛЫЙ УДАР!', '#fbbf24');
+    return true;
   }
 
   findAimAngle(maxRange) {

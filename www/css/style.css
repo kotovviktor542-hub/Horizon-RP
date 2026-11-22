@@ -989,3 +989,334 @@ html, body {
 .lock-note { color: #f59e0b !important; }
 .ok-note { color: #4ade80 !important; }
 .boss-phase-note { color: #fda4af !important; }
+
+/* ═══════════════════════════════════════════════════════════════════
+   VEXMORA 3D — интерфейс трёхмерного режима
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* Титульный экран: 3D-чипы вместо пиксель-иконок */
+.title-3d-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+  margin: 14px 0 4px;
+}
+.c3d-chip {
+  padding: 7px 14px;
+  border-radius: 999px;
+  font-size: 13px;
+  color: #dbe6f5;
+  background: linear-gradient(180deg, rgba(38, 52, 78, 0.92), rgba(22, 30, 46, 0.92));
+  border: 1px solid rgba(120, 160, 220, 0.35);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  white-space: nowrap;
+}
+
+/* Скрываем 2D-слой управления, когда активен 3D */
+body.mode3d .legacy-2d-layer { display: none !important; }
+body.mode2d .hud3d { display: none !important; }
+
+/* Контейнер 3D-HUD */
+.hud3d {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  pointer-events: none;
+  font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
+}
+
+/* ── Виртуальный стик ── */
+.stick3d-zone {
+  position: absolute;
+  left: 18px;
+  bottom: 22px;
+  width: 176px;
+  height: 176px;
+  pointer-events: auto;
+  touch-action: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.stick3d {
+  width: 138px;
+  height: 138px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 50% 42%, rgba(46, 62, 92, 0.55), rgba(12, 18, 30, 0.62));
+  border: 2px solid rgba(150, 185, 235, 0.38);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45), inset 0 0 26px rgba(90, 130, 200, 0.18);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  backdrop-filter: blur(3px);
+}
+.stick3d-knob {
+  width: 62px;
+  height: 62px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 40% 35%, #cfe0f8, #6c86ad 62%, #3d4f6e);
+  border: 2px solid rgba(230, 240, 255, 0.65);
+  box-shadow: 0 3px 14px rgba(0, 0, 0, 0.55);
+  transition: transform 0.04s linear;
+  pointer-events: none;
+}
+.stick3d-hint {
+  position: absolute;
+  bottom: 2px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(190, 210, 240, 0.6);
+}
+
+/* ── Кластер действий ── */
+.actions3d {
+  position: absolute;
+  right: 16px;
+  bottom: 20px;
+  width: 232px;
+  height: 224px;
+  pointer-events: none;
+}
+.a3d {
+  position: absolute;
+  pointer-events: auto;
+  touch-action: none;
+  border-radius: 50%;
+  border: 2px solid rgba(160, 195, 245, 0.45);
+  background: radial-gradient(circle at 42% 34%, rgba(64, 84, 122, 0.95), rgba(20, 28, 44, 0.95));
+  color: #e7eefb;
+  font-size: 22px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.12);
+  transition: transform 0.06s ease, box-shadow 0.06s ease, background 0.12s;
+  -webkit-tap-highlight-color: transparent;
+}
+.a3d span {
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  opacity: 0.82;
+  text-transform: uppercase;
+}
+.a3d.active {
+  transform: scale(0.92);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.6), inset 0 0 18px rgba(120, 180, 255, 0.55);
+}
+.a3d.small { width: 60px; height: 60px; font-size: 20px; }
+.a3d.medium { width: 78px; height: 78px; font-size: 24px; }
+.a3d.big { width: 104px; height: 104px; font-size: 32px; }
+
+.a3d.attack3d {
+  right: 0;
+  bottom: 58px;
+  background: radial-gradient(circle at 42% 34%, #d9584a, #8f241c 65%, #4d100c);
+  border-color: rgba(255, 190, 170, 0.65);
+  box-shadow: 0 8px 26px rgba(180, 40, 30, 0.45), inset 0 2px 0 rgba(255, 255, 255, 0.18);
+}
+.a3d.heavy {
+  right: 60px;
+  bottom: 0;
+  background: radial-gradient(circle at 42% 34%, #c98a3c, #7a4a14 68%, #3f2408);
+  border-color: rgba(255, 210, 150, 0.55);
+}
+.a3d.jump { right: 132px; bottom: 8px; }
+.a3d.dodge { right: 148px; bottom: 78px; }
+.a3d.block { right: 96px; bottom: 128px; }
+.a3d.interact {
+  right: 12px;
+  bottom: 168px;
+  background: radial-gradient(circle at 42% 34%, #3f8a6a, #1c4a38 68%, #0d241c);
+}
+
+/* ── Правый верх: мини-карта и метрики ── */
+.hud3d-top-right {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  pointer-events: auto;
+}
+.minimap3d-wrap {
+  position: relative;
+  width: 108px;
+  height: 108px;
+  border-radius: 14px;
+  overflow: hidden;
+  border: 2px solid rgba(150, 185, 235, 0.42);
+  box-shadow: 0 6px 22px rgba(0, 0, 0, 0.5);
+  background: rgba(10, 16, 26, 0.7);
+}
+#minimap3d { width: 100%; height: 100%; display: block; }
+.mm3d-day {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  text-align: center;
+  font-size: 10px;
+  padding: 2px 0;
+  color: #e8eefb;
+  background: rgba(8, 14, 24, 0.72);
+}
+.mm3d-meta {
+  display: flex;
+  gap: 6px;
+  font-size: 10.5px;
+  color: #b8cae2;
+}
+.mm3d-meta span {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(14, 22, 36, 0.78);
+  border: 1px solid rgba(120, 155, 205, 0.28);
+}
+
+/* ── Меню 3D ── */
+.hud3d-menu {
+  position: absolute;
+  top: 132px;
+  right: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  pointer-events: auto;
+}
+.icon-btn3d {
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  font-size: 19px;
+  color: #e7eefb;
+  background: linear-gradient(180deg, rgba(44, 60, 88, 0.94), rgba(20, 28, 44, 0.94));
+  border: 1px solid rgba(130, 165, 215, 0.35);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
+  cursor: pointer;
+}
+.icon-btn3d:active { transform: scale(0.94); }
+
+/* Плавное появление игры */
+#game-canvas { background: #05070f; }
+body.mode3d #hud .hud-bars-card { backdrop-filter: blur(4px); }
+
+/* Индикатор загрузки 3D */
+#loading3d {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  background: radial-gradient(circle at 50% 40%, #16213a, #05070f 70%);
+  color: #dbe6f5;
+  font-family: system-ui, sans-serif;
+  transition: opacity 0.45s ease;
+}
+#loading3d.done { opacity: 0; pointer-events: none; }
+#loading3d .load3d-title {
+  font-size: 26px;
+  letter-spacing: 0.22em;
+  font-weight: 700;
+  background: linear-gradient(90deg, #b9d3f5, #ffd88a, #b9d3f5);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+#loading3d .load3d-bar {
+  width: min(320px, 62vw);
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(120, 150, 200, 0.2);
+  overflow: hidden;
+}
+#loading3d .load3d-fill {
+  height: 100%;
+  width: 12%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #4a8fdc, #8ad4ff);
+  transition: width 0.35s ease;
+}
+#loading3d .load3d-hint { font-size: 13px; color: #8fa4c2; }
+
+/* Экран ошибки WebGL */
+#nolwebgl {
+  position: fixed;
+  inset: 0;
+  z-index: 210;
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 24px;
+  text-align: center;
+  background: rgba(5, 8, 16, 0.95);
+  color: #dbe6f5;
+  font-family: system-ui, sans-serif;
+}
+#nolwebgl.show { display: flex; }
+#nolwebgl button {
+  padding: 10px 22px;
+  border-radius: 10px;
+  border: 1px solid rgba(140, 180, 240, 0.5);
+  background: #22304a;
+  color: #e7eefb;
+  font-size: 15px;
+}
+
+@media (max-width: 520px) {
+  .actions3d { transform: scale(0.92); transform-origin: bottom right; }
+  .stick3d-zone { transform: scale(0.92); transform-origin: bottom left; }
+  .hud3d-top-right { top: 8px; right: 8px; }
+}
+
+/* 3D-холст: отдельный canvas, чтобы WebGL-контекст не конфликтовал с 2D */
+#game-canvas-3d {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  display: none;
+  z-index: 1;
+  touch-action: none;
+}
+body.mode3d #game-canvas-3d { display: block; }
+body.mode3d #game-canvas { visibility: hidden; }
+body.mode2d #game-canvas { visibility: visible; }
+
+/* В 3D-режиме кнопка взаимодействия — компактная, у кластера действий */
+body.mode3d .interact-btn {
+  bottom: auto;
+  top: 46%;
+  left: auto;
+  right: 20px;
+  transform: none;
+  font-size: 12px;
+  padding: 8px 14px;
+  max-width: 42vw;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+}
+/* Подсветка кнопки взаимодействия на 3D-HUD, когда рядом есть объект */
+.a3d.interact.hint {
+  border-color: rgba(255, 220, 130, 0.95);
+  box-shadow: 0 0 0 3px rgba(251, 191, 36, 0.28), 0 6px 18px rgba(0, 0, 0, 0.5);
+  animation: hintPulse 1.4s ease-in-out infinite;
+}
+@keyframes hintPulse {
+  0%, 100% { box-shadow: 0 0 0 3px rgba(251, 191, 36, 0.18), 0 6px 18px rgba(0, 0, 0, 0.5); }
+  50% { box-shadow: 0 0 0 7px rgba(251, 191, 36, 0.10), 0 6px 18px rgba(0, 0, 0, 0.5); }
+}

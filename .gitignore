@@ -11,3 +11,4 @@
 .DS_Store
 .playwright-cli/
 test-results/
+tools/.out
