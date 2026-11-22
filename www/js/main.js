@@ -68,6 +68,13 @@ function hasWebGL() {
   }
 }
 
+// Ручное принуждение режима: ?mode=2d (отладка/слабые устройства), ?mode=3d (игнорирует автоподбор)
+let forcedMode = null;
+try {
+  const p = new URLSearchParams(location.search).get('mode');
+  if (p === '2d' || p === '3d') forcedMode = p;
+} catch { /* location недоступен — обычный автозапуск */ }
+
 const webglAvailable = hasWebGL();
 let game3d = null;
 let mode3d = false;
@@ -78,7 +85,7 @@ function setLoading(pct, text) {
 }
 
 async function enable3D() {
-  if (!webglAvailable) return false;
+  if (!webglAvailable || forcedMode === '2d') return false;
   try {
     setLoading(28, 'Генерация ландшафта и биомов…');
     // Динамический импорт: 2D-игра остаётся рабочей, если 3D-модули не загрузились
@@ -164,12 +171,12 @@ document.getElementById('btn-fallback-2d')?.addEventListener('click', () => {
 // ── Старт игры ───────────────────────────────────────────────────────────
 async function startGame(loadSaved) {
   const ok3d = await enable3D();
-  if (!ok3d && !webglAvailable) {
+  if (!ok3d && !webglAvailable && forcedMode !== '2d') {
     // Показываем экран совместимости, игра всё равно доступна в 2D
     if (nolwebgl) nolwebgl.classList.add('show');
     fallbackTo2D(null);
   } else if (!ok3d) {
-    fallbackTo2D('3D недоступен на этом устройстве');
+    fallbackTo2D(forcedMode === '2d' ? 'Включён 2D-режим по запросу' : '3D недоступен на этом устройстве');
   }
   ui.startGame(loadSaved);
 }
