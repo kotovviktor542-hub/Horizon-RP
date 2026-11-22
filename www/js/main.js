@@ -4,7 +4,7 @@
 // автоматически включается классический 2D-режим — прогресс и механики общие.
 
 import { SoundEngine } from './audio.js';
-import { GameEngine } from './engine.js';
+import { GameEngine, detectQuality3D } from './engine.js';
 import { Renderer } from './sprites.js';
 import { InputController } from './input.js';
 import { UIManager } from './ui.js';
@@ -85,6 +85,14 @@ async function enable3D() {
     const mod = await import('../js3d/game/game3d.js');
     setLoading(58, 'Построение лесов, крепостей и руин…');
     const quality3d = engine.settings.quality3d || 'high';
+    if (engine.settings.quality3dAuto && !engine.hasSaveGame?.()) {
+      const detected = detectQuality3D();
+      if (detected !== quality3d) {
+        engine.settings.quality3d = detected;
+        const labels = { low: 'Низкое', medium: 'Среднее', high: 'Высокое' };
+        ui.toast?.(`🎚 Качество 3D подобрано под устройство: ${labels[detected]}`, '#7dd3fc');
+      }
+    }
     game3d = new mod.Game3D(canvas3d, engine, {
       quality: engine.settings.quality, quality3d, externalLoop: true,
       rendererFactory: window.__VEXMORA_RENDERER_FACTORY || null

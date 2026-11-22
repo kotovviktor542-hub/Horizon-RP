@@ -14,6 +14,28 @@ import { encodeMapGrid, getTerrainAt, randomMapSeed } from './mapgen.js';
 
 const SAVE_KEY = 'horizon_rp_save_v2';
 
+// Автоподбор качества 3D под устройство: слабые телефоны не должны стартовать
+// с «высокого» пресета и ловить просадку в первые секунды. Решение запоминается,
+// чтобы игрок мог выбрать своё качество в настройках и оно не перебивалось.
+export function detectQuality3D(env = typeof navigator !== 'undefined' ? navigator : null) {
+  try {
+    if (!env) return 'high';
+    const mem = env.deviceMemory || 0;
+    const cores = env.hardwareConcurrency || 0;
+    const dpr = typeof window !== 'undefined' ? (window.devicePixelRatio || 1) : 1;
+    const touch = !!env.maxTouchPoints;
+    // Нет телеметрии (десктоп, WebView без API) — не занижаем качество
+    if (!mem && !cores) return 'high';
+    if (mem && mem <= 2) return 'low';
+    if (cores && cores <= 2 && touch) return 'low';
+    if (mem && mem <= 4) return 'medium';
+    if (touch && dpr >= 3 && cores <= 4) return 'medium';
+    return 'high';
+  } catch {
+    return 'high';
+  }
+}
+
 function clamp(v, lo, hi) {
   return v < lo ? lo : v > hi ? hi : v;
 }
@@ -37,6 +59,7 @@ export class GameEngine {
     this.settings = {
       quality: 'medium',     // качество 2D-рендера: 'low' | 'medium' | 'high'
       quality3d: 'high',     // качество 3D: 'low' | 'medium' | 'high' | 'ultra'
+      quality3dAuto: true,   // подобрано автоматически по устройству (можно переопределить)
       sound: true,
       autoAim: true,
       showFps: false
@@ -672,9 +695,11 @@ export class GameEngine {
       this.timeOfDay = data.timeOfDay ?? 0.30;
       this.dayCount = data.dayCount ?? 1;
       if (data.settings) Object.assign(this.settings, data.settings);
-      // Совместимость со старыми сохранениями: качество 3D появилось в 3D-обновлении
-      if (!this.settings.quality3d) this.settings.quality3d = 'high';
-      if (!['low', 'medium', 'high', 'ultra'].includes(this.settings.quality3d)) this.settings.quality3d = 'high';
+      // Совместимость со старыми сохранениями: качество 3D появилось в 3D-обновлении.
+      // Сейв, созданный до 3D, подхватывает пресет по железу, а не всегда «высокий».
+      if (!this.settings.quality3d) this.settings.quality3d = detectQuality3D();
+      if (!['low', 'medium', 'high', 'ultra'].includes(this.settings.quality3d)) this.settings.quality3d = detectQuality3D();
+      this.settings.quality3dAuto = this.settings.quality3dAuto !== false;
 
       Object.assign(this.player, data.player);
       this.player.z = 0;

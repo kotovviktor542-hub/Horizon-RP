@@ -1263,6 +1263,7 @@ export class UIManager {
 
     body.querySelectorAll('[data-q3]').forEach(b => b.addEventListener('click', () => {
       s.quality3d = b.dataset.q3;
+      s.quality3dAuto = false;   // выбор игрока отключает автоподбор по устройству
       if (this.game3d) this.game3d.applyQuality(s.quality3d);
       eng.saveGame(true);
       this.renderModalTab();

@@ -13,7 +13,7 @@ globalThis.localStorage = {
 };
 globalThis.window = { innerWidth: 844, innerHeight: 390, devicePixelRatio: 2 };
 
-const { GameEngine } = await import('../www/js/engine.js');
+const { GameEngine, detectQuality3D } = await import('../www/js/engine.js');
 const data = await import('../www/js/data.js');
 const { WEAPONS, WEAPON_MODS, BASE_ROOMS, ITEMS, SKILLS, SKILL_TREE, ENEMIES, BOSSES, QUESTS, SECRETS, NPCS, ACHIEVEMENTS, BIOMES, CAMPFIRES, RESCUE_MISSIONS, UPDATE_ANNOUNCEMENT, GAME_TITLE, LOCATIONS, ARTIFACTS, FACTIONS, ARMORS, TRIALS } = data;
 const { getLocationIdAt, VEHICLE_KINDS } = await import('../www/js/world.js');
@@ -23,9 +23,10 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(__dirname, '..');
 
 const noopSound = { enabled: true, play() {}, unlock() {} };
-let passed = 0;
+let passed = 0, TOTAL = 0;
 
 function test(name, fn) {
+  TOTAL++;
   fn();
   passed++;
   console.log(`  ✓ ${name}`);
@@ -877,6 +878,26 @@ test('23. 3D-РЕЖИМ: настройка качества графики со
   assert.equal(eng3.settings.quality3d, 'high', 'Качество 3D подставляется по умолчанию');
 });
 
+test('23б. 3D-КАЧЕСТВО: автоподбор под слабые устройства и приоритет выбора игрока', () => {
+  assert.equal(detectQuality3D({ deviceMemory: 1, hardwareConcurrency: 2, maxTouchPoints: 5 }), 'low',
+    'Слабый телефон получает низкий пресет');
+  assert.equal(detectQuality3D({ deviceMemory: 3, hardwareConcurrency: 4, maxTouchPoints: 5 }), 'medium',
+    'Средний телефон получает средний пресет');
+  assert.equal(detectQuality3D({ deviceMemory: 8, hardwareConcurrency: 8, maxTouchPoints: 0 }), 'high',
+    'Мощное устройство/ПК получает высокий пресет');
+  assert.equal(detectQuality3D(null), 'high', 'Без данных об устройстве — безопасный высокий пресет');
+
+  // Явный выбор игрока не должен перебиваться автоподбором
+  const eng = new GameEngine(noopSound);
+  eng.settings.quality3d = 'ultra';
+  eng.settings.quality3dAuto = false;
+  eng.saveGame(true);
+  const eng2 = new GameEngine(noopSound);
+  eng2.loadGame();
+  assert.equal(eng2.settings.quality3d, 'ultra', 'Выбор игрока сохраняется');
+  assert.equal(eng2.settings.quality3dAuto, false, 'Отметка «выбрано вручную» сохраняется');
+});
+
 test('24. 3D-АРСЕНАЛ: все 31 оружие имеет 3D-категорию (клинок/топор/копьё/лук/магия)', () => {
   const cats = { melee: 0, bow: 0, magic: 0 };
   for (const w of Object.values(WEAPONS)) {
@@ -944,4 +965,4 @@ test('27. 3D-ГРАФИКА: 4 уровня качества, тени, пого
   assert.ok(terrain.includes('lod'), 'Ландшафт должен использовать LOD');
 });
 
-console.log(`\nИТОГ: ${passed}/27 комплексных проверок VEXMORA 3D успешно пройдено!`);
+console.log(`\nИТОГ: ${passed}/${TOTAL} комплексных проверок VEXMORA 3D успешно пройдено!`);
