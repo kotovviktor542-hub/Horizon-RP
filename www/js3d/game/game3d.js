@@ -10,6 +10,7 @@ import { ThirdPersonCamera } from '../core/camera.js';
 import { Effects3D } from '../core/effects.js';
 import { World3D } from './worldbridge.js';
 import { CAMPFIRES } from '../../js/data.js';
+import { setDeferTextures, pendingMaterialNames, textureMaterial, materialNames } from '../core/materials.js';
 
 const QUALITY_PRESETS = {
   low: {
@@ -67,9 +68,42 @@ export class Game3D {
     this._bindResize();
   }
 
+  // Мир движка пересоздан («Новая игра», смена континента): перестраиваем
+  // ландшафт и объекты, иначе 3D-сцена осталась бы на прежней карте.
+  rebuildWorld() {
+    const map = this.engine.world?.map || null;
+    if (!map) return false;
+    // Если карта та же самая — пересборка не нужна
+    if (map === this.map && this.worldBuilder?.world === this.engine.world) return false;
+    try { this.bridge?.dispose(); } catch { /* мост мог быть не создан */ }
+    try { this.worldBuilder?.dispose(); } catch { /* уже удалён */ }
+    try { this.terrain?.dispose(); } catch { /* уже удалён */ }
+    // Группы старых объектов убираем из сцены (материалы общие, их не трогаем)
+    if (this.terrain?.group) this.scene.remove(this.terrain.group);
+    if (this.worldBuilder?.group) this.scene.remove(this.worldBuilder.group);
+    this.map = map;
+    this._initWorld();
+    // Камера — к новому спавну
+    const hx = this.engine.player.x * WORLD_SCALE;
+    const hz = this.engine.player.y * WORLD_SCALE;
+    const gy = this.terrain.heightAt3D(hx, hz);
+    this.controls?.smoothTarget?.set(hx, gy + 1.35, hz);
+    return true;
+  }
+
   // Этапная инициализация для экрана загрузки: тяжёлая сборка мира идёт
   // по шагам, между ними браузер успевает перерисовать прогресс.
   async initStaged(onProgress = () => {}) {
+    // Сначала строим мир с базовыми материалами (мгновенно), текстуры — потом
+    setDeferTextures(true);
+    try {
+      return await this._initStaged(onProgress);
+    } finally {
+      setDeferTextures(false);
+    }
+  }
+
+  async _initStaged(onProgress = () => {}) {
     onProgress(20, 'Подготовка рендерера…');
     await Promise.resolve();
     this._initRenderer();
@@ -83,8 +117,34 @@ export class Game3D {
     await Promise.resolve();
     this._initUI();
     this._bindResize();
+    onProgress(92, 'Текстуры камня, дерева и металла…');
+    // Прогресс внутри этапа: полоса доезжает от 92% до 100% по мере готовности карт
+    await this.applyTexturesStaged((done, total) => {
+      onProgress(92 + Math.round((done / Math.max(1, total)) * 7), 'Текстуры камня, дерева и металла…');
+    });
     onProgress(100, 'Готово');
     return this;
+  }
+
+  // Дорисовывает процедурные текстуры по ОДНОЙ на кадр: генерация карт
+  // 512²/1024² занимает десятки-сотни мс, синхронный блок вешал телефон.
+  async applyTexturesStaged(onStep) {
+    const pending = pendingMaterialNames();
+    const names = pending.length ? pending : [];
+    const all = materialNames();
+    const quality = this.quality3d;
+    for (let i = 0; i < names.length; i++) {
+      const name = names[i];
+      try { textureMaterial(name, quality); } catch (err) { console.warn('[VEXMORA 3D] текстура', name, err?.message); }
+      onStep?.(i + 1, names.length, name);
+      // Уступаем кадр, чтобы прогресс-бар и сцена перерисовывались
+      await new Promise((r) => {
+        if (typeof requestAnimationFrame === 'function') requestAnimationFrame(() => r());
+        else setTimeout(r, 0);
+      });
+    }
+    setDeferTextures(false);
+    return { textured: names.length, total: all.length };
   }
 
 
@@ -580,6 +640,8 @@ export class Game3D {
     const gy = this.terrain.heightAt3D(hp.x, hp.z);
 
     // 3D-сцена
+    // Движок мог пересоздать мир (новая игра в меню) — догоняем его
+    if (e.world?.map && e.world.map !== this.map) this.rebuildWorld();
     this.terrain.update({ x: hp.x, y: gy, z: hp.z }, dt, this.quality3d);
     this.worldBuilder.update(dt, { x: hp.x, y: gy, z: hp.z }, e.timeOfDay, this.quality3d);
     // Разрушаемые ящики/бочки исчезают в 3D так же, как в логике игры

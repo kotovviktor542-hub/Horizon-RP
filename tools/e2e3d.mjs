@@ -259,6 +259,17 @@ if (scenario === 'forced2d') {
     .dispatchEvent(new window.MouseEvent('mousedown', { bubbles: true }));
   check('Зелье используется из 3D-HUD', cons.potion === 1 || game.engine.player.hunger > hungerBefore);
 
+  // «Новая игра»: движок пересоздаёт мир — 3D-сцена обязана переехать на новую карту
+  const oldMap = game.engine.world.map;
+  const oldSeed = game.engine.worldSeed;
+  game.engine.regenerateWorld();
+  g3.update(1 / 60);
+  check('Новый мир пересобирает 3D-ландшафт', g3.terrain.map === game.engine.world.map && game.engine.worldSeed !== oldSeed,
+    `сид ${oldSeed} → ${game.engine.worldSeed}`);
+  check('Пересборка не теряет чанки и героя', g3.terrain.chunks.size > 10 && !!g3.bridge.hero.root.parent,
+    `чанков: ${g3.terrain.chunks.size}`);
+  check('Старая карта действительно заменена', g3.terrain.map !== oldMap);
+
   const weaponBefore = game.engine.inventory.equippedWeapon;
   game.engine.inventory.weapons = ['sword', 'bow', 'magic_staff'];
   window.document.getElementById('btn3d-weapon')

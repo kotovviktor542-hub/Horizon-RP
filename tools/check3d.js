@@ -397,7 +397,28 @@ ok('Сохранение хранит качество 3D', engine.settings.qual
 bridge.dispose();
 ok('Очистка сцены без ошибок', true);
 
-// 10. Динамическое разрешение: просадка FPS режет разрешение, а не весь пресет
+// 10. Прогрессивные текстуры: мир строится мгновенно, карты дорисовываются по одной
+{
+  const M = await import(`${ROOT}/www/js3d/core/materials.js`);
+  M.clearMaterialCache();
+  M.setDeferTextures(true);
+  const t0 = performance.now();
+  for (const name of M.materialNames()) M.createMaterial(name, { quality: 'high' });
+  const buildMs = performance.now() - t0;
+  const pending = M.pendingMaterialNames();
+  ok('Материалы создаются без текстур мгновенно', buildMs < 120 && pending.length > 5,
+    `${buildMs.toFixed(1)} мс, в очереди ${pending.length}`);
+  let textured = 0;
+  for (const name of pending) if (M.textureMaterial(name, 'high')) textured++;
+  ok('Текстуры применяются по одной (кэш работает)', textured === pending.length &&
+    M.textureMaterial(pending[0], 'high') === false, `обработано: ${textured}`);
+  ok('После текстурировки очередь пуста', M.pendingMaterialNames().length === pending.length,
+    'очередь сбрасывается setDeferTextures(false)');
+  M.setDeferTextures(false);
+  M.clearMaterialCache();
+}
+
+// 11. Динамическое разрешение: просадка FPS режет разрешение, а не весь пресет
 {
   const ratios = [];
   const stubRenderer = {

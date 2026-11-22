@@ -276,12 +276,31 @@ export const MATERIAL_SPECS = {
 };
 
 // ── Публичный API ────────────────────────────────────────────────────────
+// Режим «сначала цвет, потом текстуры»: включается на время старта игры,
+// чтобы телефон не замирал на генерации всех карт сразу.
+let deferTextures = false;
+const pendingTextures = new Set();
+export function setDeferTextures(on) {
+  deferTextures = !!on;
+  if (!on) pendingTextures.clear();
+}
+export function pendingMaterialNames() {
+  return [...pendingTextures];
+}
+
 export function createMaterial(name, opts = {}) {
   const quality = opts.quality || 'high';
   const sizeMap = { low: 128, medium: 256, high: 512, ultra: 1024 };
   const size = sizeMap[quality] || 512;
   const key = `${name}:${quality}:${opts.repeat || 1}`;
   if (cache.has(key)) return cache.get(key);
+
+  if (deferTextures) {
+    // Материал отдаём сразу (цвет + параметры), карты дорисуем по одной
+    const base = createMaterialBase(name, opts);
+    pendingTextures.add(name);
+    return base;
+  }
 
   const spec = MATERIAL_SPECS[name] || MATERIAL_SPECS.rock;
   const params = {
@@ -334,7 +353,102 @@ export function createMaterial(name, opts = {}) {
   const mat = new THREE.MeshStandardMaterial(params);
   mat.name = name;
   cache.set(key, mat);
+  if (params.map || params.normalMap || params.roughnessMap) texturedKeys.add(key);
   return mat;
+}
+
+// ── Прогрессивная текстурировка ──────────────────────────────────────────
+// Генерация одной текстуры 512² занимает на телефоне десятки миллисекунд,
+// а ультра (1024² + нормали) — сотни. Раньше все 15 материалов строились
+// одним синхронным блоком: телефон «замирал» на 3–12 секунд без прогресса.
+// Теперь материал создаётся сразу (цвет), а карты дорисовываются по одной.
+function paintMaps(mat, name, opts = {}) {
+  const quality = opts.quality || 'high';
+  const sizeMap = { low: 128, medium: 256, high: 512, ultra: 1024 };
+  const size = sizeMap[quality] || 512;
+  const spec = MATERIAL_SPECS[name] || MATERIAL_SPECS.rock;
+  let canvasReady = false;
+  try {
+    canvasReady = typeof document !== 'undefined' && !!document.createElement &&
+      !!document.createElement('canvas')?.getContext?.('2d');
+  } catch { canvasReady = false; }
+  if (!canvasReady || quality === 'low') return false;
+  try {
+    if (spec.albedo) {
+      const cv = albedoTexture(size, spec.albedo);
+      if (cv) {
+        mat.map = toTexture(cv, opts.repeat || 1, quality === 'ultra' ? 8 : 4);
+        mat.color = new THREE.Color(0xffffff);
+      }
+    }
+    if (spec.height && (quality === 'high' || quality === 'ultra')) {
+      const nrm = normalTexture(size, spec.height, 3.2);
+      if (nrm) {
+        mat.normalMap = nrm;
+        mat.normalMap.repeat.set(opts.repeat || 1, opts.repeat || 1);
+        mat.normalScale = new THREE.Vector2(0.85, 0.85);
+      }
+    }
+    if (quality !== 'low') {
+      const rough = roughTexture(size, (u, v) => {
+        const n = fbm(u * 12, v * 12, 131, 3);
+        return Math.min(1, Math.max(0.25, (spec.roughness ?? 0.9) + (n - 0.5) * 0.28));
+      });
+      if (rough) {
+        mat.roughnessMap = rough;
+        mat.roughnessMap.repeat.set(opts.repeat || 1, opts.repeat || 1);
+      }
+    }
+    mat.needsUpdate = true;
+    return true;
+  } catch (err) {
+    console.warn('[VEXMORA 3D] текстуры недоступны, используется базовый цвет:', err?.message);
+    return false;
+  }
+}
+
+// Кэш «материал дотекстурирован» — чтобы не перерисовывать при повторных вызовах
+const texturedKeys = new Set();
+
+// Возвращает материалы без текстур: базовый цвет + параметры
+export function createMaterialBase(name, opts = {}) {
+  const quality = opts.quality || 'high';
+  const key = `${name}:${quality}:${opts.repeat || 1}`;
+  if (cache.has(key)) return cache.get(key);
+  const spec = MATERIAL_SPECS[name] || MATERIAL_SPECS.rock;
+  const mat = new THREE.MeshStandardMaterial({
+    color: new THREE.Color(spec.color[0], spec.color[1], spec.color[2]),
+    roughness: spec.roughness ?? 0.9,
+    metalness: spec.metalness ?? 0,
+    ...(opts.params || {})
+  });
+  mat.name = name;
+  mat.userData.baseKey = key;
+  mat.userData.baseOpts = { quality, repeat: opts.repeat || 1 };
+  cache.set(key, mat);
+  return mat;
+}
+
+// Список всех материалов, которым нужна текстурировка на текущем качестве
+export function materialNames() {
+  return Object.keys(MATERIAL_SPECS);
+}
+
+// Дотекстурировать один материал по имени (один вызов = один материал = кадр)
+export function textureMaterial(name, quality = 'high') {
+  const key = `${name}:${quality}:1`;
+  const mat = cache.get(key) || createMaterialBase(name, { quality });
+  if (texturedKeys.has(key)) return false;
+  texturedKeys.add(key);
+  paintMaps(mat, name, { quality });
+  return true;
+}
+
+// Сколько материалов уже готово (для прогресс-бара)
+export function texturedCount(quality = 'high') {
+  let n = 0;
+  for (const name of Object.keys(MATERIAL_SPECS)) if (texturedKeys.has(`${name}:${quality}:1`)) n++;
+  return n;
 }
 
 // Простой цветной материал (для деталей, без текстур — экономия на мелких объектах)
@@ -361,6 +475,8 @@ export function emissiveMaterial(hex, intensity = 1.6, opts = {}) {
 }
 
 export function clearMaterialCache() {
+  texturedKeys.clear();
+  pendingTextures.clear();
   cache.clear();
   for (const m of colorCache.values()) m.dispose?.();
   colorCache.clear();
