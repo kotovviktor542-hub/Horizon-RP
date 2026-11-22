@@ -15,8 +15,9 @@ globalThis.window = { innerWidth: 844, innerHeight: 390, devicePixelRatio: 2 };
 
 const { GameEngine } = await import('../www/js/engine.js');
 const data = await import('../www/js/data.js');
-const { WEAPONS, WEAPON_MODS, BASE_ROOMS, ITEMS, SKILLS, SKILL_TREE, ENEMIES, BOSSES, QUESTS, SECRETS, NPCS, ACHIEVEMENTS, BIOMES, RESCUE_MISSIONS, UPDATE_ANNOUNCEMENT, GAME_TITLE, LOCATIONS, ARTIFACTS, FACTIONS, ARMORS, TRIALS } = data;
-const { getLocationIdAt } = await import('../www/js/world.js');
+const { WEAPONS, WEAPON_MODS, BASE_ROOMS, ITEMS, SKILLS, SKILL_TREE, ENEMIES, BOSSES, QUESTS, SECRETS, NPCS, ACHIEVEMENTS, BIOMES, CAMPFIRES, RESCUE_MISSIONS, UPDATE_ANNOUNCEMENT, GAME_TITLE, LOCATIONS, ARTIFACTS, FACTIONS, ARMORS, TRIALS } = data;
+const { getLocationIdAt, VEHICLE_KINDS } = await import('../www/js/world.js');
+const { createMap, encodeMapGrid, decodeMapGrid, MAP_BIOMES, getTerrainAt } = await import('../www/js/mapgen.js');
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(__dirname, '..');
@@ -34,9 +35,9 @@ function killAll(eng, list) {
   for (const e of [...list]) eng.damageEnemy(e, 999999);
 }
 
-console.log('=== Проверка VEXMORA: AGE OF THE FALLEN GODS — ОБНОВЛЕНИЕ 3.0 ===');
+console.log('=== Проверка VEXMORA 2.1 — GLOBAL MAP & TRANSPORT ===');
 assert.equal(GAME_TITLE, 'VEXMORA');
-assert.ok(UPDATE_ANNOUNCEMENT.title.includes('ПАДЕНИЕ ДРЕВНИХ'));
+assert.ok(UPDATE_ANNOUNCEMENT.title.includes('GLOBAL MAP'), 'Анонс обновления должен описывать Global Map & Transport');
 
 test('1. Все прозрачные пиксель-арт PNG и спрайт-листы существуют и валидны (108+ файлов)', () => {
   const spritesJs = fs.readFileSync(path.join(rootDir, 'www/js/sprites.js'), 'utf8');
@@ -71,7 +72,7 @@ test('1. Все прозрачные пиксель-арт PNG и спрайт-�
 
 test('2. Мир: 4 биома, 9 зданий, 6 транспортов, 8 NPC базы, 15 боссов, 13 спасений, 3 спецконтейнера', () => {
   const eng = new GameEngine(noopSound);
-  assert.equal(Object.keys(BIOMES).length, 4);
+  assert.equal(Object.keys(BIOMES).length, 9, 'Биомы: 4 базовых + 5 процедурных (равнины, болото, снег, берег, море)');
   assert.equal(NPCS.length, 8);
   assert.equal(eng.bossEntities.length, 23);
   assert.equal(Object.keys(BOSSES).length, 23);
@@ -84,8 +85,9 @@ test('2. Мир: 4 биома, 9 зданий, 6 транспортов, 8 NPC �
     assert.ok(bldKinds.has(k), `Здание типа ${k} должно быть размещено в мире`);
   }
   const vehKinds = new Set(eng.world.vehicles.map(v => v.kind));
-  for (const k of ['car', 'moto', 'jeep', 'bus', 'heli', 'boat']) {
+  for (const k of ['sportscar', 'muscle', 'sedan', 'suv', 'miljeep', 'pickup', 'bike', 'truck', 'apc']) {
     assert.ok(vehKinds.has(k), `Транспорт типа ${k} должен быть размещён в мире`);
+    assert.ok(VEHICLE_KINDS[k], `Класс техники ${k} должен иметь спецификацию`);
   }
   // У каждого босса уникальный спрайт, арена и награда-оружие
   const bossSprites = new Set(Object.values(BOSSES).map(b => b.sprite));
@@ -201,7 +203,7 @@ test('5. Гранаты игрока, взрывные бочки, Тесла-ц
 
 test('6. Транспорт и Гараж: вождение, скорость от Гаража и таран врагов', () => {
   const eng = new GameEngine(noopSound);
-  const moto = eng.world.vehicles.find(v => v.kind === 'moto' && v.drivable);
+  const moto = eng.world.vehicles.find(v => v.kind === 'bike' && v.drivable);
   assert.ok(moto);
   eng.player.x = moto.x; eng.player.y = moto.y + 20;
   const res = eng.interact();
@@ -714,4 +716,126 @@ test('19. ПАДЕНИЕ ДРЕВНИХ: огнестрел удалён, 3 бо
   assert.ok(QUESTS.some(q => q.id === 'q_fall_ch1') && QUESTS.some(q => q.id === 'q_fall_ch2'), 'Квесты Падения Древних на месте');
 });
 
-console.log(`\nИТОГ: ${passed}/19 комплексных проверок VEXMORA — ПАДЕНИЕ ДРЕВНИХ успешно пройдено!`);
+test('20. GLOBAL MAP: процедурная карта, 6+ биомов, реки, острова, сохранение и новый мир', () => {
+  const eng = new GameEngine(noopSound);
+  const map = eng.world.map;
+  assert.ok(map && map.biomeCode, 'Мир должен содержать процедурную карту');
+
+  // 1) Карта детерминирована по seed
+  const a = createMap(424242);
+  const b = createMap(424242);
+  let identical = true;
+  for (let i = 0; i < a.biomeCode.length; i += 37) {
+    if (a.biomeCode[i] !== b.biomeCode[i]) { identical = false; break; }
+  }
+  assert.ok(identical, 'Одинаковый seed должен давать одинаковую карту');
+
+  // 2) Разные seed — разные миры
+  const c = createMap(777);
+  let diff = 0;
+  for (let i = 0; i < a.biomeCode.length; i += 13) if (a.biomeCode[i] !== c.biomeCode[i]) diff++;
+  assert.ok(diff > 200, 'Разные seed должны давать разные континенты');
+
+  // 3) Биомное разнообразие: все 9 типов присутствуют
+  const st = a.stats();
+  for (const id of Object.keys(MAP_BIOMES)) {
+    assert.ok((st.counts[id] || 0) > 0, `Биом ${id} должен присутствовать на карте`);
+  }
+  assert.ok(st.landPercent >= 40 && st.landPercent <= 95, `Суша должна занимать разумную долю: ${st.landPercent}%`);
+
+  // 4) Все 5 требуемых типов ландшафта: леса, пустыни, снега, болота, горы
+  for (const id of ['forest', 'desert', 'snow', 'swamp', 'mountains']) {
+    assert.ok((st.counts[id] || 0) > 40, `Обязательный биом ${id} должен быть заметным`);
+  }
+
+  // 5) Реки и вода существуют, дороги проходят по мостам
+  let rivers = 0, bridges = 0;
+  for (let i = 0; i < a.river.length; i++) { if (a.river[i]) rivers++; if (a.bridge[i]) bridges++; }
+  assert.ok(rivers > 15, `На карте должны быть реки (найдено ${rivers})`);
+  assert.ok(bridges > 0, 'Дороги должны проходить по мостам/насыпям');
+  const terr = a.terrainAt(200, 200);
+  assert.ok(typeof terr.water === 'boolean' && typeof terr.walkSpeed === 'number', 'Поверхность должна описывать проходимость');
+
+  // 6) Сохранение карты: RLE-кодирование и восстановление 1:1
+  const enc = encodeMapGrid(a);
+  const dec = decodeMapGrid(enc);
+  assert.equal(dec.length, a.biomeCode.length, 'Декодированная карта должна совпадать по размеру');
+  assert.equal(dec[12345], a.biomeCode[12345], 'Карта восстанавливается 1:1');
+  assert.ok(enc.length < 60000, 'Сжатая карта должна помещаться в сохранение');
+
+  // 7) Новый мир в игре
+  const oldSeed = eng.worldSeed;
+  eng.regenerateWorld(999888);
+  assert.notEqual(eng.worldSeed, oldSeed);
+  assert.equal(eng.worldSeed, 999888);
+  assert.ok(eng.world.vehicles.length > 5, 'В новом мире тоже есть транспорт');
+
+  // 8) Каждый ключевой объект стоит на суше
+  const mustBeLand = [
+    ...CAMPFIRES.map(c => [c.x, c.y, c.name]),
+    ...Object.values(BOSSES).map(b => [b.x, b.y, b.name]),
+    ...eng.world.buildings.map(b => [b.x, b.y, b.kind])
+  ];
+  for (const [x, y, name] of mustBeLand) {
+    const cell = eng.world.map.cellAt(x, y);
+    assert.ok(!(cell.water && cell.water === 2), `${name} не должен стоять в глубокой воде`);
+  }
+});
+
+test('21. TRANSPORT: 9 классов техники, езда, повороты, вода и таран', () => {
+  const eng = new GameEngine(noopSound);
+  const kinds = new Set(eng.world.vehicles.map(v => v.kind));
+  assert.equal(kinds.size, 9, `Должно быть 9 классов техники, найдено ${kinds.size}: ${[...kinds].join(',')}`);
+  for (const k of ['sportscar', 'suv', 'miljeep', 'truck', 'bike', 'apc']) {
+    assert.ok(kinds.has(k), `Отсутствует требуемый транспорт: ${k}`);
+  }
+
+  // Спорткар быстрее внедорожника и грузовика
+  const sport = eng.world.vehicles.find(v => v.kind === 'sportscar');
+  const truck = eng.world.vehicles.find(v => v.kind === 'truck');
+  assert.ok(eng.getVehicleSpeed(sport) > eng.getVehicleSpeed(truck), 'Спорткар должен быть быстрее грузовика');
+  assert.ok(eng.getVehicleSpeed(sport) > eng.getVehicleSpeed(eng.world.vehicles.find(v => v.kind === 'apc')), 'БТР медленнее спорткара');
+
+  // Посадка и разгон с инерцией
+  eng.player.x = sport.x; eng.player.y = sport.y + 24;
+  assert.equal(eng.interact()?.type, 'vehicle_enter');
+  const x0 = sport.x;
+  for (let i = 0; i < 4; i++) eng.update(0.033, { moveX: 1, moveY: 0 });
+  const s1 = Math.hypot(sport.vx, sport.vy);
+  assert.ok(s1 > 20, 'Транспорт должен набирать скорость');
+  for (let i = 0; i < 6; i++) eng.update(0.033, { moveX: 1, moveY: 0 });
+  const s2 = Math.hypot(sport.vx, sport.vy);
+  assert.ok(s2 > s1, 'Скорость должна расти при удержании газа (инерция и разгон)');
+  assert.ok(sport.x > x0 + 40, 'Транспорт должен ехать вперёд');
+
+  // Поворот корпуса
+  const angBefore = sport.angle;
+  for (let i = 0; i < 20; i++) eng.update(0.033, { moveX: 0, moveY: 1 });
+  assert.ok(Math.abs(sport.angle - angBefore) > 0.3, 'Транспорт должен поворачивать по направлению ввода');
+
+  // Выход из машины
+  eng.interact();
+  assert.equal(eng.player.vehicleId, null);
+  assert.ok(eng.stats.droveVehicle >= 1, 'Счётчик вождения должен расти');
+
+  // Вода замедляет героя и помечается как водная поверхность
+  const waterCell = (() => {
+    const map = eng.world.map;
+    for (let y = 200; y < map.height; y += 160) {
+      for (let x = 200; x < map.width; x += 160) {
+        const c = map.cellAt(x, y);
+        if (c.water === 2) return { x, y };
+      }
+    }
+    return null;
+  })();
+  assert.ok(waterCell, 'На карте должна быть глубокая вода');
+  eng.player.x = waterCell.x; eng.player.y = waterCell.y;
+  eng.update(0.05, { moveX: 0, moveY: 0 });
+  assert.equal(eng.player.inWater, true, 'Герой в глубокой воде должен быть помечен как плывущий');
+  const terr = getTerrainAt(waterCell.x, waterCell.y);
+  assert.ok(terr.walkSpeed < 1, 'Вода должна замедлять движение');
+  assert.equal(terr.swim, true, 'Глубину можно переплыть (мир полностью исследуем)');
+});
+
+console.log(`\nИТОГ: ${passed}/21 комплексных проверок VEXMORA — GLOBAL MAP & TRANSPORT успешно пройдено!`);

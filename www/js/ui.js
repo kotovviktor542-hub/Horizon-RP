@@ -7,6 +7,7 @@ import {
   UPDATE_ANNOUNCEMENT, LOCATIONS, ARTIFACTS, FACTIONS, ARMORS, TRIALS
 } from './data.js';
 import { getBiomeIdAt, dist2 } from './world.js';
+import { MAP_BIOMES } from './mapgen.js';
 
 export class UIManager {
   constructor(engine, renderer) {
@@ -142,6 +143,8 @@ export class UIManager {
       const ok = this.engine.loadGame();
       if (!ok) this.engine.resetState();
     } else {
+      // GLOBAL MAP: новая игра всегда начинается на свежесгенерированном континенте
+      this.engine.regenerateWorld();
       this.engine.resetState();
       this.engine.saveGame(true);
     }
@@ -281,7 +284,16 @@ export class UIManager {
     const upg = eng.weaponUpgrades[wDef.id] || 0;
 
     this.els.hudLevel.textContent = `Ур. ${p.level}`;
-    this.els.hudBiome.textContent = eng.getCurrentLocationName ? eng.getCurrentLocationName() : BIOMES[biomeId].name;
+    // GLOBAL MAP: биом + состояние поверхности (вода, мост, бездорожье)
+    const terr = eng.terrainAt ? eng.terrainAt(p.x, p.y) : null;
+    let biomeLabel = eng.getCurrentLocationName ? eng.getCurrentLocationName() : (BIOMES[biomeId] || MAP_BIOMES[biomeId] || { name: 'Дикая земля' }).name;
+    if (terr && !eng.getCurrentLocationName) {
+      if (terr.type === 'deep') biomeLabel += ' · 🌊 Вплавь';
+      else if (terr.type === 'shallow') biomeLabel += ' · 💧 Брод';
+      else if (terr.type === 'river') biomeLabel += ' · 🌊 Река';
+      else if (terr.type === 'bridge') biomeLabel += ' · 🌉 Мост';
+    }
+    this.els.hudBiome.textContent = biomeLabel;
 
     this.els.barHp.style.width = `${Math.max(0, (p.hp / p.maxHp) * 100).toFixed(1)}%`;
     this.els.txtHp.textContent = `${Math.ceil(p.hp)}/${p.maxHp}`;
@@ -1002,11 +1014,29 @@ export class UIManager {
       `;
     }).join('');
 
+    const map = eng.world.map;
+    const stats = map ? map.stats() : null;
+    const biomeRows = stats ? Object.entries(stats.counts)
+      .filter(([id]) => id !== 'water')
+      .sort((a, b) => b[1] - a[1])
+      .map(([id, n]) => {
+        const b = MAP_BIOMES[id] || BIOMES[id] || { name: id, groundBase: '#64748b' };
+        const pct = Math.round((n / stats.total) * 100);
+        return `<span class="res-pill" style="border-left:3px solid ${b.groundBase || '#64748b'}">${b.name}: ${pct}%</span>`;
+      }).join('') : '';
+
     body.innerHTML = `
       <div class="world-map-box">
-        <canvas id="full-map-canvas" width="260" height="260"></canvas>
-        <div class="card-desc">🔵 Вы · 🟠 Костры · 🔴 Боссы · ⬜ Здания · 🟡 Цель квеста</div>
+        <canvas id="full-map-canvas" width="520" height="520" style="width:100%;max-width:520px;image-rendering:pixelated;border-radius:8px"></canvas>
+        <div class="card-desc">🔵 Вы · 🟠 Костры · 🔴 Боссы · ⬜ Здания · 🟡 Цель квеста · Реки, моря и горы — на карте</div>
       </div>
+      <div class="res-pills" style="margin-top:8px">
+        <span class="res-pill">🌍 Мир #${eng.worldSeed}</span>
+        <span class="res-pill">🏞️ Суша: ${stats ? stats.landPercent : 0}%</span>
+        <span class="res-pill">🧭 Процедурная карта WorldBox</span>
+        <button class="action-btn gold" data-new-world="1">🎲 Сгенерировать новый мир</button>
+      </div>
+      <div class="res-pills">${biomeRows}</div>
       <div class="section-title" style="margin-top:12px">🌌 Локации RISE OF THE ABYSS</div>
       <div class="grid-cards">
         ${Object.values(LOCATIONS).map(loc => {
@@ -1036,6 +1066,15 @@ export class UIManager {
 
     body.querySelectorAll('[data-travel]').forEach(b => b.addEventListener('click', () => {
       if (eng.fastTravel(b.dataset.travel)) this.closeModal();
+    }));
+
+    body.querySelectorAll('[data-new-world]').forEach(b => b.addEventListener('click', () => {
+      if (typeof window !== 'undefined' && !window.confirm('Сгенерировать новый мир? Прогресс героя, уровни и предметы сохранятся, но карта, здания и транспорт создадутся заново.')) return;
+      eng.regenerateWorld();
+      eng.saveGame(true);
+      this.closeModal();
+      this.engine.pushToast('🌍 Новый мир сгенерирован! Исследуй новые земли', '#4ade80');
+      this.openModal('map');
     }));
   }
 

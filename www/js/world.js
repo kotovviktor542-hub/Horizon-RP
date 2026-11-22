@@ -1,19 +1,17 @@
-// Генератор открытого мира VEXMORA (6400x6400):
-// 4 биома, Убежище VEXMORA, 10 арен боссов, 10 точек спасения выживших (клетки + терминалы тревоги),
-// 5 секретных бункеров/складов, 9 типов зданий с AABB-коллизиями, 6 видов транспорта и O(1) сетка препятствий.
+// Генератор открытого мира VEXMORA: процедурная карта в духе WorldBox.
+// Континент с океаном, морями, озёрами, реками и мостами, ущельями, горами, лесами,
+// равнинами, пустынями, снегами, болотами, мегаполисом и архипелагом.
+// Убежище VEXMORA, арены боссов, точки спасения, секретные бункеры, здания с AABB-коллизиями,
+// транспорт и O(1) сетка препятствий — всё привязано к сгенерированной карте.
 
 import { WORLD_CONFIG, BIOMES, CAMPFIRES, SECRETS, BOSSES, RESCUE_MISSIONS, LOCATIONS } from './data.js';
+import {
+  createMap, createMapFromSave, setActiveMap, getActiveMap, getBiomeIdAt as mapBiomeAt,
+  getTerrainAt, MAP_CONFIG, MAP_BIOMES, mulberry32, fbm, randomMapSeed
+} from './mapgen.js';
 
-function mulberry32(seed) {
-  let a = seed >>> 0;
-  return function () {
-    a |= 0;
-    a = (a + 0x6D2B79F5) | 0;
-    let t = Math.imul(a ^ (a >>> 15), 1 | a);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
+export { getTerrainAt, getActiveMap, MAP_BIOMES, MAP_CONFIG };
+export { randomMapSeed };
 
 export function dist2(ax, ay, bx, by) {
   const dx = ax - bx;
@@ -21,13 +19,12 @@ export function dist2(ax, ay, bx, by) {
   return dx * dx + dy * dy;
 }
 
+// Биом в точке мира: читается из активной процедурной карты (WorldBox-стиль)
 export function getBiomeIdAt(x, y) {
-  const wave = Math.sin(x * 0.0024) * 80 + Math.cos(y * 0.0024) * 80;
-  if (y < 1850 + wave * 0.5 && x >= 2100 + wave * 0.4) return 'mountains';
-  if (x > 4050 - wave * 0.5 && y >= 1750 && y <= 4950) return 'city';
-  if (y > 4150 - wave * 0.4 && x < 3950 + wave * 0.4) return 'desert';
-  return 'forest';
+  return mapBiomeAt(x, y);
 }
+
+// Проходимость и тип поверхности (вода, мост, глубина, замедление)
 
 // RISE OF THE ABYSS: особая локация в точке мира (или null, если обычный биом)
 export function getLocationIdAt(x, y) {
@@ -44,6 +41,21 @@ export function getLocationAt(x, y) {
   return id ? LOCATIONS[id] : null;
 }
 
+
+// ── GLOBAL MAP & TRANSPORT: классы техники ───────────────────────────────
+// speed — базовая скорость (px/сек), accel — разгон, grip — управляемость, hp — прочность кузова
+export const VEHICLE_KINDS = {
+  sportscar: { name: 'Спорткар',      speed: 470, accel: 3.1, grip: 0.94, radius: 25, hp: 190 },
+  muscle:    { name: 'Маслкар',       speed: 440, accel: 2.9, grip: 0.90, radius: 25, hp: 220 },
+  sedan:     { name: 'Седан',         speed: 360, accel: 2.2, grip: 0.88, radius: 24, hp: 200 },
+  suv:       { name: 'Внедорожник',   speed: 355, accel: 2.3, grip: 0.92, radius: 26, hp: 260 },
+  miljeep:   { name: 'Военный джип',  speed: 370, accel: 2.5, grip: 0.93, radius: 26, hp: 280 },
+  pickup:    { name: 'Пикап',         speed: 345, accel: 2.2, grip: 0.90, radius: 27, hp: 250 },
+  bike:      { name: 'Мотоцикл',      speed: 400, accel: 3.4, grip: 0.82, radius: 18, hp: 120 },
+  truck:     { name: 'Грузовик',      speed: 300, accel: 1.7, grip: 0.80, radius: 32, hp: 380 },
+  apc:       { name: 'Бронетранспортёр', speed: 285, accel: 1.8, grip: 0.86, radius: 34, hp: 520 }
+};
+
 const BUILDING_SPECS = {
   house:      { w: 112, h: 96,  colW: 84,  colH: 44, label: 'Жилой дом' },
   shop:       { w: 116, h: 96,  colW: 88,  colH: 48, label: 'Торговый павильон SHOP' },
@@ -56,10 +68,14 @@ const BUILDING_SPECS = {
   base:       { w: 156, h: 108, colW: 132, colH: 54, label: 'Военный Штаб' }
 };
 
-export function createWorld(seed = 20261025) {
+export function createWorld(seed = 20261025, savedGrid = null) {
   const rand = mulberry32(seed);
   const W = WORLD_CONFIG.width;
   const H = WORLD_CONFIG.height;
+
+  // Процедурная карта: новый континент по seed или восстановление из сохранения
+  const map = savedGrid ? createMapFromSave(seed, savedGrid) : createMap(seed);
+  setActiveMap(map);
 
   const buildings = [];
   const props = [];
@@ -127,9 +143,21 @@ export function createWorld(seed = 20261025) {
   ];
   for (const [k, nx, ny] of starterNodes) nodes.push(makeNode(nextId++, k, nx, ny));
 
-  vehicles.push(
-    { id: 'veh_base_moto', kind: 'moto', name: 'Развед-мотоцикл Базы', x: 3530, y: 3150, vx: 0, vy: 0, angle: 0, radius: 20, drivable: true, baseSpeed: 360 }
-  );
+  // ── GLOBAL MAP & TRANSPORT: новый автопарк ────────────────────────────
+  // Sportscar (скорость), pickup/SUV (проходимость), military jeep, truck (грузовик),
+  // bike (мотоцикл), APC (бронетранспортёр) — детализированные модели с анимацией колёс.
+  const addVehicle = (id, kind, name, x, y, opts = {}) => {
+    const spec = VEHICLE_KINDS[kind] || VEHICLE_KINDS.sedan;
+    vehicles.push({
+      id, kind, name, x, y, vx: 0, vy: 0, angle: opts.angle || 0,
+      radius: spec.radius, drivable: opts.drivable !== false,
+      baseSpeed: opts.baseSpeed || spec.speed, accel: spec.accel, grip: spec.grip,
+      hp: spec.hp, maxHp: spec.hp, ...opts
+    });
+  };
+
+  addVehicle('veh_base_moto', 'bike', 'Развед-мотоцикл «Вихрь»', 3530, 3150, { baseSpeed: 400 });
+  addVehicle('veh_base_sport', 'sportscar', 'Спорткар «Фантом»', 3260, 3420, { baseSpeed: 470, angle: -0.4 });
 
   // ── 2. ЗАБРОШЕННЫЙ МЕГАПОЛИС (Восток) ─────────────────────────────────
   addBuilding('hospital',  4680, 3040, { interactType: 'heal', name: 'Центральная Больница' });
@@ -145,10 +173,10 @@ export function createWorld(seed = 20261025) {
     name: 'Спецсклад Полиции'
   });
 
-  vehicles.push(
-    { id: 'veh_city_car', kind: 'car', name: 'Патрульный седан', x: 4340, y: 3260, vx: 0, vy: 0, angle: 0, radius: 24, drivable: true, baseSpeed: 340 },
-    { id: 'veh_city_bus', kind: 'bus', name: 'Городской автобус', x: 4920, y: 3680, vx: 0, vy: 0, angle: 0, radius: 34, drivable: false }
-  );
+  addVehicle('veh_city_car', 'sedan', 'Патрульный седан', 4340, 3260, { baseSpeed: 360 });
+  addVehicle('veh_city_muscle', 'muscle', 'Маслкар «Ярость»', 5060, 3480, { baseSpeed: 455, angle: Math.PI });
+  addVehicle('veh_city_truck', 'truck', 'Грузовик снабжения', 4760, 3820, { baseSpeed: 300, angle: 0.2 });
+  addVehicle('veh_city_apc', 'apc', 'Бронетранспортёр Нацгвардии', 5320, 3120, { baseSpeed: 285, angle: Math.PI * 0.9 });
 
   // ── 3. ПРОМЗОНА ХИМЗАВОДА И ПЕСЧАНЫЙ КАНЬОН (Юг / Юго-Запад) ──────────
   addBuilding('factory',    1540, 4880, { interactType: 'loot_once', name: 'Химкомбинат VEXMORA', smokes: true });
@@ -162,9 +190,9 @@ export function createWorld(seed = 20261025) {
     name: 'Подземное Хранилище Лаборатории'
   });
 
-  vehicles.push(
-    { id: 'veh_desert_jeep', kind: 'jeep', name: 'Пустынный Бронеджип', x: 1960, y: 4620, vx: 0, vy: 0, angle: 0, radius: 26, drivable: true, baseSpeed: 335 }
-  );
+  addVehicle('veh_desert_jeep', 'miljeep', 'Пустынный военный джип', 1960, 4620, { baseSpeed: 370 });
+  addVehicle('veh_desert_pickup', 'pickup', 'Пикап «Каньон»', 2360, 5140, { baseSpeed: 345, angle: 1.1 });
+  addVehicle('veh_desert_truck', 'truck', 'Тяжёлый грузовик Промзоны', 1400, 5240, { baseSpeed: 290, angle: -0.5 });
 
   // ── 4. ЛЕСНОЙ СЕКТОР НА СЕВЕРО-ЗАПАДЕ ─────────────────────────────────
   addBuilding('bunker', 1380, 1360, {
@@ -186,10 +214,9 @@ export function createWorld(seed = 20261025) {
     name: 'Секретный Арсенал Цитадели'
   });
 
-  vehicles.push(
-    { id: 'veh_base_heli', kind: 'heli', name: 'Штурмовой вертолёт VEXMORA', x: 4820, y: 1020, vx: 0, vy: 0, angle: 0, radius: 34, drivable: false },
-    { id: 'veh_north_jeep', kind: 'jeep', name: 'Арктический Внедорожник', x: 4380, y: 1340, vx: 0, vy: 0, angle: 0, radius: 26, drivable: true, baseSpeed: 340 }
-  );
+  addVehicle('veh_north_jeep', 'suv', 'Арктический внедорожник', 4380, 1340, { baseSpeed: 355 });
+  addVehicle('veh_north_apc', 'apc', 'Армейский БТР-«Мороз»', 4560, 1180, { baseSpeed: 300, angle: 0.6 });
+  addVehicle('veh_north_truck', 'truck', 'Военный грузовик', 5040, 1260, { baseSpeed: 295, angle: Math.PI });
 
   // ── 6. ОСТРОВ КОНТРАБАНДИСТОВ С ПЛИТАМИ ЧЕРЕЗ РЕКУ И КАТЕРОМ ──────────
   hazards.push({
@@ -202,10 +229,7 @@ export function createWorld(seed = 20261025) {
   for (const py of [4608, 4664, 4720]) {
     steppingStones.push({ x: 4080, y: py, radius: 28 });
   }
-  vehicles.push({
-    id: 'veh_island_boat', kind: 'boat', name: 'Катер контрабандистов',
-    x: 3955, y: 4865, vx: 0, vy: 0, angle: 0, radius: 22, drivable: false
-  });
+
   addBuilding('warehouse', 4080, 4845, {
     id: 'bld_sec_island',
     interactType: 'secret_vault',
@@ -345,44 +369,71 @@ export function createWorld(seed = 20261025) {
     return true;
   }
 
-  for (let i = 0; i < 680; i++) {
-    const x = 140 + rand() * (W - 280);
-    const y = 140 + rand() * (H - 280);
-    if (!isClearSpot(x, y, 52)) continue;
+  // ── GLOBAL MAP: естественное распределение растительности по биомам ──
+  const BIOME_FLORA = {
+    forest:  { density: 0.62, pick: [[0.50, 'tree'], [0.70, 'bush'], [0.84, 'rock'], [0.94, 'crates'], [1.0, 'barrel']] },
+    plains:  { density: 0.52, pick: [[0.30, 'tree'], [0.62, 'bush'], [0.82, 'rock'], [0.92, 'crates'], [1.0, 'barrel']] },
+    swamp:   { density: 0.58, pick: [[0.34, 'tree'], [0.72, 'bush'], [0.84, 'rock'], [0.94, 'barrel'], [1.0, 'crates']] },
+    desert:  { density: 0.44, pick: [[0.34, 'rock'], [0.62, 'bush'], [0.80, 'barrel'], [0.92, 'crates'], [1.0, 'barrel_red']] },
+    snow:    { density: 0.55, pick: [[0.46, 'pine_tree'], [0.72, 'rock'], [0.88, 'crates'], [1.0, 'barrel']] },
+    mountains:{ density: 0.48, pick: [[0.52, 'rock'], [0.74, 'pine_tree'], [0.88, 'crates'], [1.0, 'barrel']] },
+    city:    { density: 0.62, pick: [[0.30, 'crates'], [0.52, 'barrel'], [0.70, 'barrel_red'], [0.86, 'fence'], [1.0, 'bush']] },
+    coast:   { density: 0.42, pick: [[0.40, 'rock'], [0.62, 'crates'], [0.84, 'barrel'], [1.0, 'bush']] },
+    water:   { density: 0 }
+  };
+
+  const FLORA_TRIES = 7200;
+  for (let i = 0; i < FLORA_TRIES; i++) {
+    const x = 120 + rand() * (W - 240);
+    const y = 120 + rand() * (H - 240);
+    if (!isClearSpot(x, y, 46)) continue;
+
+    const terrain = map.terrainAt(x, y);
+    if (terrain.water) continue;                 // растительность только на суше
+    const flora = BIOME_FLORA[terrain.biome];
+    if (!flora || !flora.density) continue;
+    // Кластерность: густые чащи и редколесье вместо равномерного «гороха»
+    const cluster = fbm(x * 0.0042, y * 0.0042, seed + 77, 3, 0.55);
+    if (cluster > flora.density) continue;
 
     let overlap = false;
-    for (let j = nodes.length - 1; j >= Math.max(0, nodes.length - 65); j--) {
-      if (dist2(x, y, nodes[j].x, nodes[j].y) < 78 * 78) { overlap = true; break; }
+    for (let j = nodes.length - 1; j >= Math.max(0, nodes.length - 80); j--) {
+      if (dist2(x, y, nodes[j].x, nodes[j].y) < 62 * 62) { overlap = true; break; }
     }
     if (overlap) continue;
 
-    const biome = getBiomeIdAt(x, y);
     const roll = rand();
+    let kind = 'rock';
+    for (const [threshold, k] of flora.pick) if (roll <= threshold) { kind = k; break; }
 
-    if (biome === 'forest') {
-      if (roll < 0.45) nodes.push(makeNode(nextId++, 'tree', x, y));
-      else if (roll < 0.70) nodes.push(makeNode(nextId++, 'bush', x, y));
-      else if (roll < 0.84) props.push({ id: `pr_${nextId++}`, kind: 'rock', x, y, radius: 17 });
-      else if (roll < 0.94) nodes.push(makeNode(nextId++, 'crates', x, y));
-      else nodes.push(makeNode(nextId++, 'barrel', x, y));
-    } else if (biome === 'city') {
-      if (roll < 0.35) nodes.push(makeNode(nextId++, 'crates', x, y));
-      else if (roll < 0.60) nodes.push(makeNode(nextId++, 'barrel', x, y));
-      else if (roll < 0.80) nodes.push(makeNode(nextId++, 'barrel_red', x, y));
-      else if (roll < 0.92) props.push({ id: `pr_${nextId++}`, kind: 'fence', x, y, radius: 18 });
-      else nodes.push(makeNode(nextId++, 'bush', x, y));
-    } else if (biome === 'desert') {
-      if (roll < 0.35) props.push({ id: `pr_${nextId++}`, kind: 'rock', x, y, radius: 17 });
-      else if (roll < 0.58) nodes.push(makeNode(nextId++, 'barrel', x, y));
-      else if (roll < 0.78) nodes.push(makeNode(nextId++, 'barrel_red', x, y));
-      else if (roll < 0.92) nodes.push(makeNode(nextId++, 'crates', x, y));
-      else nodes.push(makeNode(nextId++, 'bush', x, y));
-    } else {
-      if (roll < 0.45) nodes.push(makeNode(nextId++, 'pine_tree', x, y));
-      else if (roll < 0.70) props.push({ id: `pr_${nextId++}`, kind: 'rock', x, y, radius: 17 });
-      else if (roll < 0.86) nodes.push(makeNode(nextId++, 'crates', x, y));
-      else nodes.push(makeNode(nextId++, 'barrel_red', x, y));
-    }
+    // «fence» — статичный проп, остальное — разрушаемые узлы
+    if (kind === 'fence') props.push({ id: `pr_${nextId++}`, kind, x, y, radius: 18 });
+    else if (kind === 'rock') props.push({ id: `pr_${nextId++}`, kind, x, y, radius: 17 });
+    else nodes.push(makeNode(nextId++, kind, x, y));
+  }
+
+  // Камыш и коряги по берегам рек и болот (декор + ресурс трав)
+  for (let i = 0; i < 320; i++) {
+    const x = 200 + rand() * (W - 400);
+    const y = 200 + rand() * (H - 400);
+    const c = map.cellAt(x, y);
+    if (!(c.river || c.biome === 'swamp') || c.bridge) continue;
+    if (!isClearSpot(x, y, 40)) continue;
+    nodes.push(makeNode(nextId++, 'bush', x, y));
+  }
+
+  // Рудные выходы в горах и кристаллы в снегах
+  for (let i = 0; i < 220; i++) {
+    const x = 200 + rand() * (W - 400);
+    const y = 200 + rand() * (H - 400);
+    const terrain = map.terrainAt(x, y);
+    if (terrain.water) continue;
+    if (terrain.biome !== 'mountains' && terrain.biome !== 'snow') continue;
+    if (!isClearSpot(x, y, 44)) continue;
+    const roll = rand();
+    if (roll < 0.55) props.push({ id: `pr_${nextId++}`, kind: 'rock', x, y, radius: 18 });
+    else if (roll < 0.85) nodes.push(makeNode(nextId++, 'crystal_node', x, y));
+    else nodes.push(makeNode(nextId++, 'pine_tree', x, y));
   }
 
   // O(1) пространственная сетка статических пропов
@@ -417,6 +468,9 @@ export function createWorld(seed = 20261025) {
   return {
     width: W,
     height: H,
+    seed,
+    map,
+    mapGrid: null,
     biomes: BIOMES,
     buildings,
     props,

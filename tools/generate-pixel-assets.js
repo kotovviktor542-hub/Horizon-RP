@@ -1802,12 +1802,412 @@ function generateFallenAncientsExpansion() {
   mkTile('#33091d', '#260613', '#57102f', 'citadel.png');
 }
 
+
+// ═══════════════════════════════════════════════════════════════════════
+// GLOBAL MAP & TRANSPORT: детализированный транспорт (вид сверху-сбоку 2.5D)
+// Корпус с бликами и тенями, колёса с протектором, стёкла с отражениями,
+// фары/стоп-сигналы, решётки, кузов грузовика, башня БТР и т.д.
+// ═══════════════════════════════════════════════════════════════════════
+function generateTransportModels() {
+  const OUT = '#0e1017';
+
+  // Универсальное колесо с протектором и диском
+  const wheel = (pc, cx, cy, r, hub = '#98a4b5') => {
+    pc.circle(cx, cy, r, '#14161d');
+    pc.circle(cx, cy, r - 1, '#23262f');
+    pc.circle(cx, cy, r - 2, '#0f1117');
+    pc.circle(cx, cy, Math.max(1.6, r - 3.4), hub);
+    pc.circle(cx, cy, Math.max(1, r - 4.8), '#5d6775');
+    // протектор
+    for (let a = 0; a < 8; a++) {
+      const ang = (a / 8) * Math.PI * 2;
+      pc.pset(Math.round(cx + Math.cos(ang) * (r - 1.5)), Math.round(cy + Math.sin(ang) * (r - 1.5)), '#3b4250');
+    }
+  };
+
+  // Окно с бликом
+  const glass = (pc, x, y, w, h, tint = '#8fd3ff') => {
+    pc.borderRect(x, y, w, h, tint, '#0f1722');
+    pc.rect(x + 1, y + 1, w - 2, 1, '#dff3ff');
+    pc.rect(x + 1, y + 1, 1, h - 2, '#b6e6ff');
+    pc.rect(x + 1, y + h - 3, w - 3, 1, '#4a86a8');
+  };
+
+  // Машина, вид сверху: капот → лобовое стекло → крыша → заднее стекло → багажник.
+  // opts: cabin (ширина крыши 0..1), stripe, roofScoop, spoiler, bed (грузовой кузов), wheel
+  const buildCar = (w, h, palette, opts = {}) => {
+    const pc = new PixelCanvas(w, h);
+    const cx = w / 2;
+
+    // Тень под кузовом
+    pc.ellipse(cx, h - 4, w * 0.44, 4, '#00000045');
+
+    // Основной кузов
+    pc.borderRect(6, 6, w - 12, h - 12, palette.body, OUT);
+    pc.rect(7, 7, w - 14, 2, palette.hi);                 // блик по левой/верхней кромке
+    pc.rect(7, h - 9, w - 14, 2, palette.lo);             // тень к корме
+    pc.rect(7, 8, 2, h - 16, palette.hi);
+    pc.rect(w - 9, 8, 2, h - 16, palette.lo);
+
+    // Капот (передняя часть)
+    pc.rect(8, 8, w - 16, 9, palette.hood || palette.body);
+    for (let i = 0; i < 3; i++) pc.rect(12 + i * 3, 10, 2, 5, palette.lo);   // воздухозаборники
+    pc.rect(cx - 9, 8, 18, 2, '#20242c');                                     // решётка
+
+    // Лобовое стекло
+    const glassW = Math.round((w - 24) * (opts.cabin || 0.78));
+    const glassX = Math.round(cx - glassW / 2);
+    glass(pc, glassX, 18, glassW, 6, palette.glass);
+
+    // Крыша
+    const roofY = 24, roofH = h - 46;
+    pc.borderRect(glassX + 1, roofY, glassW - 2, roofH, palette.cabin || palette.body, OUT);
+    pc.rect(glassX + 2, roofY + 1, glassW - 4, 1, palette.hi);
+
+    if (opts.stripe) {
+      pc.rect(cx - 4, 9, 3, 8, opts.stripe);
+      pc.rect(cx + 2, 9, 3, 8, opts.stripe);
+      pc.rect(cx - 4, roofY + 1, 3, roofH - 2, opts.stripe);
+      pc.rect(cx + 2, roofY + 1, 3, roofH - 2, opts.stripe);
+    }
+    if (opts.roofScoop) {
+      pc.rect(cx - 6, roofY + 2, 12, 4, '#151922');
+      pc.rect(cx - 5, roofY + 3, 10, 2, '#2b3240');
+    }
+
+    // Заднее стекло
+    glass(pc, glassX, roofY + roofH, glassW, 5, palette.glass);
+
+    // Багажник / грузовой отсек / кузов пикапа
+    const trunkY = roofY + roofH + 6;
+    const trunkH = h - trunkY - 7;
+    if (trunkH > 2) {
+      if (opts.bed) {
+        pc.borderRect(9, trunkY, w - 18, trunkH, '#3b2c1c', OUT);
+        pc.rect(11, trunkY + 1, w - 22, 1, '#6b5236');
+        for (let i = 0; i < 3; i++) pc.rect(13 + i * 8, trunkY + 3, 6, Math.max(2, trunkH - 6), '#6b5236');
+      } else {
+        pc.rect(9, trunkY, w - 18, trunkH, palette.hood || palette.lo);
+        pc.rect(9, trunkY, w - 18, 1, palette.hi);
+      }
+    }
+
+    // Фары сверху (перед), стоп-сигналы снизу (корма)
+    pc.rect(9, 6, 7, 3, '#fff7c2');
+    pc.rect(w - 16, 6, 7, 3, '#fff7c2');
+    pc.rect(9, h - 9, 6, 3, '#e0303a');
+    pc.rect(w - 15, h - 9, 6, 3, '#e0303a');
+
+    // Зеркала
+    pc.rect(glassX - 3, 17, 3, 3, '#1b1f28');
+    pc.rect(glassX + glassW, 17, 3, 3, '#1b1f28');
+
+    // Колёса по четырём углам, выглядывают за кузов
+    const wr = opts.wheel || 7;
+    wheel(pc, 7, 18, wr, palette.hub);
+    wheel(pc, w - 7, 18, wr, palette.hub);
+    wheel(pc, 7, h - 18, wr, palette.hub);
+    wheel(pc, w - 7, h - 18, wr, palette.hub);
+
+    pc.outlineRegion(0, 0, w, h, OUT);
+    return pc;
+  };
+
+  // СПОРТКАР
+  {
+    const pal = { body: '#c1121f', lo: '#8e0f1a', hi: '#ef4444', cabin: '#a30f19', hub: '#cfd8e3',
+                  glass: '#9fe0ff', hood: '#b0121e' };
+    const car = buildCar(84, 62, pal, { cabin: 0.72, stripe: '#f8fafc', roofScoop: true, spooler: true });
+    // Антикрыло
+    car.rect(8, 56, 12, 3, '#1b1f28');
+    car.rect(64, 56, 12, 3, '#1b1f28');
+    car.rect(10, 57, 3, 4, '#2b3240');
+    car.rect(71, 57, 3, 4, '#2b3240');
+    // Выхлоп
+    car.rect(30, 59, 8, 2, '#8b95a5');
+    car.rect(32, 60, 3, 2, '#0b0d12');
+    car.outlineAll(OUT);
+    car.save('vehicles/sportscar.png');
+  }
+
+  // МАСЛКАР
+  {
+    const pal = { body: '#1d4ed8', lo: '#16389b', hi: '#3b82f6', cabin: '#1b45b8', hub: '#e2e8f0',
+                  glass: '#a7ddff', hood: '#1a44b5' };
+    const car = buildCar(86, 64, pal, { cabin: 0.80, stripe: '#fde047' });
+    // Воздухозаборник на капоте
+    car.rect(30, 11, 26, 5, '#111827');
+    car.rect(31, 12, 24, 3, '#1f2937');
+    // Двойной выхлоп
+    car.rect(28, 61, 10, 2, '#8b95a5');
+    car.rect(46, 61, 10, 2, '#8b95a5');
+    car.outlineAll(OUT);
+    car.save('vehicles/muscle.png');
+  }
+
+  // ПАТРУЛЬНЫЙ СЕДАН
+  {
+    const pal = { body: '#e8eef6', lo: '#b9c4d1', hi: '#ffffff', cabin: '#c3cedb', hub: '#94a3b8',
+                  glass: '#7cc9ef', hood: '#dde6ef' };
+    const car = buildCar(80, 60, pal, { cabin: 0.78 });
+    // Синяя полоса полиции + мигалка
+    car.rect(9, 9, 24, 4, '#1f4fa8');
+    car.rect(47, 9, 24, 4, '#1f4fa8');
+    car.rect(33, 2, 14, 4, '#111827');
+    car.rect(34, 3, 6, 2, '#ef4444');
+    car.rect(41, 3, 5, 2, '#3b82f6');
+    car.outlineAll(OUT);
+    car.save('vehicles/sedan.png');
+  }
+
+  // ВНЕДОРОЖНИК (SUV)
+  {
+    const pc = new PixelCanvas(84, 66);
+    // Кузов
+    pc.borderRect(6, 6, 72, 54, '#3f4a38', OUT);
+    pc.rect(7, 7, 70, 2, '#5b6b4f');
+    pc.rect(7, 57, 70, 2, '#28301f');
+    // Капот
+    pc.rect(8, 8, 68, 10, '#48553f');
+    pc.rect(36, 9, 12, 7, '#2b3324');           // воздухозаборник
+    // Лобовое стекло
+    glass(pc, 12, 19, 26, 7, '#b6e6ff');
+    glass(pc, 46, 19, 26, 7, '#b6e6ff');
+    // Крыша с рейлингами
+    pc.borderRect(13, 27, 58, 18, '#39442f', OUT);
+    pc.rect(14, 28, 56, 1, '#5b6b4a');
+    pc.rect(8, 27, 4, 18, '#1f2937');           // рейлинг слева
+    pc.rect(72, 27, 4, 18, '#1f2937');          // рейлинг справа
+    pc.rect(36, 24, 12, 6, '#374151');          // люк
+    // Заднее стекло
+    glass(pc, 13, 46, 58, 6, '#9ed4f2');
+    // Лебёдка и запаска
+    pc.rect(8, 24, 5, 6, '#4b5563');
+    pc.borderRect(60, 8, 14, 10, '#1f2937', OUT);
+    pc.circle(67, 13, 4, '#2b3240');
+    // Колёса
+    wheel(pc, 8, 20, 8, '#cbd5e1');
+    wheel(pc, 76, 20, 8, '#cbd5e1');
+    wheel(pc, 8, 50, 8, '#cbd5e1');
+    wheel(pc, 76, 50, 8, '#cbd5e1');
+    // Фары и стопы
+    pc.rect(10, 6, 8, 3, '#fff7c2');
+    pc.rect(66, 6, 8, 3, '#fff7c2');
+    pc.rect(10, 57, 7, 3, '#e0303a');
+    pc.rect(67, 57, 7, 3, '#e0303a');
+    pc.outlineAll(OUT);
+    pc.save('vehicles/suv.png');
+  }
+
+  // ВОЕННЫЙ ДЖИП
+  {
+    const pc = new PixelCanvas(82, 66);
+    pc.borderRect(5, 8, 72, 50, '#4d5d3b', OUT);
+    pc.rect(6, 9, 70, 2, '#66794f');
+    pc.rect(6, 55, 70, 2, '#2a3320');
+    // Капот с ящиками
+    pc.rect(7, 10, 68, 9, '#55663f');
+    pc.rect(10, 12, 12, 5, '#6b7a4b');
+    pc.rect(60, 12, 12, 5, '#6b7a4b');
+    // Открытая кабина: тёмный пол, два сиденья, каркас
+    pc.borderRect(12, 21, 58, 26, '#1f2819', OUT);
+    pc.rect(14, 23, 22, 12, '#3c4a2f');
+    pc.rect(44, 23, 22, 12, '#3c4a2f');
+    pc.rect(14, 36, 22, 2, '#4d5d3b');
+    pc.rect(44, 36, 22, 2, '#4d5d3b');
+    // Дуги тента
+    for (let i = 0; i < 3; i++) pc.rect(16 + i * 22, 20, 3, 7, '#8b9678');
+    // Кузов сзади: канистры, ящик
+    pc.borderRect(60, 49, 12, 5, '#3c4a2f', OUT);
+    // Пулемёт на дуге
+    pc.rect(64, 2, 3, 8, '#2b3240');
+    pc.rect(58, 0, 15, 3, '#1f2937');
+    // Колёса
+    wheel(pc, 8, 20, 8, '#b6bfa1');
+    wheel(pc, 74, 20, 8, '#b6bfa1');
+    wheel(pc, 8, 50, 8, '#b6bfa1');
+    wheel(pc, 74, 50, 8, '#b6bfa1');
+    // Фары, стопы, крюки
+    pc.rect(9, 8, 8, 3, '#fff7c2');
+    pc.rect(65, 8, 8, 3, '#fff7c2');
+    pc.rect(9, 55, 7, 3, '#e0303a');
+    pc.rect(66, 55, 7, 3, '#e0303a');
+    pc.rect(4, 46, 4, 3, '#1f2937');
+    pc.rect(74, 46, 4, 3, '#1f2937');
+    pc.outlineAll(OUT);
+    pc.save('vehicles/miljeep.png');
+  }
+
+  // ПИКАП
+  {
+    const pal = { body: '#7c5230', lo: '#4a3019', hi: '#9a6a41', cabin: '#8a5c37', hub: '#cbd5e1',
+                  glass: '#b6e6ff', hood: '#8a5c37' };
+    const car = buildCar(86, 68, pal, { cabin: 0.80, bed: true, wheel: 8 });
+    car.outlineAll(OUT);
+    car.save('vehicles/pickup.png');
+  }
+
+  // МОТОЦИКЛ
+  {
+    const pc = new PixelCanvas(50, 58);
+    pc.ellipse(25, 54, 16, 3, '#00000045');
+    // Колёса
+    { const wr = 8;
+      for (const [cx2, cy2] of [[17, 45], [33, 45]]) {
+        pc.circle(cx2, cy2, wr, '#14161d');
+        pc.circle(cx2, cy2, wr - 1, '#23262f');
+        pc.circle(cx2, cy2, wr - 3, '#98a4b5');
+        pc.circle(cx2, cy2, 2, '#5d6775');
+      }
+    }
+    // Рама и вилка
+    pc.line(24, 40, 24, 22, '#9aa5b5', 3);
+    pc.line(24, 40, 17, 45, '#6b7482', 2);
+    pc.line(24, 40, 33, 45, '#6b7482', 2);
+    // Двигатель и бак
+    pc.borderRect(19, 26, 12, 12, '#2b3240', OUT);
+    pc.borderRect(20, 14, 10, 11, '#b91c1c', OUT);
+    pc.rect(21, 15, 8, 2, '#ef4444');
+    // Руль
+    pc.rect(13, 16, 24, 2, '#4b5563');
+    pc.rect(14, 12, 2, 5, '#2b3240');
+    pc.rect(34, 12, 2, 5, '#2b3240');
+    // Фара, сиденье, выхлоп
+    pc.rect(21, 10, 8, 4, '#fff7c2');
+    pc.rect(19, 38, 12, 5, '#1f2937');
+    pc.rect(30, 41, 9, 2, '#8b95a5');
+    pc.rect(18, 47, 6, 2, '#e0303a');
+    pc.outlineAll(OUT);
+    pc.save('vehicles/bike.png');
+  }
+
+  // ГРУЗОВИК
+  {
+    const pc = new PixelCanvas(92, 88);
+    // Кабина
+    pc.borderRect(8, 6, 76, 30, '#2f6b4f', OUT);
+    pc.rect(9, 7, 74, 2, '#478a68');
+    // Лобовое стекло
+    glass(pc, 13, 11, 66, 9, '#b6e6ff');
+    // Крыша и люк
+    pc.borderRect(16, 22, 60, 9, '#2a5c43', OUT);
+    pc.rect(40, 20, 12, 5, '#3d7a5c');
+    // Бампер и решётка
+    pc.rect(10, 6, 72, 2, '#1d3f2e');
+    for (let i = 0; i < 6; i++) pc.rect(22 + i * 9, 6, 5, 2, '#8b95a5');
+    // Кузов-фургон
+    pc.borderRect(10, 38, 72, 42, '#8b93a1', OUT);
+    pc.rect(11, 39, 70, 2, '#b6bec9');
+    pc.rect(11, 77, 70, 3, '#5e6773');
+    for (let i = 0; i < 6; i++) pc.rect(14 + i * 11, 42, 1, 34, '#6f7885');   // рёбра фургона
+    pc.rect(34, 46, 24, 5, '#e0303a');                                        // маркировка
+    pc.rect(34, 55, 24, 2, '#6f7885');
+    // Колёса: передние и сдвоенные задние
+    wheel(pc, 12, 30, 8, '#cbd5e1');
+    wheel(pc, 80, 30, 8, '#cbd5e1');
+    wheel(pc, 12, 72, 8, '#cbd5e1');
+    wheel(pc, 80, 72, 8, '#cbd5e1');
+    // Фары, стопы, выхлоп
+    pc.rect(12, 3, 8, 3, '#fff7c2');
+    pc.rect(72, 3, 8, 3, '#fff7c2');
+    pc.rect(12, 82, 7, 3, '#e0303a');
+    pc.rect(73, 82, 7, 3, '#e0303a');
+    pc.rect(84, 84, 6, 3, '#1f2937');
+    // Зеркала
+    pc.rect(4, 12, 4, 5, '#1b1f28');
+    pc.rect(84, 12, 4, 5, '#1b1f28');
+    pc.outlineAll(OUT);
+    pc.save('vehicles/truck.png');
+  }
+
+  // БРОНЕТРАНСПОРТЁР (БТР) — колёсный, 4 больших колеса, скошенный лоб, башня с пулемётом
+  {
+    const pc = new PixelCanvas(100, 62);
+    pc.ellipse(50, 56, 44, 5, '#00000055');
+
+    // Корпус: скошенный лоб (справа), ровная корма
+    pc.borderRect(10, 16, 78, 24, '#4a5533', OUT);
+    pc.rect(12, 17, 74, 3, '#6a7849');
+    pc.rect(12, 36, 74, 3, '#2c3420');
+    // Лобовой скос
+    for (let i = 0; i < 12; i++) pc.rect(86 - i, 16 - Math.floor(i * 0.7), 2, 24 + Math.floor(i * 0.7), '#55613b');
+    pc.line(98, 13, 86, 40, '#2c3420', 2);
+    // Бронированные борта и заклёпки
+    for (let i = 0; i < 9; i++) {
+      pc.pset(16 + i * 8, 20, '#8a9a63');
+      pc.pset(16 + i * 8, 33, '#8a9a63');
+    }
+    // Десантные люки на корме
+    pc.borderRect(14, 22, 10, 14, '#3b452a', OUT);
+    pc.rect(16, 24, 6, 3, '#59663c');
+
+    // Колёса — четыре, крупные, с грунтозацепами
+    const apcWheel = (cx, cy, r) => {
+      pc.circle(cx, cy, r, '#191c14');
+      pc.circle(cx, cy, r - 1, '#2b3022');
+      pc.circle(cx, cy, r - 3, '#0f1209');
+      pc.circle(cx, cy, r - 4, '#5c6a45');
+      pc.circle(cx, cy, Math.max(1, r - 6), '#39422c');
+      for (let a = 0; a < 10; a++) {
+        const ang = (a / 10) * Math.PI * 2;
+        pc.rect(Math.round(cx + Math.cos(ang) * (r - 1.5)) - 1, Math.round(cy + Math.sin(ang) * (r - 1.5)) - 1, 2, 2, '#4a5535');
+      }
+    };
+    apcWheel(26, 48, 10);
+    apcWheel(48, 48, 10);
+    apcWheel(70, 48, 10);
+    apcWheel(90, 48, 9);
+
+    // Башня с пулемётом
+    pc.borderRect(40, 4, 26, 16, '#55613b', OUT);
+    pc.rect(42, 5, 22, 2, '#7d8c58');
+    pc.circle(53, 12, 6, '#39432a');
+    pc.circle(53, 12, 3, '#242b19');
+    pc.rect(72, 8, 14, 3, '#1b2117');            // ствол
+    pc.rect(85, 7, 3, 5, '#11161f');
+    pc.rect(48, 1, 10, 4, '#2b3240');            // люк командира
+
+    // Фары в защитных решётках, буксирные крюки, антенна
+    for (let i = 0; i < 3; i++) pc.rect(88 + i, 21, 1, 5, '#2b3240');
+    pc.rect(87, 20, 7, 5, '#fff7c2');
+    pc.rect(12, 20, 6, 4, '#e0303a');
+    pc.rect(8, 30, 8, 3, '#1f2937');
+    pc.rect(16, 6, 1, 12, '#8b95a5');            // антенна
+    pc.outlineAll(OUT);
+    pc.save('vehicles/apc.png');
+  }
+}
+
+// Новые тайлы WorldBox-биомов: луга и болото (плотная текстура + дизеринг)
+function generateMapTiles() {
+  const tile = (base, a1, a2, a3, name) => {
+    const t = new PixelCanvas(32, 32);
+    t.rect(0, 0, 32, 32, base);
+    for (let i = 0; i < 90; i++) {
+      const x = (i * 23 + 7) % 32;
+      const y = (i * 17 + 5) % 32;
+      t.rect(x, y, 2, 1, i % 3 === 0 ? a1 : a2);
+    }
+    for (let i = 0; i < 22; i++) {
+      const x = (i * 29 + 13) % 31;
+      const y = (i * 31 + 11) % 31;
+      t.pset(x, y, a3);
+    }
+    t.save(`tiles/${name}`);
+  };
+  tile('#4e7c3c', '#59893f', '#446f35', '#6fa04d', 'meadow.png');
+  tile('#3a4a35', '#2f3d2c', '#465a3e', '#5b7a4a', 'swamp.png');
+  tile('#7d7f84', '#6b6d73', '#8f9196', '#a5a8ad', 'rock.png');
+}
+
 generateHeroSheet();
 generateEnemySheets();
 generateNpcs();
 generateWeapons();
 generateItems();
 generateVehicles();
+generateTransportModels();
+generateMapTiles();
 generateProps();
 generateBuildings();
 generateEffects();

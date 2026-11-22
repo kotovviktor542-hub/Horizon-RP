@@ -3,6 +3,7 @@
 
 import { BIOMES, CAMPFIRES, NPCS, WEAPONS, ITEMS, RESOURCES, BOSSES, SECRETS, WEAPON_MODS } from './data.js';
 import { getBiomeIdAt, getLocationAt, dist2 } from './world.js';
+import { getActiveMap, MAP_BIOMES } from './mapgen.js';
 
 const ASSET_MANIFEST = {
   // Текстуры тайлов локаций
@@ -201,12 +202,21 @@ const ASSET_MANIFEST = {
   itm_backpack: 'assets/sprites/items/backpack.png',
 
   // Все 6 видов транспорта
-  veh_car:  'assets/sprites/vehicles/car.png',
-  veh_moto: 'assets/sprites/vehicles/moto.png',
-  veh_jeep: 'assets/sprites/vehicles/jeep.png',
-  veh_bus:  'assets/sprites/vehicles/bus.png',
-  veh_heli: 'assets/sprites/vehicles/heli.png',
-  veh_boat: 'assets/sprites/vehicles/boat.png',
+  // GLOBAL MAP & TRANSPORT: 9 детализированных моделей техники
+  veh_sportscar: 'assets/sprites/vehicles/sportscar.png',
+  veh_muscle:    'assets/sprites/vehicles/muscle.png',
+  veh_sedan:     'assets/sprites/vehicles/sedan.png',
+  veh_suv:       'assets/sprites/vehicles/suv.png',
+  veh_miljeep:   'assets/sprites/vehicles/miljeep.png',
+  veh_pickup:    'assets/sprites/vehicles/pickup.png',
+  veh_bike:      'assets/sprites/vehicles/bike.png',
+  veh_truck:     'assets/sprites/vehicles/truck.png',
+  veh_apc:       'assets/sprites/vehicles/apc.png',
+  veh_heli:      'assets/sprites/vehicles/heli.png',
+  // Новые тайлы WorldBox-биомов
+  tile_meadow:   'assets/sprites/tiles/meadow.png',
+  tile_swamp:    'assets/sprites/tiles/swamp.png',
+  tile_rock:     'assets/sprites/tiles/rock.png',
 
   // Все объекты окружения
   prp_barrel:     'assets/sprites/props/barrel.png',
@@ -254,6 +264,11 @@ const ASSET_MANIFEST = {
 
 // Единый пиксельный множитель для мобильного экрана (чёткий пиксель-арт без мыла)
 const PIXEL_SCALE = 1.5;
+
+const VEHICLE_LABELS = {
+  sportscar: 'Спорткар', muscle: 'Маслкар', sedan: 'Седан', suv: 'Внедорожник',
+  miljeep: 'Военный джип', pickup: 'Пикап', bike: 'Мотоцикл', truck: 'Грузовик', apc: 'БТР'
+};
 
 export class Renderer {
   constructor(canvas, minimapCanvas) {
@@ -475,33 +490,256 @@ export class Renderer {
   }
 
   // ── Отрисовка пиксельной земли по биомам ─────────────────────────────
-  drawGround(ctx, engine, camX, camY, w, h) {
-    const patch = 192; // кратно 48px тайлу!
-    const startX = Math.floor(camX / patch) * patch;
-    const startY = Math.floor(camY / patch) * patch;
+  // ── GLOBAL MAP: рендер земли чанками ───────────────────────────────────
+  // Каждый чанк (колонка) рисуется из цветов биомов с пиксельным дизерингом,
+  // поэтому переходы биомов органичные, а не квадратные, и работает быстрее паттернов.
+  buildTerrainChunk(engine, gx0, gy0, cols, rows, cellPx) {
+    const map = engine.world.map;
+    if (!map) return null;
+    const cv = document.createElement('canvas');
+    cv.width = Math.max(1, cols * cellPx);
+    cv.height = Math.max(1, rows * cellPx);
+    const c = cv.getContext('2d');
+    if (!c) return null;
+    c.imageSmoothingEnabled = false;
 
-    ctx.save();
-    ctx.translate(-camX, -camY);
-    for (let gy = startY; gy < camY + h + patch; gy += patch) {
-      for (let gx = startX; gx < camX + w + patch; gx += patch) {
-        const locAt = getLocationAt(gx + patch * 0.5, gy + patch * 0.5);
-        const biomeId = getBiomeIdAt(gx + patch * 0.5, gy + patch * 0.5);
-        const biome = BIOMES[biomeId];
-        const patKey = locAt ? `tile_${locAt.tile}` : `tile_${biome.tile}`;
-        if (this.patterns[patKey]) {
-          ctx.fillStyle = this.patterns[patKey];
-        } else {
-          ctx.fillStyle = biome.groundBase;
+    const G = map.grid;
+    // Палитры биомов: [база, тень, блик]
+    const PAL = {
+      water:     [33, 75, 115], deep: [21, 55, 88],
+      shallow:   [45, 105, 150], river: [39, 108, 156],
+      coast:     [216, 192, 138], plains: [78, 124, 60],
+      forest:    [56, 99, 47], swamp: [58, 74, 53],
+      desert:    [201, 160, 102], snow: [219, 230, 240],
+      mountains: [125, 127, 132], city: [51, 57, 69]
+    };
+    const biomeRgb = (code, idx) => {
+      const b = map.BIOME_CODES[code];
+      if (map.water[idx] && !map.bridge[idx]) {
+        if (map.river[idx]) return PAL.river;
+        return map.water[idx] === 2 ? PAL.deep : PAL.shallow;
+      }
+      if (map.bridge[idx]) return [63, 69, 80];
+      return PAL[b] || PAL.plains;
+    };
+    const mix = (a, b, t) => [
+      Math.round(a[0] + (b[0] - a[0]) * t),
+      Math.round(a[1] + (b[1] - a[1]) * t),
+      Math.round(a[2] + (b[2] - a[2]) * t)
+    ];
+    const rgb = (a, d = 0) => `rgb(${Math.max(0, Math.min(255, a[0] + d))},${Math.max(0, Math.min(255, a[1] + d))},${Math.max(0, Math.min(255, a[2] + d))})`;
+
+    const SUB = 8;                        // 8x8 субпикселей — плотная пиксельная текстура
+
+    for (let gy = 0; gy < rows; gy++) {
+      for (let gx = 0; gx < cols; gx++) {
+        const wx = gx0 + gx, wy = gy0 + gy;
+        if (wx < 0 || wy < 0 || wx >= G || wy >= G) continue;
+        const idx = wy * G + wx;
+        const base = biomeRgb(map.biomeCode[idx], idx);
+        const isWater = !!map.water[idx] && !map.bridge[idx];
+
+        // Плавное смешивание с соседями (но не вода↔суша: берег остаётся чётким)
+        let col = base.slice();
+        const neigh = [[-1, 0], [1, 0], [0, -1], [0, 1]];
+        let accW = 1, acc = [base[0], base[1], base[2]];
+        for (const [dx, dy] of neigh) {
+          const nx = wx + dx, ny = wy + dy;
+          if (nx < 0 || ny < 0 || nx >= G || ny >= G) continue;
+          const ni = ny * G + nx;
+          const nWater = !!map.water[ni] && !map.bridge[ni];
+          if (nWater !== isWater) continue;
+          const nc = biomeRgb(map.biomeCode[ni], ni);
+          acc = [acc[0] + nc[0] * 0.22, acc[1] + nc[1] * 0.22, acc[2] + nc[2] * 0.22];
+          accW += 0.22;
         }
-        ctx.fillRect(gx, gy, patch, patch);
+        col = [acc[0] / accW, acc[1] / accW, acc[2] / accW].map(Math.round);
+
+        const biome = map.BIOME_CODES[map.biomeCode[idx]];
+        const px0 = gx * cellPx, py0 = gy * cellPx;
+        const sub = cellPx / SUB;
+        const seed = (wx * 73856093) ^ (wy * 19349663) ^ (map.seed | 0);
+
+        // Сосед-биомы того же класса (земля/вода) — для дизеринговых переходов
+        const edgeCols = [];
+        for (let dI = 0; dI < 4; dI++) {
+          const [dx, dy] = neigh[dI];
+          const nx = wx + dx, ny = wy + dy;
+          if (nx < 0 || ny < 0 || nx >= G || ny >= G) continue;
+          const ni = ny * G + nx;
+          const nWater = !!map.water[ni] && !map.bridge[ni];
+          if (nWater !== isWater) continue;
+          if (map.BIOME_CODES[map.biomeCode[ni]] === map.BIOME_CODES[map.biomeCode[idx]] && !isWater) continue;
+          edgeCols.push({ dx, dy, col: biomeRgb(map.biomeCode[ni], ni) });
+        }
+
+        // Заливка субпикселями: дизеринг на стыках биомов + биомная текстура
+        for (let sy = 0; sy < SUB; sy++) {
+          for (let sx = 0; sx < SUB; sx++) {
+            const hsh = (((seed ^ ((sx << 4) | sy)) * 2654435761) >>> 0) / 4294967296;
+            let colHere = col;
+            // Плавный переход: у самой кромки цвет соседа появляется через пиксель
+            for (const ec of edgeCols) {
+              const dist = ec.dx < 0 ? sx : ec.dx > 0 ? (SUB - 1 - sx) : ec.dy < 0 ? sy : (SUB - 1 - sy);
+              const p = dist === 0 ? 0.55 : dist === 1 ? 0.32 : dist === 2 ? 0.14 : 0;
+              if (p > 0 && hsh < p) { colHere = mix(colHere, ec.col, 0.75); break; }
+            }
+            let d = 0;
+            if (isWater) {
+              // Рябь: горизонтальные светлые полосы
+              if (((sy + (wy & 3)) % 4) === 0 && hsh > 0.45) d = 14;
+              else if (hsh > 0.88) d = 8;
+              else if (hsh < 0.10) d = -10;
+            } else if (biome === 'mountains') {
+              // Скалы: пятнистая каменная фактура (никаких регулярных полос)
+              const blob = Math.sin((wx * SUB + sx) * 0.23) * Math.cos((wy * SUB + sy) * 0.31);
+              d = blob > 0.45 ? 16 : blob < -0.35 ? -18 : (hsh > 0.72 ? 10 : hsh < 0.3 ? -7 : 0);
+            } else if (biome === 'forest') {
+              d = hsh > 0.86 ? 16 : hsh < 0.16 ? -14 : (hsh > 0.55 ? 5 : 0);
+            } else if (biome === 'plains') {
+              d = hsh > 0.90 ? 18 : hsh < 0.22 ? -9 : 0;
+            } else if (biome === 'snow') {
+              d = hsh > 0.93 ? 10 : hsh < 0.2 ? -8 : 0;
+              if (hsh > 0.985) d = 26;              // искры наста
+            } else if (biome === 'desert') {
+              d = ((sy + (wy & 1)) % 3 === 0 && hsh > 0.5) ? 10 : hsh < 0.2 ? -9 : 0;
+            } else if (biome === 'swamp') {
+              d = hsh > 0.80 ? -16 : hsh < 0.14 ? 12 : 0;
+              if (hsh > 0.96) d = 22;               // болотные «глазки»
+            } else if (biome === 'city') {
+              d = ((sx + sy) % 4 === 0) ? 9 : hsh < 0.2 ? -8 : 0;
+            } else if (biome === 'coast') {
+              d = hsh > 0.9 ? 12 : hsh < 0.25 ? -8 : 0;
+            }
+            c.fillStyle = rgb(colHere, d);
+            c.fillRect(px0 + Math.round(sx * sub), py0 + Math.round(sy * sub), Math.ceil(sub), Math.ceil(sub));
+          }
+        }
+
+        // Кромка пляжа и пены у воды — рваная пиксельная линия без «лестницы»
+        let nearWaterDir = -1, nearLandDir = -1;
+        for (let d = 0; d < neigh.length; d++) {
+          const [dx, dy] = neigh[d];
+          const nx = wx + dx, ny = wy + dy;
+          if (nx < 0 || ny < 0 || nx >= G || ny >= G) continue;
+          const ni = ny * G + nx;
+          const nWater = !!map.water[ni] && !map.bridge[ni];
+          if (nWater && !isWater && nearWaterDir < 0) nearWaterDir = d;
+          if (!nWater && isWater && nearLandDir < 0) nearLandDir = d;
+        }
+        const edgeThick = Math.max(1.5, sub * 1.2);
+        if (nearWaterDir >= 0) {
+          for (let i = 0; i < SUB; i++) {
+            const hs = (((seed ^ (i * 2654435761)) >>> 0) / 4294967296);
+            if (hs < 0.35) continue;                 // разрывы делают кромку естественной
+            c.fillStyle = hs > 0.75 ? 'rgba(240, 230, 196, 0.65)' : 'rgba(214, 194, 148, 0.45)';
+            const [dx, dy] = neigh[nearWaterDir];
+            const bx = dx < 0 ? px0 : dx > 0 ? px0 + cellPx - edgeThick : px0 + i * sub;
+            const by = dy < 0 ? py0 : dy > 0 ? py0 + cellPx - edgeThick : py0 + i * sub;
+            const bw = dx !== 0 ? edgeThick : sub + 0.5;
+            const bh = dy !== 0 ? edgeThick : sub + 0.5;
+            c.fillRect(Math.round(bx), Math.round(by), Math.ceil(bw), Math.ceil(bh));
+          }
+        }
+        if (nearLandDir >= 0) {
+          for (let i = 0; i < SUB; i++) {
+            const hs = (((seed ^ ((i + 77) * 2246822519)) >>> 0) / 4294967296);
+            if (hs < 0.55) continue;
+            c.fillStyle = 'rgba(236, 248, 255, 0.35)';
+            const [dx, dy] = neigh[nearLandDir];
+            const bx = dx < 0 ? px0 : dx > 0 ? px0 + cellPx - edgeThick : px0 + i * sub;
+            const by = dy < 0 ? py0 : dy > 0 ? py0 + cellPx - edgeThick : py0 + i * sub;
+            c.fillRect(Math.round(bx), Math.round(by), Math.ceil(dx !== 0 ? edgeThick : sub + 0.5), Math.ceil(dy !== 0 ? edgeThick : sub + 0.5));
+          }
+        }
+        // Тень на стыке с более высоким рельефом — объём
+        if (!isWater && (biome === 'mountains' || biome === 'forest')) {
+          const upIdx = wy > 0 ? (wy - 1) * G + wx : idx;
+          const upBiome = map.BIOME_CODES[map.biomeCode[upIdx]];
+          if (upBiome !== biome) {
+            c.fillStyle = 'rgba(10, 16, 12, 0.25)';
+            c.fillRect(px0, py0, cellPx, Math.max(2, sub * 1.5));
+          }
+        }
       }
     }
-    ctx.restore();
+    return cv;
+  }
 
-    // Чёткая пиксельная рамка границы зоны
-    ctx.strokeStyle = '#ef4444';
-    ctx.lineWidth = 4;
-    ctx.strokeRect(44 - camX, 44 - camY, engine.world.width - 88, engine.world.height - 88);
+  drawGround(ctx, engine, camX, camY, w, h) {
+    const map = engine.world.map;
+    // Масштаб 1:1 с миром: одна клетка карты (40 world-единиц) = 40 px экрана
+    const cellPx = Math.max(8, Math.round(map ? map.cell : 40));
+    const chunkCells = 6;                 // 6x6 клеток на чанк
+    const chunkPx = chunkCells * cellPx;
+
+    ctx.save();
+    ctx.imageSmoothingEnabled = false;
+
+    if (!map) {
+      ctx.fillStyle = '#3a6636';
+      ctx.fillRect(0, 0, w, h);
+      ctx.restore();
+      return;
+    }
+
+    // Фон — океан, чтобы не было «швов» за границей загруженных чанков
+    ctx.fillStyle = '#173f61';
+    ctx.fillRect(0, 0, w, h);
+
+    this.chunkCache = this.chunkCache || new Map();
+    const mapCell = map.cell;             // world-единиц на клетку карты
+    const gxStart = Math.floor(camX / mapCell / chunkCells);
+    const gyStart = Math.floor(camY / mapCell / chunkCells);
+    const gxEnd = Math.floor((camX + w) / mapCell / chunkCells);
+    const gyEnd = Math.floor((camY + h) / mapCell / chunkCells);
+    const cacheKeySeed = map.seed;
+
+    for (let cy = gyStart; cy <= gyEnd; cy++) {
+      for (let cx = gxStart; cx <= gxEnd; cx++) {
+        const gx0 = cx * chunkCells;
+        const gy0 = cy * chunkCells;
+        const key = `${cacheKeySeed}:${cx}:${cy}`;
+        let chunk = this.chunkCache.get(key);
+        if (!chunk) {
+          if (gx0 < 0 || gy0 < 0 || gx0 >= map.grid || gy0 >= map.grid) {
+            chunk = 'empty';
+          } else {
+            chunk = this.buildTerrainChunk(engine, gx0, gy0, chunkCells, chunkCells, cellPx) || 'empty';
+          }
+          // Ограничиваем кэш (не больше ~400 чанков)
+          if (this.chunkCache.size > 400) this.chunkCache.clear();
+          this.chunkCache.set(key, chunk);
+        }
+        if (chunk === 'empty') continue;
+        // Мировые координаты левого верхнего угла чанка → экран
+        const worldX = gx0 * mapCell;
+        const worldY = gy0 * mapCell;
+        ctx.drawImage(chunk, Math.round(worldX - camX), Math.round(worldY - camY), chunkPx, chunkPx);
+      }
+    }
+
+    // Анимированные блики на воде
+    const t = engine.animClock || 0;
+    const mapCell2 = map.cell;
+    const sx0 = Math.floor(camX / mapCell2) * mapCell2;
+    const sy0 = Math.floor(camY / mapCell2) * mapCell2;
+    ctx.fillStyle = 'rgba(186, 230, 253, 0.30)';
+    for (let wy = sy0; wy < camY + h + mapCell2; wy += mapCell2) {
+      for (let wx = sx0; wx < camX + w + mapCell2; wx += mapCell2) {
+        const c = map.cellAt(wx + mapCell2 * 0.5, wy + mapCell2 * 0.5);
+        if (!c.water || c.bridge) continue;
+        const phase = Math.sin(t * 1.7 + (wx * 0.012 + wy * 0.019));
+        if (phase > 0.62) {
+          const px = Math.round(wx - camX + mapCell2 * 0.3);
+          const py = Math.round(wy - camY + mapCell2 * 0.45);
+          ctx.fillRect(px, py, 12, 3);
+          ctx.fillRect(px + 6, py + 8, 8, 2);
+        }
+      }
+    }
+
+    ctx.restore();
   }
 
   drawRoads(ctx, roads, camX, camY, w, h) {
@@ -640,25 +878,59 @@ export class Renderer {
     const key = `veh_${veh.kind}`;
     const img = this.images[key];
     const driven = engine.player.vehicleId === veh.id;
+    const speed = Math.hypot(veh.vx || 0, veh.vy || 0);
+    const t = engine.animClock || 0;
+
+    // Тень под техникой
+    ctx.save();
+    ctx.fillStyle = 'rgba(6, 10, 18, 0.34)';
+    ctx.beginPath();
+    ctx.ellipse(sx, sy + 4, (veh.radius || 22) * 1.25, (veh.radius || 22) * 0.5, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
 
     if (this.imgReady(key)) {
       const dw = Math.round(img.naturalWidth * PIXEL_SCALE);
       const dh = Math.round(img.naturalHeight * PIXEL_SCALE);
+      // Лёгкая тряска на скорости и подвеска на бездорожье
+      const rumble = speed > 120 ? Math.round(Math.sin(t * 34) * Math.min(2, speed / 260)) : 0;
       ctx.save();
-      ctx.translate(sx, sy);
-      if (Math.cos(veh.angle) < -0.15) ctx.scale(-1, 1);
+      ctx.translate(sx, sy + rumble);
+      if (Math.cos(veh.angle || 0) < -0.15) ctx.scale(-1, 1);
       ctx.drawImage(img, Math.round(-dw * 0.5), Math.round(-dh * 0.72), dw, dh);
       ctx.restore();
+
+      // Фары светят в движении (пиксельный конус света)
+      if (speed > 40 && (engine.timeOfDay < 0.24 || engine.timeOfDay > 0.74)) {
+        const dirX = Math.cos(veh.angle || 0);
+        const dirY = Math.sin(veh.angle || 0);
+        ctx.save();
+        ctx.globalAlpha = 0.20;
+        ctx.fillStyle = '#fde68a';
+        ctx.beginPath();
+        ctx.moveTo(sx, sy - 8);
+        ctx.lineTo(sx + dirX * 120 - dirY * 46, sy - 8 + dirY * 120 + dirX * 46);
+        ctx.lineTo(sx + dirX * 120 + dirY * 46, sy - 8 + dirY * 120 - dirX * 46);
+        ctx.closePath();
+        ctx.fill();
+        ctx.restore();
+      }
     }
 
     if (driven) {
-      // Полоска HP игрока над управляемым транспортом
-      this.drawMiniBar(ctx, sx, sy - 38, 42, engine.player.hp / engine.player.maxHp, '#22c55e');
-    } else if (veh.drivable && dist2(engine.player.x, engine.player.y, veh.x, veh.y) < 160 * 160) {
+      // Приборная панель: скорость и прочность кузова
+      const spd = Math.round(speed / 3);
+      ctx.font = 'bold 11px monospace';
+      ctx.textAlign = 'center';
+      ctx.fillStyle = '#fbbf24';
+      ctx.fillText(`${spd} км/ч`, sx, sy - 52);
+      this.drawMiniBar(ctx, sx, sy - 46, 46, engine.player.hp / engine.player.maxHp, '#22c55e');
+    } else if (veh.drivable && dist2(engine.player.x, engine.player.y, veh.x, veh.y) < 170 * 170) {
       ctx.font = 'bold 10px monospace';
       ctx.textAlign = 'center';
       ctx.fillStyle = '#38bdf8';
-      ctx.fillText('🚗 РУЛЬ', sx, sy - 30);
+      const label = `🚗 ${(VEHICLE_LABELS[veh.kind] || 'Транспорт')} · РУЛЬ`;
+      ctx.fillText(label, sx, sy - 34);
     }
   }
 
@@ -1465,34 +1737,106 @@ export class Renderer {
     }
   }
 
+  // ── Атлас мира из процедурной карты (пиксельная карта в духе WorldBox) ──
+  // Кэшируется в offscreen-canvas и перерисовывается только при новом мире.
+  buildWorldAtlas(engine, size = 640) {
+    if (typeof document === 'undefined') return null;
+    const map = engine.world.map;
+    if (!map) return null;
+    if (this._atlas && this._atlasSeed === map.seed && this._atlasSize === size && this._atlasVersion === map.version) {
+      return this._atlas;
+    }
+    const cv = document.createElement('canvas');
+    cv.width = size;
+    cv.height = size;
+    const a = cv.getContext('2d');
+    if (!a) return null;
+    a.imageSmoothingEnabled = false;
+
+    const PALETTE = {
+      water: '#1b4b73', coast: '#d9c48f', plains: '#5a8a45', forest: '#2f5a2c',
+      swamp: '#3b4a33', desert: '#c9a066', snow: '#e2edf7', mountains: '#82848a',
+      city: '#3b4150'
+    };
+    const G = map.grid;
+    const px = size / G;
+    a.fillStyle = PALETTE.water;
+    a.fillRect(0, 0, size, size);
+
+    for (let gy = 0; gy < G; gy++) {
+      for (let gx = 0; gx < G; gx++) {
+        const i = gy * G + gx;
+        const biome = map.BIOME_CODES[map.biomeCode[i]];
+        if (map.water[i] && !map.bridge[i]) {
+          // Глубина и реки оттенками
+          a.fillStyle = map.water[i] === 2 ? '#133a5c' : (map.river[i] ? '#2a74a8' : '#2a6a96');
+        } else if (map.bridge[i]) {
+          a.fillStyle = '#8a8f9a';
+        } else {
+          a.fillStyle = PALETTE[biome] || PALETTE.plains;
+        }
+        a.fillRect(Math.floor(gx * px), Math.floor(gy * px), Math.ceil(px), Math.ceil(px));
+      }
+    }
+
+    // Рельефные тени для гор (объёмность)
+    a.globalAlpha = 0.28;
+    for (let gy = 0; gy < G; gy++) {
+      for (let gx = 0; gx < G; gx++) {
+        const i = gy * G + gx;
+        if (map.water[i]) continue;
+        const e = map.elevation[i];
+        if (e > map.seaLevel + 0.16) {
+          a.fillStyle = e > map.seaLevel + 0.24 ? '#f8fafc' : '#525761';
+          a.fillRect(Math.floor(gx * px), Math.floor(gy * px) + 1, Math.ceil(px), 1);
+        }
+      }
+    }
+    a.globalAlpha = 1;
+
+    // Дороги
+    for (const r of engine.world.roads || []) {
+      a.strokeStyle = 'rgba(24, 28, 36, 0.85)';
+      a.lineWidth = Math.max(1, (r.width / map.width) * size);
+      a.beginPath();
+      a.moveTo((r.x1 / map.width) * size, (r.y1 / map.height) * size);
+      a.lineTo((r.x2 / map.width) * size, (r.y2 / map.height) * size);
+      a.stroke();
+    }
+
+    this._atlas = cv;
+    this._atlasSeed = map.seed;
+    this._atlasSize = size;
+    this._atlasVersion = map.version;
+    return cv;
+  }
+
   renderMinimap(engine) {
     const ctx = this.mmCtx;
+    if (!ctx) return;
     const mw = this.minimapCanvas.width;
     const mh = this.minimapCanvas.height;
     const sx = mw / engine.world.width;
     const sy = mh / engine.world.height;
 
-    ctx.fillStyle = '#3a6636';
-    ctx.fillRect(0, 0, mw, mh);
+    // Фон — пиксельный атлас процедурного мира
+    const atlas = this.buildWorldAtlas(engine, 512);
+    if (atlas) {
+      ctx.imageSmoothingEnabled = false;
+      ctx.drawImage(atlas, 0, 0, mw, mh);
+    } else {
+      ctx.fillStyle = '#2f5a2c';
+      ctx.fillRect(0, 0, mw, mh);
+    }
 
-    ctx.fillStyle = '#cfdbe8'; // Снежные Горы (СВ)
-    ctx.fillRect(mw * 0.5, 0, mw * 0.5, mh * 0.32);
-
-    ctx.fillStyle = '#333945'; // Город (Восток)
-    ctx.fillRect(mw * 0.61, mh * 0.32, mw * 0.39, mh * 0.38);
-
-    ctx.fillStyle = '#cfa26b'; // Пустыня и Завод (ЮЗ)
-    ctx.fillRect(0, mh * 0.65, mw * 0.54, mh * 0.35);
-
-    ctx.strokeStyle = '#94a3b8';
-    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = 'rgba(148, 163, 184, 0.55)';
+    ctx.lineWidth = 1;
     for (const r of engine.world.roads) {
       ctx.beginPath();
       ctx.moveTo(r.x1 * sx, r.y1 * sy);
       ctx.lineTo(r.x2 * sx, r.y2 * sy);
       ctx.stroke();
     }
-
     // Здания на мини-карте
     ctx.fillStyle = '#cbd5e1';
     for (const bld of engine.world.buildings) {

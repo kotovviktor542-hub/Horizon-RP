@@ -9,7 +9,8 @@ import {
   ITEMS, RESOURCES, RECIPES, SKILLS, SKILL_TREE, ENEMIES, BOSSES, SECRETS, QUESTS, ACHIEVEMENTS,
   RESCUE_MISSIONS, MISSION_TEMPLATES, LOCATIONS, ARTIFACTS, FACTIONS, ARMORS, TRIALS
 } from './data.js';
-import { createWorld, dist2, getBiomeIdAt, getLocationIdAt } from './world.js';
+import { createWorld, dist2, getBiomeIdAt, getLocationIdAt, VEHICLE_KINDS } from './world.js';
+import { encodeMapGrid, getTerrainAt, randomMapSeed } from './mapgen.js';
 
 const SAVE_KEY = 'horizon_rp_save_v2';
 
@@ -28,7 +29,9 @@ function randInt(min, max) {
 export class GameEngine {
   constructor(sound) {
     this.sound = sound;
-    this.world = createWorld(20261025);
+    this.worldSeed = 20261025;
+    this.world = createWorld(this.worldSeed);
+    this.mapGenerated = true;      // мир создан процедурно (WorldBox-карта)
     this.paused = false;
 
     this.settings = {
@@ -212,6 +215,7 @@ export class GameEngine {
     this.shockwaves = [];
     this.toasts = [];
 
+    this.animClock = 0;              // общий таймер анимаций (волны, подвеска, фары)
     this.camera = {
       x: this.player.x,
       y: this.player.y,
@@ -323,7 +327,18 @@ export class GameEngine {
 
   getVehicleSpeed(v) {
     if (!v) return 320;
-    return Math.round((v.baseSpeed || v.maxSpeed || 330) * (1 + (this.baseLevels.garage || 0) * 0.10));
+    let base = (v.baseSpeed || v.maxSpeed || 330) * (1 + (this.baseLevels.garage || 0) * 0.10);
+    const terrain = getTerrainAt(v.x, v.y);
+    // Асфальт/дорога — быстрее, снег/горы/болото — медленнее, внедорожники терпят бездорожье
+    const offroad = v.kind === 'suv' || v.kind === 'miljeep' || v.kind === 'apc' || v.kind === 'pickup' || v.kind === 'truck';
+    if (terrain.biome === 'city') base *= 1.08;
+    else if (terrain.biome === 'mountains') base *= offroad ? 0.92 : 0.72;
+    else if (terrain.biome === 'snow') base *= offroad ? 0.95 : 0.80;
+    else if (terrain.biome === 'swamp') base *= offroad ? 0.85 : 0.62;
+    else if (terrain.biome === 'desert') base *= offroad ? 1.0 : 0.88;
+    else if (terrain.type === 'bridge') base *= 1.05;
+    if (terrain.water) base *= offroad ? 0.5 : 0.35;
+    return Math.round(base);
   }
 
   getMoveSpeed() {
@@ -333,6 +348,8 @@ export class GameEngine {
       if (v) return this.getVehicleSpeed(v);
     }
     let spd = 205 + p.stats.agility * 7;
+    const terrain = getTerrainAt(p.x, p.y);
+    spd *= terrain.walkSpeed;
     if (this.hasArtifact('art_moon')) spd *= 1.08;
     spd *= 1 + this.getPerkRank('perk_assassin_speed') * 0.03;
     if (this.equippedArmor === 'set_shadow') spd *= 1.06;
@@ -555,6 +572,19 @@ export class GameEngine {
     return true;
   }
 
+  // ── GLOBAL MAP: создание нового мира (новый континент по случайному seed) ──
+  regenerateWorld(seed = randomMapSeed()) {
+    this.worldSeed = seed >>> 0;
+    this.world = createWorld(this.worldSeed);
+    this.mapGenerated = true;
+    return this.world;
+  }
+
+  // Поверхность в точке (вода/мост/глубина + множитель скорости)
+  terrainAt(x, y) {
+    return getTerrainAt(x, y);
+  }
+
   hasSave() {
     try {
       return !!localStorage.getItem(SAVE_KEY);
@@ -568,6 +598,8 @@ export class GameEngine {
       const payload = {
         v: 2,
         savedAt: Date.now(),
+        worldSeed: this.worldSeed,
+        mapGrid: this.world?.map ? encodeMapGrid(this.world.map) : null,
         timeOfDay: this.timeOfDay,
         dayCount: this.dayCount,
         settings: this.settings,
@@ -626,6 +658,14 @@ export class GameEngine {
       if (!raw) return false;
       const data = JSON.parse(raw);
       if (!data || !data.player) return false;
+
+      // GLOBAL MAP: мир восстанавливается по seed и сохранённой карте биомов
+      if (data.worldSeed && data.worldSeed !== this.worldSeed) {
+        this.worldSeed = data.worldSeed >>> 0;
+        this.world = createWorld(this.worldSeed, data.mapGrid || null);
+      } else if (data.mapGrid && this.world?.map && !this.world.map.restored) {
+        this.world = createWorld(this.worldSeed, data.mapGrid);
+      }
 
       this.resetState();
       this.timeOfDay = data.timeOfDay ?? 0.30;
@@ -948,6 +988,7 @@ export class GameEngine {
     }
 
     this.updatePlayer(dt, inputState);
+    this.animClock = (this.animClock || 0) + dt;
     this.updateVehicles(dt);
     this.updateNodes(dt);
     this.updateRescues(dt);
@@ -975,8 +1016,11 @@ export class GameEngine {
         const sx = clamp(p.x + Math.cos(ang) * dist, 150, this.world.width - 150);
         const sy = clamp(p.y + Math.sin(ang) * dist, 150, this.world.height - 150);
         const eliteRoll = p.level >= 5 && Math.random() < 0.055;
-        const spawned = this.spawnEnemyAt(sx, sy, null, false, eliteRoll);
-        if (eliteRoll && spawned) this.pushToast(`💜 Элитный враг поблизости: ${spawned.name}! Редкая добыча`, '#c084fc');
+        const spawnTerrain = this.terrainAt(sx, sy);
+        if (!spawnTerrain.water) {
+          const spawned = this.spawnEnemyAt(sx, sy, null, false, eliteRoll);
+          if (eliteRoll && spawned) this.pushToast(`💜 Элитный враг поблизости: ${spawned.name}! Редкая добыча`, '#c084fc');
+        }
       }
     }
 
@@ -1057,24 +1101,52 @@ export class GameEngine {
       if (!veh) {
         p.vehicleId = null;
       } else {
+        const vMax = this.getVehicleSpeed(veh);
+        const accel = veh.accel || 2.4;
         if (mag > 0.06) {
           const nx = moveX / mag;
           const ny = moveY / mag;
-          const vSpeed = this.getVehicleSpeed(veh);
-          veh.vx = nx * vSpeed;
-          veh.vy = ny * vSpeed;
-          veh.angle = Math.atan2(ny, nx);
+          // Инерция: руль плавно доворачивает, скорость нарастает от accel
+          const targetAngle = Math.atan2(ny, nx);
+          let da = targetAngle - (veh.angle || 0);
+          while (da > Math.PI) da -= Math.PI * 2;
+          while (da < -Math.PI) da += Math.PI * 2;
+          const turnRate = (veh.grip || 0.9) * 9;
+          veh.angle = (veh.angle || 0) + clamp(da, -turnRate * dt, turnRate * dt);
+          const speedNow = Math.hypot(veh.vx, veh.vy);
+          // Реальный разгон: тяга мотора (accel) наращивает скорость до максимума
+          const accelRate = vMax * (accel || 2.4) * 1.15;
+          const nextSpeed = Math.min(vMax, speedNow + accelRate * dt);
+          // Вектор скорости тянется к направлению корпуса (снос на поворотах)
+          const dirX = Math.cos(veh.angle), dirY = Math.sin(veh.angle);
+          const blend = Math.min(1, dt * (14 * (veh.grip || 0.9)));
+          veh.vx = veh.vx * (1 - blend) + dirX * nextSpeed * blend;
+          veh.vy = veh.vy * (1 - blend) + dirY * nextSpeed * blend;
           this.updateFacingFromAngle(veh.angle);
           if (Math.random() < dt * 9) {
-            this.spawnSpriteEffect('smoke', veh.x - nx * 20, veh.y - ny * 12, 0.7, 14);
+            this.spawnSpriteEffect('smoke', veh.x - dirX * 22, veh.y - dirY * 14, 0.7, 14);
+          }
+          // Пыль из-под колёс на бездорожье и на скорости
+          const terr = getTerrainAt(veh.x, veh.y);
+          if (nextSpeed > vMax * 0.55 && Math.random() < dt * (terr.water ? 30 : 12)) {
+            this.spawnSpriteEffect(terr.water ? 'water' : 'smoke', veh.x - dirX * 18, veh.y - dirY * 10, 0.55, 9);
           }
         } else {
-          veh.vx *= 0.84;
-          veh.vy *= 0.84;
+          const drag = Math.pow(0.12, dt);
+          veh.vx *= drag;
+          veh.vy *= drag;
         }
         veh.x = clamp(veh.x + veh.vx * dt, 64, this.world.width - 64);
         veh.y = clamp(veh.y + veh.vy * dt, 64, this.world.height - 64);
         this.resolveEntityObstacles(veh, false);
+        // Столкновение с препятствием гасит скорость и даёт тряску камеры
+        const afterSpeed = Math.hypot(veh.vx, veh.vy);
+        if (veh._lastSpeed > 180 && afterSpeed < veh._lastSpeed * 0.55) {
+          this.camera.shake = Math.min(14, this.camera.shake + 7);
+          this.spawnSpriteEffect('smoke', veh.x, veh.y - 10, 1.1, 12);
+          this.sound.play('hit');
+        }
+        veh._lastSpeed = afterSpeed;
         p.x = veh.x;
         p.y = veh.y;
 
@@ -1126,32 +1198,41 @@ export class GameEngine {
     p.x = clamp(p.x, 48, this.world.width - 48);
     p.y = clamp(p.y, 48, this.world.height - 48);
 
-    // Водная преграда вокруг Острова Контрабандистов
-    if (p.z <= 8 && !p.vehicleId) {
-      for (const hz of this.world.hazards) {
-        const d2 = dist2(p.x, p.y, hz.x, hz.y);
-        if (d2 > hz.innerRadius * hz.innerRadius && d2 < hz.outerRadius * hz.outerRadius) {
-          let onStone = false;
-          for (const st of this.world.steppingStones) {
-            if (dist2(p.x, p.y, st.x, st.y) <= (st.radius + 10) ** 2) {
-              onStone = true;
-              break;
-            }
+    // ── GLOBAL MAP: вода теперь часть мира — мели переходят вброд, глубину переплывают ──
+    if (!p.vehicleId) {
+      const terr = getTerrainAt(p.x, p.y);
+      p.inWater = terr.water && p.z <= 6;
+      p.swimming = !!terr.swim && p.z <= 2;
+      if (p.inWater) {
+        const slow = terr.deep ? 0.62 : 0.80;
+        p.vx *= slow;
+        p.vy *= slow;
+        this.waterSplashTimer -= dt;
+        if (this.waterSplashTimer <= 0) {
+          this.waterSplashTimer = 0.28;
+          this.spawnSpriteEffect('water', p.x, p.y + 6, terr.deep ? 1.05 : 0.8, 10);
+          if (terr.deep && Math.random() < 0.25) {
+            this.spawnDust(p.x, p.y - 4, '#93c5fd', 2);
           }
-          if (!onStone) {
-            // Глубокая вода отталкивает на берег и показывает анимацию брызг воды!
-            const ang = Math.atan2(p.y - hz.y, p.x - hz.x);
-            const mid = (hz.innerRadius + hz.outerRadius) * 0.5;
-            const d = Math.sqrt(d2);
-            const targetR = d < mid ? hz.innerRadius - 6 : hz.outerRadius + 6;
-            p.x = hz.x + Math.cos(ang) * targetR;
-            p.y = hz.y + Math.sin(ang) * targetR;
-            this.waterSplashTimer -= dt;
-            if (this.waterSplashTimer <= 0) {
-              this.waterSplashTimer = 0.35;
-              this.spawnSpriteEffect('water', p.x, p.y, 1.15, 12);
-              this.pushToast('💧 Глубокая река! Перепрыгни по каменным плитам (ПРЫЖОК)', '#38bdf8');
-            }
+        }
+        // Глубина отнимает выносливость, но не блокирует исследование
+        if (terr.deep && p.stamina > 0) {
+          p.stamina = Math.max(0, p.stamina - dt * 5.5);
+        }
+      } else {
+        p.swimming = false;
+      }
+    } else {
+      double: {
+        const veh = this.world.vehicles.find(v => v.id === p.vehicleId);
+        if (veh) {
+          const terr = getTerrainAt(veh.x, veh.y);
+          veh.onWater = !!terr.water && terr.deep;
+          if (terr.water && !veh.stalled) {
+            veh.stalled = true;
+            this.pushToast('🌊 Глубокая вода! Транспорт не пройдёт — вернись на сушу', '#38bdf8');
+          } else if (!terr.water) {
+            veh.stalled = false;
           }
         }
       }
@@ -3724,7 +3805,7 @@ export class GameEngine {
     // Гараж 1 уровня припарковывает бронеджип прямо у Базы!
     if (roomId === 'garage' && !this.baseJeepSpawned) {
       this.baseJeepSpawned = true;
-      this.world.vehicles.push({ id: 'veh_base_jeep', kind: 'jeep', name: 'Бронеджип Убежища VEXMORA', x: 3520, y: 3260, vx: 0, vy: 0, angle: 0, radius: 26, drivable: true, baseSpeed: 345 });
+      this.world.vehicles.push({ id: 'veh_base_jeep', kind: 'miljeep', name: 'Бронеджип Убежища VEXMORA', x: 3520, y: 3260, vx: 0, vy: 0, angle: 0, radius: 26, drivable: true, baseSpeed: 372, accel: 2.5, grip: 0.93, hp: 280, maxHp: 280 });
       this.pushToast('🚙 Механик пригнал Бронеджип Убежища к восточным воротам Базы!', '#38bdf8');
     }
     this.sound.play('levelup');
