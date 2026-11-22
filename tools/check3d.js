@@ -396,6 +396,40 @@ ok('Сохранение хранит качество 3D', engine.settings.qual
 
 bridge.dispose();
 ok('Очистка сцены без ошибок', true);
+
+// 10. Динамическое разрешение: просадка FPS режет разрешение, а не весь пресет
+{
+  const ratios = [];
+  const stubRenderer = {
+    setPixelRatio(v) { ratios.push(v); }, getPixelRatio() { return ratios[ratios.length - 1] ?? 1; },
+    setSize() {}, render() {}, dispose() {},
+    shadowMap: { enabled: false, needsUpdate: false }, domElement: shimElement('canvas'),
+    outputColorSpace: '', toneMapping: 0, toneMappingExposure: 1, info: { autoReset: true }
+  };
+  const Engine = (await import(`${ROOT}/www/js/engine.js`)).GameEngine;
+  const engQ = new Engine({ enabled: false, play() {}, unlock() {} });
+  const { Game3D } = await import(`${ROOT}/www/js3d/game/game3d.js`);
+  const g = new Game3D(shimElement('canvas'), engQ, {
+    quality3d: 'high', externalLoop: true, autoQuality: true,
+    rendererFactory: () => stubRenderer
+  });
+  const startScale = g.renderScale;
+  g.fpsSmooth = 24;                       // тяжёлый кадр
+  g._autoAdjustResolution();
+  const lowScale = g.renderScale;
+  ok('Динамическое разрешение снижается при просадке FPS', lowScale < startScale,
+    `масштаб ${startScale.toFixed(2)} → ${lowScale.toFixed(2)}`);
+  const ratioLow = ratios[ratios.length - 1];
+  g.fpsSmooth = 60;                       // FPS восстановился
+  g._autoAdjustResolution();
+  ok('Динамическое разрешение восстанавливается при высоком FPS', g.renderScale > lowScale,
+    `масштаб ${lowScale.toFixed(2)} → ${g.renderScale.toFixed(2)}, pixelRatio ${ratioLow} → ${ratios[ratios.length - 1]}`);
+  g.fpsSmooth = 10;
+  for (let i = 0; i < 20; i++) g._autoAdjustResolution();
+  ok('Разрешение не падает ниже предела читаемости', g.renderScale >= 0.55, `минимум ${g.renderScale.toFixed(2)}`);
+  g.applyQuality('low', false);
+  ok('Смена пресета сбрасывает масштаб разрешения', g.renderScale === 1 && g.quality3d === 'low');
+}
 }
 
 console.log(`\nИТОГ: ${pass}/${pass + fail} проверок 3D-сцен и моста успешно${fail ? `, провалено: ${fail}` : ''}`);

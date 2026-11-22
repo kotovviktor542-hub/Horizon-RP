@@ -48,6 +48,11 @@ export class Game3D {
     this.frameCount = 0;
     this.autoQualityTimer = 0;
     this.autoQualityEnabled = options.autoQuality !== false;
+    // Динамическое разрешение: если FPS низкий, сначала режем разрешение кадра,
+    // а не весь пресет — картинка остаётся детальной, но плавность возвращается.
+    this.renderScale = 1;
+    this._resScaleMin = 0.55;
+    this._resTimer = 0;
     this.options = options;
 
     this._initRenderer();
@@ -128,6 +133,13 @@ export class Game3D {
   }
 
   // ── Качество графики ───────────────────────────────────────────────────
+  _applyPixelRatio() {
+    const preset = QUALITY_PRESETS[this.quality3d] || QUALITY_PRESETS.high;
+    const dpr = (typeof window !== 'undefined' && window.devicePixelRatio) || 1;
+    const ratio = Math.max(0.5, Math.min(dpr, preset.pixelRatio) * this.renderScale);
+    this.renderer.setPixelRatio(Number(ratio.toFixed(3)));
+  }
+
   applyQuality(level, persist = true) {
     if (!QUALITY_PRESETS[level]) return;
     this.quality3d = level;
@@ -138,7 +150,8 @@ export class Game3D {
     }
     const preset = QUALITY_PRESETS[level];
     const r = this.renderer;
-    r.setPixelRatio(Math.min(window.devicePixelRatio || 1, preset.pixelRatio));
+    this.renderScale = 1;               // новый пресет — начинаем с полного разрешения
+    this._applyPixelRatio();
     r.setSize(window.innerWidth, window.innerHeight, false);
     r.shadowMap.enabled = preset.shadows;
     r.shadowMap.needsUpdate = true;
@@ -420,6 +433,14 @@ export class Game3D {
         this._autoAdjustQuality();
       }
     }
+    // Динамическое разрешение — быстрая реакция (раз в 2 с), пресет меняется реже
+    if (this.autoQualityEnabled && !this._qualityPinned) {
+      this._resTimer += dt;
+      if (this._resTimer > 2) {
+        this._resTimer = 0;
+        this._autoAdjustResolution();
+      }
+    }
 
     try {
       this.update(dt);
@@ -433,6 +454,22 @@ export class Game3D {
     }
 
     requestAnimationFrame(this._loop);
+  }
+
+  _autoAdjustResolution() {
+    if (!this.renderer) return;
+    let changed = false;
+    if (this.fpsSmooth < 40 && this.renderScale > this._resScaleMin) {
+      this.renderScale = Math.max(this._resScaleMin, this.renderScale - 0.1);
+      changed = true;
+    } else if (this.fpsSmooth > 57 && this.renderScale < 1) {
+      this.renderScale = Math.min(1, this.renderScale + 0.05);
+      changed = true;
+    }
+    if (changed) {
+      this._applyPixelRatio();
+      this.resize();
+    }
   }
 
   _autoAdjustQuality() {
@@ -627,6 +664,7 @@ export class Game3D {
     const w = window.innerWidth, h = window.innerHeight;
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
+    this._applyPixelRatio();
     this.renderer.setSize(w, h, false);
   }
 
