@@ -187,6 +187,20 @@ export class SkySystem {
       }
     }
     this.sun.castShadow = level !== 'low';
+    this._shadowLevel = level;
+  }
+
+  // Радиус теней: чем меньше область, тем выше фактическое разрешение тени
+  // и меньше объектов попадает во второй проход рендера.
+  setShadowDistance(distance) {
+    const sc = this.sun?.shadow?.camera;
+    if (!sc) return;
+    const d = Math.max(12, distance || 0);
+    if (this._shadowDist === d) return;
+    this._shadowDist = d;
+    sc.left = -d; sc.right = d; sc.top = d; sc.bottom = -d;
+    sc.far = Math.max(120, d * 4);
+    sc.updateProjectionMatrix();
   }
 
   update(dt, cameraPos, time, weather = 'clear', weatherIntensity = 1) {

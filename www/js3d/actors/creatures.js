@@ -4,9 +4,18 @@
 // материалы и пропорции задают облик конкретного врага.
 
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { createMaterial, colorMaterial, emissiveMaterial } from '../core/materials.js';
 
 const TAU = Math.PI * 2;
+
+// Глобальный бюджет динамических источников света. Каждый PointLight в three.js
+// удорожает шейдинг ВСЕХ материалов сцены; на мобильных GPU их должно быть мало.
+export const LightBudget = { dynamicLights: false, maxDynamic: 0 };
+// Совместимость: модуль может быть загружен в разных условиях
+function allowDynamicLights(owner) {
+  return !!(owner && owner.isBoss) && !!LightBudget.dynamicLights;
+}
 const damp = (c, t, l, dt) => c + (t - c) * (1 - Math.exp(-l * dt));
 
 // Палитры облика по семействам врагов (соответствуют пиксель-арту 2D-версии)
@@ -71,7 +80,55 @@ export class Creature3D {
     this.deathTime = 0;
 
     this._build();
+    // Мелкие детали (глаза, заклёпки, шипы) склеиваем по материалу: вместо ~19
+    // отдельных draw call на врага получаем 4–5. Анимируемые части сохраняются.
+    this._mergeStaticParts();
     this.root.scale.setScalar(this.scale);
+  }
+
+  // Объединяет статические меши с ОДНИМ родителем и материалом в один draw call.
+  // Анимируемые части (кости, глаза-цели) остаются отдельными объектами.
+  _mergeStaticParts() {
+    if (typeof mergeGeometries !== 'function') return;
+    const animated = new Set();
+    const collect = (v) => {
+      if (!v) return;
+      if (Array.isArray(v)) { v.forEach(collect); return; }
+      if (v.isObject3D) animated.add(v);
+    };
+    for (const v of Object.values(this.parts)) collect(v);
+
+    const buckets = new Map();
+    this.root.traverse((o) => {
+      if (!o.isMesh || o.isSkinnedMesh || !o.geometry || !o.material) return;
+      if (o.material.transparent) return;          // прозрачные склеивать нельзя (сортировка)
+      if (animated.has(o)) return;                 // сама деталь анимируется
+      if (o.userData.animated) return;
+      if (!o.parent) return;
+      const key = `${o.parent.uuid}|${o.material.uuid}`;
+      if (!buckets.has(key)) buckets.set(key, []);
+      buckets.get(key).push(o);
+    });
+
+    for (const [, list] of buckets) {
+      if (list.length < 2) continue;
+      const parent = list[0].parent;
+      const geos = [];
+      for (const mesh of list) {
+        mesh.updateMatrix();
+        const g = mesh.geometry.clone();
+        g.applyMatrix4(mesh.matrix);               // общий родитель → локальные матрицы
+        geos.push(g);
+      }
+      const merged = mergeGeometries(geos, false);
+      geos.forEach((g) => g.dispose());
+      if (!merged) continue;
+      const mesh = new THREE.Mesh(merged, list[0].material);
+      mesh.castShadow = list.some((m) => m.castShadow);
+      mesh.userData.merged = true;
+      for (const old of list) parent.remove(old);
+      parent.add(mesh);
+    }
   }
 
   _classifyKind(def) {
@@ -289,8 +346,10 @@ export class Creature3D {
     this.parts.legL = legs.L;
 
     // Свечение вокруг (элементали, кристаллы)
-    if (m.glow) {
-      const aura = new THREE.PointLight(this.look.skin, this.isBoss ? 2.4 : 0.9, this.isBoss ? 12 : 5, 2);
+    // Свет — только у боссов: каждый PointLight заставляет WebGL пересчитывать
+    // освещение всех материалов в кадре, десятки таких ламп роняли FPS до 10.
+    if (m.glow && this.isBoss && allowDynamicLights(this)) {
+      const aura = new THREE.PointLight(this.look.skin, 2.4, 12, 2);
       aura.position.y = 0.8;
       body.add(aura);
     }
@@ -433,9 +492,7 @@ export class Creature3D {
       arm.rotation.x = -0.3;
       body.add(arm);
     }
-    const light = new THREE.PointLight(this.look.eye, 0.7, 4, 2);
-    light.position.y = 0.6;
-    body.add(light);
+    // Глаза призрака светятся материалом, без PointLight (декоративный свет не нужен)
   }
 
   // ── Голем/колосс ──
@@ -513,7 +570,7 @@ export class Creature3D {
     this.parts.legR = legs.R;
     this.parts.legL = legs.L;
 
-    if (m.glow) {
+    if (m.glow && allowDynamicLights(this)) {
       const l = new THREE.PointLight(this.look.eye, 1.2, 6, 2);
       l.position.y = 0.8;
       body.add(l);
@@ -548,10 +605,12 @@ export class Creature3D {
       flames.push(f);
     }
     this.parts.flames = flames;
-    const light = new THREE.PointLight(this.look.skin, 2.0, 8, 2);
-    light.position.y = 0.6;
-    body.add(light);
-    this.parts.light = light;
+    if (allowDynamicLights(this)) {
+      const light = new THREE.PointLight(this.look.skin, 2.0, 8, 2);
+      light.position.y = 0.6;
+      body.add(light);
+      this.parts.light = light;
+    }
   }
 
   // ── Дрон ──
@@ -576,9 +635,29 @@ export class Creature3D {
       rotors.push(rotor);
     }
     this.parts.rotors = rotors;
-    const l = new THREE.PointLight(0xff4d4d, 0.6, 4, 2);
-    l.position.y = -0.2;
-    body.add(l);
+    if (allowDynamicLights(this)) {
+      const l = new THREE.PointLight(0xff4d4d, 0.6, 4, 2);
+      l.position.y = -0.2;
+      body.add(l);
+    }
+  }
+
+  // Тени существ: близкие враги отбрасывают тень, дальние — нет (экономия прохода)
+  setShadow(on) {
+    if (this._shadowOn === on) return;
+    this._shadowOn = on;
+    this.root.traverse((o) => {
+      if (!o.isMesh) return;
+      // Запоминаем исходную настройку один раз: мелкие детали (глаза, когти,
+      // шипы) тень не дают никогда, крупные части — по дистанции.
+      if (o.userData.shadowCapable === undefined) {
+        if (!o.geometry?.boundingSphere) o.geometry?.computeBoundingSphere?.();
+        const r = o.geometry?.boundingSphere?.radius || 0;
+        o.userData.shadowCapable = o.castShadow && r >= 0.16;
+        o.userData.baseCastShadow = o.castShadow;
+      }
+      o.castShadow = on && o.userData.shadowCapable;
+    });
   }
 
   // ── Анимация ──

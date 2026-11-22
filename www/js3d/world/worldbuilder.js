@@ -9,6 +9,16 @@ import { Structures, Vehicles3D } from './models.js';
 import { WORLD_SCALE } from '../core/sky.js';
 
 const TAU = Math.PI * 2;
+
+// Декоративные источники света внутри моделей (сундуки, лампы, фары, костры)
+// вырезаем: three.js пересчитывает все источники для каждого материала, и
+// 49 таких лампочек роняли FPS до 10. Свет ставим отдельно и по бюджету.
+export function stripDecorLights(obj) {
+  const lights = [];
+  obj.traverse((o) => { if (o.isLight) lights.push(o); });
+  for (const l of lights) l.parent?.remove(l);
+  return lights.length;
+}
 const rnd = (seed, n = 1) => {
   const v = Math.sin(seed * 12.9898 + n * 78.233) * 43758.5453;
   return v - Math.floor(v);
@@ -32,6 +42,11 @@ export class WorldBuilder {
     this.dynamicProps = [];          // объекты, которым нужна анимация (огонь, свет)
     this.lampLights = [];
     this.campfires = options.campfires || [];
+
+    // Бюджет источников света: ультра — чуть больше, эконом — почти без света
+    const lightBudget = { low: 0, medium: 2, high: 4, ultra: 7 };
+    this.maxLampLights = lightBudget[quality] ?? 4;
+    this.maxFireLights = quality === 'low' ? 1 : 3;
 
     this._prepareData();
     this._buildInstancedFoliage();
@@ -198,20 +213,35 @@ export class WorldBuilder {
       if (p.kind === 'rock') buckets.rock.push(p);
     }
 
+    // Батчи нарезаем по пространственным ячейкам: один InstancedMesh на всю карту
+    // (с frustumCulled=false) заставлял GPU рисовать тысячи деревьев каждый кадр —
+    // даже те, что за спиной. С ячейками лишние батчи отсекаются по фрустуму.
+    const INSTANCE_CELL = 40;                        // метров
     const addInstanced = (batches, list, opts = {}) => {
       if (!list.length) return;
       const m = new THREE.Matrix4();
       const q = new THREE.Quaternion();
       const v = new THREE.Vector3();
       const s = new THREE.Vector3();
-      for (const batch of batches) {
-        const mesh = new THREE.InstancedMesh(batch.geometry, batch.material, list.length);
+      // группируем объекты по ячейке мира
+      const cells = new Map();
+      for (const obj of list) {
+        const cx = Math.floor((obj.x * WORLD_SCALE) / INSTANCE_CELL);
+        const cz = Math.floor((obj.y * WORLD_SCALE) / INSTANCE_CELL);
+        const key = `${cx},${cz}`;
+        if (!cells.has(key)) cells.set(key, []);
+        cells.get(key).push(obj);
+      }
+      for (const batch of batches) for (const [, items] of cells) {
+        if (!items.length) continue;
+        const mesh = new THREE.InstancedMesh(batch.geometry, batch.material, items.length);
         mesh.instanceMatrix.setUsage(THREE.StaticDrawUsage);
         mesh.castShadow = opts.castShadow !== false;
+        mesh.userData.baseCastShadow = mesh.castShadow;
         mesh.receiveShadow = true;
-        mesh.frustumCulled = false;
-        for (let i = 0; i < list.length; i++) {
-          const obj = list[i];
+        mesh.frustumCulled = true;
+        for (let i = 0; i < items.length; i++) {
+          const obj = items[i];
           const p3 = { x: obj.x * WORLD_SCALE, z: obj.y * WORLD_SCALE };
           const y = this.terrain.heightAt3D(p3.x, p3.z);
           const scale = (opts.scale || 1) * (0.82 + rnd(obj.x + obj.y, 5) * 0.42);
@@ -226,7 +256,7 @@ export class WorldBuilder {
         // Ограничиваем дальность отрисовки для дальних объектов
         mesh.userData.maxRenderDist = opts.maxRenderDist || 0;
         this.group.add(mesh);
-        this.instanced.push({ mesh, list, opts });
+        this.instanced.push({ mesh, list: items, opts });
       }
     };
 
@@ -282,6 +312,7 @@ export class WorldBuilder {
       }
       mesh.instanceMatrix.needsUpdate = true;
       mesh.castShadow = true;
+      mesh.userData.baseCastShadow = true;
       mesh.receiveShadow = true;
       mesh.frustumCulled = false;
       this.group.add(mesh);
@@ -345,7 +376,19 @@ export class WorldBuilder {
       model.rotation.y = rnd(b.x, 3) * TAU;
       model.castShadow = true;
       model.receiveShadow = true;
-      model.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+      // Тени — только у корпуса здания: мелкие детали (окна, вывески, трубы)
+      // во втором проходе не нужны и удваивали нагрузку на кадр.
+      model.traverse(o => { if (o.isMesh) { o.receiveShadow = true; o.castShadow = false; } });
+      model.userData.baseCastShadow = true;
+      // Только корпус здания: первый крупный меш даёт читаемую тень,
+      // остальные детали во втором проходе не нужны.
+      let first = true;
+      model.traverse(o => {
+        if (!o.isMesh) return;
+        if (first && o.geometry?.attributes?.position) { o.castShadow = true; first = false; }
+      });
+      // Внутренние источники света вырезаем: свет окон ставим отдельно и по бюджету
+      stripDecorLights(model);
       model.userData.buildingId = b.id;
       model.userData.building = b;
       model.userData.radius = Math.max(b.colW || 120, b.colH || 120) * WORLD_SCALE * 0.5;
@@ -354,10 +397,13 @@ export class WorldBuilder {
       this.buildingMeshes.push(model);
 
       // Свет из окон ночью
+      // Свет окон: many-lights дорого, поэтому включаем только ближайшие
+      // (см. _updateLights) — остальные лампы остаются с intensity 0.
       const light = new THREE.PointLight(0xffc46b, 0, 14, 2);
       light.position.set(pos.x, y + 3.2, pos.z);
+      light.userData.worldPos = { x: pos.x, z: pos.z };
       this.group.add(light);
-      this.lampLights.push({ light, base: 0.9, nightOnly: true });
+      this.lampLights.push({ light, base: 0.9, nightOnly: true, x: pos.x, z: pos.z });
 
       // Дым из трубы завода/дома (лампы-факелы)
       if (b.smokes) {
@@ -385,6 +431,7 @@ export class WorldBuilder {
     const cv = document.createElement('canvas');
     cv.width = 512; cv.height = 128;
     const ctx = cv.getContext('2d');
+    if (!ctx) return null;                    // нет 2D-контекста (headless/лимит канвасов)
     ctx.fillStyle = `rgba(${(bg >> 16) & 255},${(bg >> 8) & 255},${bg & 255},0.78)`;
     ctx.beginPath();
     const r = 22;
@@ -428,9 +475,11 @@ export class WorldBuilder {
       const pos = { x: c.x * WORLD_SCALE, z: c.y * WORLD_SCALE };
       const y = this.terrain.heightAt3D(pos.x, pos.z);
       model.position.set(pos.x, y, pos.z);
+      stripDecorLights(model);
       this.group.add(model);
-      const light = new THREE.PointLight(0xff9a3c, 2.2, 13, 2);
+      const light = new THREE.PointLight(0xff9a3c, 0, 13, 2);
       light.position.set(pos.x, y + 1.1, pos.z);
+      light.userData.worldPos = { x: pos.x, z: pos.z };
       this.group.add(light);
       this.dynamicProps.push({ type: 'fire', x: c.x, y: c.y, light, model, baseIntensity: 2.2, phase: Math.random() * 10 });
       // Палатка рядом
@@ -456,9 +505,17 @@ export class WorldBuilder {
       model.position.set(pos.x, y + 0.1, pos.z);
       model.rotation.y = veh.angle || 0;
       model.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+      stripDecorLights(model);
+      // У машин тень нужна только корпусу (второй проход дорогой)
+      model.traverse(o => { if (o.isMesh && o.geometry?.type !== 'BoxGeometry') o.castShadow = false; });
       model.userData.vehicleId = veh.id;
       this.group.add(model);
       meshes.set(veh.id, model);
+      // Фары: один недорогой источник на машину, включается только ночью и рядом
+      const lamp = new THREE.PointLight(0xfff0c0, 0, 10, 2);
+      lamp.position.set(pos.x, y + 0.9, pos.z);
+      this.group.add(lamp);
+      this.lampLights.push({ light: lamp, base: 0.7, nightOnly: true, x: pos.x, z: pos.z });
     }
     this.vehicleMeshes = meshes;
   }
@@ -488,12 +545,16 @@ export class WorldBuilder {
       const lock = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.2, 0.08), iron);
       lock.position.set(0, 0.55, 0.44);
       g.add(lock);
-      const glow = new THREE.PointLight(c.cursed ? 0xa855f7 : 0xffc46b, c.looted ? 0 : 0.9, 6, 2);
-      glow.position.y = 0.9;
-      g.add(glow);
+      stripDecorLights(g);
 
       const pos = { x: c.x * WORLD_SCALE, z: c.y * WORLD_SCALE };
       const y = this.terrain.heightAt3D(pos.x, pos.z);
+      // Свечение сундука — отдельный бюджетный источник в мировых координатах
+      const glow = new THREE.PointLight(c.cursed ? 0xa855f7 : 0xffc46b, 0, 6, 2);
+      glow.position.set(pos.x, y + 0.9, pos.z);
+      glow.userData.worldPos = { x: pos.x, z: pos.z };
+      this.group.add(glow);
+      this.lampLights.push({ light: glow, base: c.looted ? 0 : 0.9, nightOnly: false, x: pos.x, z: pos.z });
       g.position.set(pos.x, y, pos.z);
       g.rotation.y = Math.random() * TAU;
       g.userData.chest = c;
@@ -502,24 +563,54 @@ export class WorldBuilder {
     }
   }
 
+  // ── Бюджет источников света ─────────────────────────────────────────────
+  // three.js считает ВСЕ источники для каждого материала: 100+ ламп в сцене
+  // роняли FPS до 10. Держим включёнными только ближайшие к герою.
+  _updateLights(lightFactor, playerPos) {
+    const maxLamps = this.maxLampLights ?? 4;
+    const maxFires = this.maxFireLights ?? 3;
+    const near = (x, z, r) => {
+      const dx = x - playerPos.x, dz = z - playerPos.z;
+      return dx * dx + dz * dz < r * r;
+    };
+    // Окна/фонари
+    let lit = 0;
+    for (const l of this.lampLights) {
+      const want = l.nightOnly ? lightFactor * l.base : l.base;
+      const ok = want > 0.01 && lit < maxLamps && near(l.x, l.z, 70);
+      if (ok) lit++;
+      l.light.intensity = ok ? want : 0;
+      l.light.visible = ok;
+    }
+    // Костры: только близкие горят
+    let fires = 0;
+    for (const d of this.dynamicProps) {
+      if (d.type !== 'fire' || !d.light) continue;
+      const ok = fires < maxFires && near(d.x * WORLD_SCALE, d.y * WORLD_SCALE, 60);
+      if (ok) fires++;
+      d.light.visible = ok;
+      if (!ok) d.light.intensity = 0;
+    }
+    this._litLamps = lit;
+    this._litFires = fires;
+    return lit + fires;
+  }
+
   // ── Обновление: огонь, свет, дальность отрисовки, погода ─────────────────
   update(dt, playerPos, timeOfDay, quality) {
     const night = timeOfDay < 0.22 || timeOfDay > 0.78;
     const dusk = (timeOfDay > 0.68 && timeOfDay <= 0.78) || (timeOfDay >= 0.22 && timeOfDay < 0.30);
     const lightFactor = night ? 1 : dusk ? 0.55 : 0;
 
-    // Свет из окон и фонарей
-    for (const l of this.lampLights) {
-      const target = l.nightOnly ? lightFactor * l.base : l.base;
-      l.light.intensity += (target - l.light.intensity) * Math.min(1, dt * 1.5);
-    }
+    // Ближайшие источники света (раз в кадр — дёшево: только сравнение координат)
+    this._updateLights(lightFactor, playerPos);
 
     // Костры: мерцание + искры
     for (const d of this.dynamicProps) {
       if (d.type === 'fire' && d.light) {
         d.phase += dt * 7;
         const flicker = 1 + Math.sin(d.phase) * 0.16 + Math.sin(d.phase * 2.7) * 0.1;
-        d.light.intensity = d.baseIntensity * flicker * (0.7 + lightFactor * 0.5);
+        if (d.light.visible) d.light.intensity = d.baseIntensity * flicker * (0.7 + lightFactor * 0.5);
         if (d.model) {
           const flames = d.model.userData.flames;
           if (flames) {
@@ -561,6 +652,46 @@ export class WorldBuilder {
       if (d < bestD) { bestD = d; best = b; }
     }
     return best;
+  }
+
+  // Тени: рендерятся вторым проходом, поэтому их получают только близкие
+  // и крупные объекты. Иначе 1600+ объектов удваивали нагрузку на кадр.
+  cullShadows(heroPos, radius = 60) {
+    if (!heroPos) return 0;
+    let changed = 0;
+    const r2 = radius * radius;
+    // За пределами радиуса теней вообще нет — второй проход по ним не нужен
+    for (const mesh of this.buildingMeshes || []) {
+      const dx = mesh.position.x - heroPos.x;
+      const dz = mesh.position.z - heroPos.z;
+      const want = (dx * dx + dz * dz) < r2;
+      if (mesh.castShadow !== want) { mesh.castShadow = want; changed++; }
+    }
+    for (const [, mesh] of this.vehicleMeshes || new Map()) {
+      const dx = mesh.position.x - heroPos.x;
+      const dz = mesh.position.z - heroPos.z;
+      const want = (dx * dx + dz * dz) < r2;
+      if (mesh.castShadow !== want) { mesh.castShadow = want; changed++; }
+    }
+    // Растительность: камни в тени не нужны, деревья — только на среднем и выше
+    const foliageShadows = radius > 20;
+    // Тени растительности — только у ближних ячеек (иначе тень от леса за
+    // горизонтом всё равно не видна, но второй проход по ней выполняется)
+    const foliageR2 = (radius * 0.75) * (radius * 0.75);
+    const m4 = new THREE.Matrix4();
+    for (const inst of this.instanced || []) {
+      let want = false;
+      if (foliageShadows && inst.opts?.castShadow) {
+        // Ячейка небольшая (40 м) — достаточно первого инстанса как центра батча
+        const count = inst.mesh.count || 0;
+        inst.mesh.getMatrixAt(Math.floor(count / 2), m4);
+        const dx = m4.elements[12] - heroPos.x;
+        const dz = m4.elements[14] - heroPos.z;
+        want = (dx * dx + dz * dz) < foliageR2;
+      }
+      if (inst.mesh.castShadow !== want) { inst.mesh.castShadow = want; changed++; }
+    }
+    return changed;
   }
 
   dispose() {

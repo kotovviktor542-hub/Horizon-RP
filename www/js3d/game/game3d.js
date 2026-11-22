@@ -11,25 +11,34 @@ import { Effects3D } from '../core/effects.js';
 import { World3D } from './worldbridge.js';
 import { CAMPFIRES } from '../../js/data.js';
 import { setDeferTextures, pendingMaterialNames, textureMaterial, materialNames } from '../core/materials.js';
+import { LightBudget } from '../actors/creatures.js';
 
 const QUALITY_PRESETS = {
   low: {
     label: 'Низкое', pixelRatio: 0.75, shadows: false, shadowSize: 512,
-    viewRadius: 3, aa: false, anisotropy: 1, particles: 0.5, weather: false, grass: false
+    viewRadius: 3, aa: false, anisotropy: 1, particles: 0.5, weather: false, grass: false,
+    dynamicLights: false, maxDynamic: 0, shadowDistance: 0
   },
   medium: {
     label: 'Среднее', pixelRatio: 1, shadows: true, shadowSize: 1024,
-    viewRadius: 4, aa: true, anisotropy: 2, particles: 0.8, weather: true, grass: true
+    viewRadius: 4, aa: true, anisotropy: 2, particles: 0.8, weather: true, grass: true,
+    dynamicLights: false, maxDynamic: 0, shadowDistance: 38
   },
   high: {
     label: 'Высокое', pixelRatio: 1.35, shadows: true, shadowSize: 2048,
-    viewRadius: 5, aa: true, anisotropy: 4, particles: 1, weather: true, grass: true
+    viewRadius: 5, aa: true, anisotropy: 4, particles: 1, weather: true, grass: true,
+    dynamicLights: false, maxDynamic: 0, shadowDistance: 55
   },
   ultra: {
     label: 'Ультра', pixelRatio: 2, shadows: true, shadowSize: 4096,
-    viewRadius: 6, aa: true, anisotropy: 8, particles: 1.4, weather: true, grass: true
+    viewRadius: 6, aa: true, anisotropy: 8, particles: 1.4, weather: true, grass: true,
+    dynamicLights: true, maxDynamic: 6, shadowDistance: 70
   }
 };
+
+// Тени — самый дорогой проход: сцена рендерится второй раз. Дальность теней
+// и бюджет источников света задаются пресетом (на слабых телефонах — 0).
+const SHADOW_DEFAULTS = { shadowDistance: 0, dynamicLights: false, maxDynamic: 0 };
 
 export { QUALITY_PRESETS };
 
@@ -151,6 +160,10 @@ export class Game3D {
   // ── Рендерер ───────────────────────────────────────────────────────────
   _initRenderer() {
     const preset = QUALITY_PRESETS[this.quality3d] || QUALITY_PRESETS.high;
+    // Бюджет динамических источников света по пресету: на мобильном GPU
+    // каждый PointLight считается для всех материалов, поэтому их мало.
+    LightBudget.dynamicLights = !!preset.dynamicLights;
+    LightBudget.maxDynamic = preset.maxDynamic || 0;
     // Фабрика рендерера позволяет подменять WebGL в автотестах и на сервере
     if (this.options.rendererFactory) {
       this.renderer = this.options.rendererFactory(THREE, preset);
@@ -652,6 +665,23 @@ export class Game3D {
     }
     this.bridge.update(dt, this.camera);
     this.effects.update(dt, this.camera, { x: hp.x, y: gy, z: hp.z });
+
+    // ── Оптимизация прохода теней ──
+    // Тени стоят второго рендера сцены. Раз в 0.25 с оставляем их только у
+    // близких объектов и у врагов рядом с героем (дальние — без теней).
+    const preset = QUALITY_PRESETS[this.quality3d] || QUALITY_PRESETS.high;
+    this._shadowTimer = (this._shadowTimer || 0) + dt;
+    if (this._shadowTimer > 0.25) {
+      this._shadowTimer = 0;
+      const dist = preset.shadowDistance || 0;
+      this.worldBuilder.cullShadows?.({ x: hp.x, z: hp.z }, dist);
+      this.sky.setShadowDistance?.(dist);
+      for (const [, c] of this.bridge.creatures) {
+        const dx = c.root.position.x - hp.x;
+        const dz = c.root.position.z - hp.z;
+        c.setShadow?.(dist > 0 && (dx * dx + dz * dz) < dist * dist);
+      }
+    }
 
     // Небо и погода
     const weather = this._resolveWeather(e);
