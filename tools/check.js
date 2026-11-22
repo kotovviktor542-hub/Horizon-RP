@@ -924,6 +924,15 @@ test('25. 3D-ИНТЕРФЕЙС: разметка и стили 3D-режима 
   assert.ok(html.includes('id="joystick-zone"') && html.includes('id="btn-attack"'),
     'Классический 2D-слой управления должен сохраниться как резервный');
   // Раскладка 3D-HUD: мини-карта справа не должна перекрываться панелями и меню
+  // Стартовый экран: доска «Что нового» не должна закрывать кнопку «Играть»
+  assert.ok(css.includes('.overlay-screen {') && /overflow-y: auto/.test(css.slice(css.indexOf('.overlay-screen {'), css.indexOf('.overlay-screen {') + 400)),
+    'Титульный экран должен прокручиваться на низких экранах');
+  assert.ok(/#update-modal \{ z-index: 45; \}/.test(css),
+    'Доска объявлений должна быть выше титульного экрана');
+  assert.ok(/\.update-box \{[^}]*max-height: min\(66vh, 520px\)/.test(css),
+    'Доска объявлений должна быть компактной (не выше ~2/3 экрана)');
+  assert.ok(/#update-modal #update-sections \{[^}]*overflow-y: auto/.test(css),
+    'Список секций доски прокручивается внутри, кнопка остаётся на виду');
   assert.ok(css.includes('body.mode3d .hud-right-top') && css.includes('body.mode3d .hud-center-info'),
     'В 3D-режиме верхний ряд HUD перестраивается (полосы по центру, 2D-мини-карта скрыта)');
   assert.ok(/body\.mode3d \.hud3d-menu \{[^}]*left: 12px/.test(css),

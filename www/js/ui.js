@@ -9,6 +9,9 @@ import {
 import { getBiomeIdAt, dist2 } from './world.js';
 import { MAP_BIOMES } from './mapgen.js';
 
+// Версия анонса: смените строку — доска «Что нового» покажется снова один раз
+const ANNOUNCE_SEEN_KEY = 'vexmora_announce_seen_3d_v1';
+
 export class UIManager {
   constructor(engine, renderer) {
     this.engine = engine;
@@ -76,10 +79,14 @@ export class UIManager {
     this.bindEvents();
     this.refreshTitleScreen();
     this.renderAnnouncement();
-    // Первый показ объявления VEXMORA 2.0 на главном экране
+    // Первый показ объявления о 3D-обновлении. Ключ привязан к версии анонса,
+    // поэтому после «Понятно» доска больше не всплывает поверх титульного экрана.
     try {
-      if (!localStorage.getItem('vexmora_update_2_seen')) this.showAnnouncement();
-    } catch { this.showAnnouncement(); }
+      if (!localStorage.getItem(ANNOUNCE_SEEN_KEY)) {
+        // Не блокируем титул на первом кадре: даём интерфейсу отрисоваться
+        setTimeout(() => { if (this.isTitleVisible()) this.showAnnouncement(); }, 400);
+      }
+    } catch { /* приватный режим — просто не показываем автоматически */ }
   }
 
   renderAnnouncement() {
@@ -91,13 +98,17 @@ export class UIManager {
     `).join('');
   }
 
+  isTitleVisible() {
+    return !this.els.titleScreen?.classList.contains('hidden');
+  }
+
   showAnnouncement() {
     this.els.updateModal?.classList.remove('hidden');
   }
 
   hideAnnouncement() {
     this.els.updateModal?.classList.add('hidden');
-    try { localStorage.setItem('vexmora_update_2_seen', '1'); } catch {}
+    try { localStorage.setItem(ANNOUNCE_SEEN_KEY, '1'); } catch {}
   }
 
   refreshTitleScreen() {
@@ -138,6 +149,13 @@ export class UIManager {
 
     document.getElementById('btn-show-update')?.addEventListener('click', () => this.showAnnouncement());
     document.getElementById('btn-close-update')?.addEventListener('click', () => this.hideAnnouncement());
+    // Тап по затемнённому фону закрывает доску объявлений
+    this.els.updateModal?.addEventListener('click', (e) => {
+      if (e.target === this.els.updateModal) this.hideAnnouncement();
+    });
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && !this.els.updateModal?.classList.contains('hidden')) this.hideAnnouncement();
+    });
   }
 
   startGame(loadSaved) {

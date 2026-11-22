@@ -16,7 +16,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..', 'www');
 
 const scenarioArg = process.argv[2];
-const SCENARIOS = ['boot', 'main', 'forced2d', 'forced3d'];
+const SCENARIOS = ['boot', 'title', 'main', 'forced2d', 'forced3d'];
 
 // Каждый сценарий — отдельный процесс: main.js кэшируется как ES-модуль,
 // а window/document подменяются, поэтому в одном процессе сценарии не уживаются.
@@ -45,7 +45,7 @@ const url = scenario === 'forced2d' ? 'http://localhost/?mode=2d'
   : 'http://localhost/';
 
 // Сценарий boot проверяет только стартовый экран — до нажатия «Новая игра»
-const BOOT_ONLY = scenario === 'boot';
+const BOOT_ONLY = scenario === 'boot' || scenario === 'title';
 
 const html = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
 const dom = new JSDOM(html, { url, pretendToBeVisual: true });
@@ -126,6 +126,30 @@ const game = window.__vexmoraGame;
 if (!game) {
   console.log('FAIL: игра не инициализирована (window.__vexmoraGame отсутствует)');
   process.exit(2);
+}
+
+if (scenario === 'title') {
+  // Титульный экран и доска объявлений: игрок должен иметь возможность нажать «Играть»
+  await new Promise((r) => setTimeout(r, 900));
+  const doc = window.document;
+  const ui = game.ui;
+  const modal = doc.getElementById('update-modal');
+  const updateBtn = doc.getElementById('btn-close-update');
+  check('Доска «Что нового» не перекрывает игру насмерть', !modal.classList.contains('hidden'));
+  check('У доски есть рабочая кнопка «Понятно»', !!updateBtn && !updateBtn.disabled);
+  check('Доска рисуется выше титульного экрана', modal.style.zIndex === '' || Number(modal.style.zIndex) > 40);
+  updateBtn.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+  check('По «Понятно» доска закрывается', modal.classList.contains('hidden'));
+  check('Закрытие запомнено', !!window.localStorage.getItem('vexmora_announce_seen_3d_v1'));
+  doc.getElementById('btn-show-update').dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+  check('Доска открывается повторно из кнопки', !modal.classList.contains('hidden'));
+  modal.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+  check('Тап по фону закрывает доску', modal.classList.contains('hidden'));
+  check('Титульный экран прокручивается (кнопки достижимы)',
+    ui.isTitleVisible() && !doc.getElementById('btn-new-game').classList.contains('hidden'));
+  check('Без ошибок в консоли', errors.length === 0, errors.slice(0, 2).join(' | '));
+  console.log(ok && errors.length === 0 ? '\nE2E 3D (title) OK' : '\nE2E 3D (title) FAILED');
+  process.exit(ok && errors.length === 0 ? 0 : 1);
 }
 
 if (BOOT_ONLY) {

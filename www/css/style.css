@@ -64,6 +64,8 @@ html, body {
   align-items: center;
   justify-content: center;
   padding: 16px;
+  overflow-y: auto;              /* на низких экранах титул прокручивается, кнопки не уезжают */
+  -webkit-overflow-scrolling: touch;
   background: radial-gradient(circle at 50% 35%, rgba(15, 23, 42, 0.65), rgba(5, 8, 18, 0.92));
 }
 
@@ -938,11 +940,34 @@ html, body {
 .update-banner-btn:active { transform: scale(0.98); }
 
 .update-box {
-  max-width: 560px;
-  max-height: 88vh;
-  overflow-y: auto;
+  max-width: 460px;
+  width: min(460px, 94vw);
+  max-height: min(66vh, 520px);
+  padding: 12px 14px;
   text-align: left;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;              /* прокручивается только список секций */
 }
+#update-modal .update-box h3 { font-size: 16px; margin-bottom: 4px; }
+#update-modal #update-lead { font-size: 12px; line-height: 1.4; margin-bottom: 8px; }
+#update-modal #update-sections {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  gap: 6px;
+  margin-bottom: 8px;
+  padding-right: 2px;
+}
+#update-modal .update-section { padding: 6px 8px; }
+#update-modal .update-section b { font-size: 12px; }
+#update-modal .update-section p { font-size: 11px !important; line-height: 1.35; margin: 2px 0 0 !important; }
+#update-modal .dialog-actions { flex: 0 0 auto; margin-top: 0; }
+#update-modal .dialog-actions .primary-btn { width: 100%; padding: 9px 12px; font-size: 14px; }
+/* Доска объявлений должна быть ВЫШЕ титульного экрана (z-index 40),
+   иначе её кнопка «Понятно» недоступна и она торчит из-под карточки */
+#update-modal { z-index: 45; }
 .update-box h3 { text-align: center; font-size: 19px; }
 .update-box .title-badge { display: block; text-align: center; }
 .update-sections { display: flex; flex-direction: column; gap: 8px; margin-bottom: 14px; }
@@ -1362,6 +1387,28 @@ body.mode3d #hud .hud-bars-card { backdrop-filter: blur(4px); }
   background: #22304a;
   color: #e7eefb;
   font-size: 15px;
+}
+
+/* ── Телефоны: компактный титул, кнопки «Играть» всегда на экране ── */
+@media (max-width: 560px), (max-height: 720px) {
+  .overlay-screen { align-items: flex-start; padding: 10px; }
+  .title-card { padding: 14px 14px 16px; margin: 0 auto; }
+  .title-icon { width: 84px; height: 84px; border-radius: 20px; margin-bottom: 6px; }
+  .title-badge { font-size: 9.5px; letter-spacing: 1px; padding: 3px 8px; margin-bottom: 6px; }
+  .game-logo { font-size: clamp(24px, 8vw, 32px); }
+  .game-subtitle {
+    font-size: 11.5px;
+    line-height: 1.4;
+    max-height: 4.2em;
+    overflow: hidden;
+    margin-bottom: 8px;
+  }
+  .update-banner-btn { font-size: 11.5px; padding: 7px 10px; }
+  .title-3d-chips { display: none; }
+  .title-features { display: none; }
+  .title-actions { gap: 8px; margin-top: 10px; }
+  .title-actions .primary-btn { padding: 12px 14px; font-size: 15px; }
+  .update-box { max-height: 72vh; }
 }
 
 @media (max-width: 520px) {
