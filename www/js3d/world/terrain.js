@@ -312,6 +312,15 @@ export class TerrainManager {
     const camCz = Math.floor(playerPos.z / size);
     const R = this.viewRadius;
 
+    // Бюджет перестроек LOD на кадр. Раньше на границе полос LOD чанк
+    // пересобирался каждый кадр (до 180 перестроек в секунду на рывке) —
+    // это и давало просадки до 8–20 мс в отдельных кадрах.
+    let lodSwaps = 0;
+    const LOD_SWAP_BUDGET = 2;
+    const HYST = 0.35;                       // запас в долях чанка от границы полос
+    const band = (d) => (d < 1.6 ? 0 : d < 3.2 ? 1 : 2);
+    const bandEdge = (lod) => (lod === 0 ? 1.6 : 3.2);
+
     const needed = new Set();
     for (let dz = -R; dz <= R; dz++) {
       for (let dx = -R; dx <= R; dx++) {
@@ -332,12 +341,24 @@ export class TerrainManager {
           mesh.userData = { lod, key };
           this.group.add(mesh);
           this.chunks.set(key, mesh);
-        } else if (existing.userData.lod !== lod) {
-          // Обновляем LOD
-          existing.geometry.dispose();
-          existing.geometry = this.buildChunk(cx, cz, lod);
-          existing.castShadow = lod === 0;
-          existing.userData.lod = lod;
+        } else {
+          const cur = existing.userData.lod;
+          // Гистерезис: у самой границы полос качество не меняем, иначе
+          // чанк «мигает» между LOD 0/1/2 при каждом шаге героя.
+          let want = lod;
+          if (want !== cur) {
+            const edge = bandEdge(Math.min(want, cur));
+            if (Math.abs(dist - edge) < HYST) want = cur;
+            else if (want < cur && dist > edge - HYST) want = cur;      // повышение качества — только с запасом
+            else if (want > cur && dist < edge + HYST) want = cur;      // понижение — тоже с запасом
+          }
+          if (want !== cur && lodSwaps < LOD_SWAP_BUDGET) {
+            lodSwaps++;
+            existing.geometry.dispose();
+            existing.geometry = this.buildChunk(cx, cz, want);
+            existing.castShadow = want === 0;
+            existing.userData.lod = want;
+          }
         }
       }
     }

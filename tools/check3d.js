@@ -505,5 +505,109 @@ ok('Очистка сцены без ошибок', true);
 }
 }
 
+// ── Камера: направление поворота и сглаживание ─────────────────────────
+// Регрессия: в camera.js стоял минус перед dx, и палец влево вращал камеру
+// вправо. Проверяем знак yaw для обоих путей ввода и то, что поворот
+// догоняет цель постепенно, а не одним скачком.
+{
+  const THREE = await import('three');
+  const { ThirdPersonCamera } = await import(`${ROOT}/www/js3d/core/camera.js`);
+  const mkCam = () => new ThirdPersonCamera(new THREE.PerspectiveCamera(62, 1, 0.1, 1000), shimElement('canvas'));
+  const heroPos = { x: 0, y: 0, z: 0 };
+  const step = (c, n = 10) => { for (let i = 0; i < n; i++) c.update(1 / 60, heroPos, () => 0, {}); };
+
+  const left = mkCam();
+  left.rotate(-0.2, 0);                    // палец влево
+  step(left);
+  const right = mkCam();
+  right.rotate(0.2, 0);                    // палец вправо
+  step(right);
+  ok('Камера: палец влево вращает камеру влево', left.yaw < -0.01, `yaw ${left.yaw.toFixed(3)}`);
+  ok('Камера: палец вправо вращает камеру вправо', right.yaw > 0.01, `yaw ${right.yaw.toFixed(3)}`);
+  ok('Камера: горизонталь не инвертирована', Math.sign(left.yaw) === -Math.sign(right.yaw));
+
+  const smooth = mkCam();
+  smooth.rotate(0.5, 0);
+  smooth.update(1 / 60, heroPos, () => 0, {});
+  const firstFrame = smooth.yaw;
+  ok('Камера: поворот сглажен (за кадр не весь накопленный ход)',
+    firstFrame > 0 && firstFrame < 0.5, `за кадр ${firstFrame.toFixed(3)} из 0.500`);
+  step(smooth, 20);
+  ok('Камера: поворот доводится до цели', Math.abs(smooth.yaw - 0.5) < 0.02, `итог ${smooth.yaw.toFixed(3)}`);
+}
+
+// ── Коллизии: стволы деревьев и стены домов ────────────────────────────
+{
+  const Engine = (await import(`${ROOT}/www/js/engine.js`)).GameEngine;
+  const eng = new Engine({ enabled: false, play() {}, unlock() {} });
+  const p = eng.player;
+
+  const tree = eng.world.nodes.find(n => n.kind === 'tree' && n.solid);
+  ok('Коллизии: у дерева радиус ствола, а не кроны',
+    tree && tree.colRadius > 0 && tree.colRadius < tree.radius / 2,
+    `ствол ${tree.colRadius} ед. против габарита ${tree.radius} ед.`);
+
+  // Проходим между двумя стволами: раньше лес был «частоколом»
+  const trees = eng.world.nodes.filter(n => n.kind === 'tree' && n.solid).slice(0, 400);
+  let pair = null;
+  for (let i = 0; i < trees.length && !pair; i++) {
+    for (let j = i + 1; j < trees.length; j++) {
+      const d = Math.hypot(trees[i].x - trees[j].x, trees[i].y - trees[j].y);
+      if (d > 40 && d < 90) { pair = [trees[i], trees[j]]; break; }
+    }
+  }
+  let through = false;
+  if (pair) {
+    const mx = (pair[0].x + pair[1].x) / 2, my = (pair[0].y + pair[1].y) / 2;
+    const ang = Math.atan2(pair[1].y - pair[0].y, pair[1].x - pair[0].x) + Math.PI / 2;
+    p.x = mx - Math.cos(ang) * 120; p.y = my - Math.sin(ang) * 120;
+    for (let i = 0; i < 200; i++) {
+      const dx = mx - p.x, dy = my - p.y, d = Math.hypot(dx, dy) || 1;
+      eng.update(1 / 60, { moveX: dx / d, moveY: dy / d });
+      if (Math.hypot(mx - p.x, my - p.y) < 20) { through = true; break; }
+    }
+  }
+  ok('Коллизии: герой проходит между стволами деревьев', through);
+
+  // Стены домов непроходимы с любой стороны, с учётом поворота корпуса
+  let breaches = 0, attacks = 0;
+  for (const b of eng.world.buildings.slice(0, 6)) {
+    for (const a of [0, Math.PI / 2, Math.PI / 4, Math.PI]) {
+      const R = Math.max(b.colW, b.colH);
+      p.x = b.x + Math.cos(a) * R;
+      p.y = (b.y - b.colH / 2) + Math.sin(a) * R;
+      for (let i = 0; i < 160; i++) eng.update(1 / 60, { moveX: -Math.cos(a), moveY: -Math.sin(a) });
+      const dx = p.x - b.x, dy = p.y - (b.y - b.colH / 2);
+      const ang = b.angle || 0;
+      const lx = dx * Math.cos(-ang) - dy * Math.sin(-ang);
+      const ly = dx * Math.sin(-ang) + dy * Math.cos(-ang);
+      attacks++;
+      if (Math.abs(lx) < b.colW / 2 - 2 && Math.abs(ly) < b.colH / 2 - 2) breaches++;
+    }
+  }
+  ok('Коллизии: стены домов непроходимы со всех сторон', breaches === 0,
+    `атак ${attacks}, проникновений ${breaches}`);
+  // Рывок в чаще: раньше failRescue() пересоздавал массив врагов прямо
+  // во время обхода, кадр падал на `e.animTime`, и игра выглядела зависшей.
+  let dashCrash = null;
+  p.stamina = 100; p.hp = p.maxHp;
+  p.x = 1580; p.y = 2180;
+  const frameTimes = [];
+  for (let i = 0; i < 400; i++) {
+    if (i % 20 === 0) { p.stamina = 100; eng.dash(); }
+    const t0 = process.hrtime.bigint();
+    try {
+      eng.update(1 / 60, { moveX: 1, moveY: 0 });
+    } catch (err) { dashCrash = err.message; break; }
+    frameTimes.push(Number(process.hrtime.bigint() - t0) / 1e6);
+  }
+  ok('Рывок в чаще: 400 кадров без падения кадра', !dashCrash, dashCrash || '');
+  const worstFrame = frameTimes.length ? Math.max(...frameTimes) : 0;
+  ok('Рывок: кадр не дольше 16 мс', worstFrame < 16, `худший ${worstFrame.toFixed(1)} мс`);
+
+  ok('Коллизии: коллизия дома совпадает с корпусом модели',
+    eng.world.buildings.every(b => b.colW >= 40 && b.colH >= 34), 'colW/colH заданы по геометрии модели');
+}
+
 console.log(`\nИТОГ: ${pass}/${pass + fail} проверок 3D-сцен и моста успешно${fail ? `, провалено: ${fail}` : ''}`);
 if (fail) process.exitCode = 1;

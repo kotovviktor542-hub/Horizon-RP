@@ -57,16 +57,28 @@ export const VEHICLE_KINDS = {
 };
 
 const BUILDING_SPECS = {
-  house:      { w: 112, h: 96,  colW: 84,  colH: 44, label: 'Жилой дом' },
-  shop:       { w: 116, h: 96,  colW: 88,  colH: 48, label: 'Торговый павильон SHOP' },
-  warehouse:  { w: 120, h: 88,  colW: 96,  colH: 46, label: 'Складской ангар' },
-  bunker:     { w: 120, h: 92,  colW: 100, colH: 48, label: 'Укреплённый Бункер' },
-  watchtower: { w: 68,  h: 112, colW: 40,  colH: 34, label: 'Сторожевая Вышка' },
-  factory:    { w: 148, h: 112, colW: 124, colH: 50, label: 'Промышленный Завод' },
-  hospital:   { w: 136, h: 104, colW: 108, colH: 52, label: 'Медкорпус' },
-  police:     { w: 136, h: 100, colW: 108, colH: 50, label: 'Отдел Полиции' },
-  base:       { w: 156, h: 108, colW: 132, colH: 54, label: 'Военный Штаб' }
+  // colW/colH — прямоугольник СТЕН здания (в world-единицах, 10 ед = 1 м 3D).
+  // Раньше коллизия была заметно шире/глубже корпуса, из-за чего герой
+  // упирался в «воздух» в паре метров от стены. Теперь совпадает с моделью
+  // (см. Structures.house(w, h, d) в js3d/world/models.js): 112×96 ед = 11.2×9.6 м.
+  house:      { w: 112, h: 96,  colW: 112, colH: 96, label: 'Жилой дом' },
+  shop:       { w: 116, h: 96,  colW: 116, colH: 96, label: 'Торговый павильон SHOP' },
+  warehouse:  { w: 120, h: 88,  colW: 120, colH: 88, label: 'Складской ангар' },
+  bunker:     { w: 120, h: 92,  colW: 120, colH: 92, label: 'Укреплённый Бункер' },
+  watchtower: { w: 68,  h: 112, colW: 44,  colH: 44, label: 'Сторожевая Вышка' },
+  factory:    { w: 148, h: 112, colW: 148, colH: 112, label: 'Промышленный Завод' },
+  hospital:   { w: 136, h: 104, colW: 136, colH: 104, label: 'Медкорпус' },
+  police:     { w: 136, h: 100, colW: 136, colH: 100, label: 'Отдел Полиции' },
+  base:       { w: 156, h: 108, colW: 156, colH: 108, label: 'Военный Штаб' }
 };
+
+// Единый детерминированный угол поворота здания: и модель, и коллизия берут
+// его отсюда, поэтому физика совпадает с тем, что видит игрок.
+// (rnd(x, 3) из mapgen недоступен на уровне модуля — считаем такой же стабильный угол.)
+export function rotFromCoords(x, y) {
+  const n = Math.sin(x * 12.9898 + y * 78.233) * 43758.5453;
+  return (n - Math.floor(n)) * Math.PI * 2;
+}
 
 export function createWorld(seed = 20261025, savedGrid = null) {
   const rand = mulberry32(seed);
@@ -113,6 +125,10 @@ export function createWorld(seed = 20261025, savedGrid = null) {
       spriteH: sp.h,
       colW: sp.colW,
       colH: sp.colH,
+      // Угол поворота корпуса в 3D (радианы). Модель здания поворачивается
+      // детерминированно от координат, поэтому коллизия может повторять её
+      // ориентацию — иначе у повёрнутого дома невидимая стена «в воздухе».
+      angle: rotFromCoords(x, y),
       interactType: opts.interactType || null,
       secretId: opts.secretId || null,
       smokes: !!opts.smokes,
@@ -488,13 +504,22 @@ export function createWorld(seed = 20261025, savedGrid = null) {
 
 function makeNode(numId, kind, x, y) {
   const defs = {
-    tree:       { name: 'Лесное дерево',     hp: 50, radius: 16, solid: true,  res: 'wood',   amt: [2, 4] },
-    pine_tree:  { name: 'Горная ель',        hp: 60, radius: 16, solid: true,  res: 'wood',   amt: [3, 5] },
+    // radius — физический радиус для столкновений. Ствол дерева в 3D ~0.2 м,
+    // то есть ~2 world-единицы: коллизия 16 давала 1.6 м «невидимой стены»
+    // вокруг дерева (плюс радиус героя 14 — итого упор в 3 м от ствола).
+    tree:       { name: 'Лесное дерево',     hp: 50, radius: 15, solid: true,  res: 'wood',   amt: [2, 4],
+                  colRadius: 5 },
+    pine_tree:  { name: 'Горная ель',        hp: 60, radius: 15, solid: true,  res: 'wood',   amt: [3, 5],
+                  colRadius: 5 },
     bush:       { name: 'Био-куст',          hp: 20, radius: 13, solid: false, res: 'herb',   amt: [2, 3] },
-    crates:     { name: 'Ящики снабжения',   hp: 30, radius: 16, solid: true,  res: 'crates', amt: [1, 2] },
-    barrel:     { name: 'Бочка с припасами', hp: 28, radius: 13, solid: true,  res: 'barrel', amt: [1, 2] },
-    barrel_red: { name: 'Топливная бочка',   hp: 22, radius: 13, solid: true,  res: 'boom',   amt: [1, 1], explosive: true },
-    crystal_node: { name: 'Жила Кристалла Бездны', hp: 70, radius: 15, solid: true, res: 'crystal', amt: [1, 3] }
+    crates:     { name: 'Ящики снабжения',   hp: 30, radius: 16, solid: true,  res: 'crates', amt: [1, 2],
+                  colRadius: 6 },
+    barrel:     { name: 'Бочка с припасами', hp: 28, radius: 13, solid: true,  res: 'barrel', amt: [1, 2],
+                  colRadius: 6 },
+    barrel_red: { name: 'Топливная бочка',   hp: 22, radius: 13, solid: true,  res: 'boom',   amt: [1, 1],
+                  colRadius: 6, explosive: true },
+    crystal_node: { name: 'Жила Кристалла Бездны', hp: 70, radius: 15, solid: true, res: 'crystal', amt: [1, 3],
+                  colRadius: 6 }
   };
   const d = defs[kind] || defs.crates;
   return {
@@ -504,6 +529,8 @@ function makeNode(numId, kind, x, y) {
     x,
     y,
     radius: d.radius,
+    // Отдельный физический радиус: у деревьев это ствол, а не крона
+    colRadius: d.colRadius ?? d.radius,
     solid: d.solid,
     explosive: !!d.explosive,
     hp: d.hp,

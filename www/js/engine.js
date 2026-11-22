@@ -982,6 +982,19 @@ export class GameEngine {
   // ── Главный цикл обновления ──────────────────────────────────────────
   update(dt, inputState) {
     if (this.paused) return;
+    // Защита от повторного входа: эффект внутри кадра (взрыв бочки, гибель
+    // босса, спасение) может снова дёрнуть update() — это удваивало работу
+    // физики и давало «зависание» на тяжёлых кадрах вроде рывка в лес.
+    if (this._updating) return;
+    this._updating = true;
+    try {
+      this._updateInner(dt, inputState);
+    } finally {
+      this._updating = false;
+    }
+  }
+
+  _updateInner(dt, inputState) {
     dt = Math.min(dt, 0.05);
 
     this.stats.playTime += dt;
@@ -1115,6 +1128,7 @@ export class GameEngine {
     p.hurtAnimTimer = Math.max(0, p.hurtAnimTimer - dt);
     p.grenadeTimer = Math.max(0, p.grenadeTimer - dt);
     p.dashTimer = Math.max(0, p.dashTimer - dt);
+    if (p.dashActive <= 0 && p.dashActive !== 0) { p.dashActive = 0; p._dashDust = undefined; }
     p.invulnTimer = Math.max(0, p.invulnTimer - dt);
     p.shieldBuffTimer = Math.max(0, p.shieldBuffTimer - dt);
     p.slowTimer = Math.max(0, (p.slowTimer || 0) - dt);
@@ -1211,8 +1225,10 @@ export class GameEngine {
         // Таран врагов на скорости!
         const speedNow = Math.hypot(veh.vx, veh.vy);
         if (speedNow > 180) {
-          for (let i = this.enemies.length - 1; i >= 0; i--) {
-            const e = this.enemies[i];
+          const ramList = this.enemies;
+          for (let i = ramList.length - 1; i >= 0; i--) {
+            const e = ramList[i];
+            if (!e) continue;
             if (dist2(veh.x, veh.y, e.x, e.y) < (veh.radius + e.radius + 4) ** 2 && e.stunTimer <= 0) {
               e.stunTimer = 0.7;
               e.vx = (veh.vx / speedNow) * 320;
@@ -1225,12 +1241,26 @@ export class GameEngine {
       }
     } else if (p.dashActive > 0) {
       p.dashActive -= dt;
-      const dashSpeed = 540;
+      // Рывок с профилем скорости: быстрый разгон за 25 мс, пик и плавное
+      // затухание к концу. Раньше скорость мгновенно прыгала на 540 ед/с
+      // (54 м/с), и мир «прыгал» на пол-экрана за кадр — это и читалось как
+      // зависание/телепорт, а на слабом телефоне ещё и совпадало с рывком
+      // подгрузки чанков ландшафта.
+      const left = Math.max(0, p.dashActive);
+      const phase = 1 - left / 0.19;              // 0 → 1 за время рывка
+      const ramp = Math.min(1, phase / 0.2);      // разгон
+      const fade = Math.min(1, left / 0.08);      // затухание в конце
+      const dashSpeed = 300 + 210 * Math.min(ramp, fade);
       p.vx = p.dashDirX * dashSpeed;
       p.vy = p.dashDirY * dashSpeed;
       p.x += p.vx * dt;
       p.y += p.vy * dt;
       this.resolveEntityObstacles(p, p.z > 14);
+      // Пыль не каждый кадр: 6 частиц на рывок вместо ~19
+      if (!p._dashDust || left < p._dashDust - 0.05) {
+        p._dashDust = left;
+        this.spawnDust(p.x, p.y + 6, '#7dd3fc', 2);
+      }
     } else {
       if (mag > 0.05) {
         const spd = this.getMoveSpeed() * Math.min(1, mag);
@@ -1368,34 +1398,51 @@ export class GameEngine {
 
   // Точные коллизии сущности со зданиями (AABB), пропами и деревьями/ящиками
   resolveEntityObstacles(ent, jumping = false) {
-    // 1. Прямоугольные здания (даже в прыжке здания нельзя перелететь насквозь)
+    // 1. Прямоугольные здания (даже в прыжке здания нельзя перелететь насквозь).
+    // Корпус в 3D повёрнут на bld.angle — считаем в локальных осях дома,
+    // иначе у повёрнутого здания коллизия «висит» мимо стен.
     for (const bld of this.world.buildings) {
       const halfW = bld.colW * 0.5;
       const halfH = bld.colH * 0.5;
       const rectCx = bld.x;
       const rectCy = bld.y - halfH;
-      const dx = ent.x - rectCx;
-      const dy = ent.y - rectCy;
-      const nearX = clamp(dx, -halfW, halfW);
-      const nearY = clamp(dy, -halfH, halfH);
-      const distX = dx - nearX;
-      const distY = dy - nearY;
+      let dx = ent.x - rectCx;
+      let dy = ent.y - rectCy;
+      const ang = bld.angle || 0;
+      let lx = dx, ly = dy;
+      if (ang) {
+        const cs = Math.cos(-ang), sn = Math.sin(-ang);
+        lx = dx * cs - dy * sn;
+        ly = dx * sn + dy * cs;
+      }
+      const nearX = clamp(lx, -halfW, halfW);
+      const nearY = clamp(ly, -halfH, halfH);
+      const distX = lx - nearX;
+      const distY = ly - nearY;
       const d2 = distX * distX + distY * distY;
       if (d2 < ent.radius * ent.radius) {
         if (d2 > 0.0001) {
           const d = Math.sqrt(d2);
           const overlap = ent.radius - d;
-          ent.x += (distX / d) * overlap;
-          ent.y += (distY / d) * overlap;
+          // Нормаль в локальных осях → в мировые
+          let nx2 = distX / d, ny2 = distY / d;
+          if (ang) {
+            const cs = Math.cos(ang), sn = Math.sin(ang);
+            const wx = nx2 * cs - ny2 * sn;
+            const wy = nx2 * sn + ny2 * cs;
+            nx2 = wx; ny2 = wy;
+          }
+          ent.x += nx2 * overlap;
+          ent.y += ny2 * overlap;
           // Гасим скорость в направлении стены: иначе герой «вжимается» и
           // дёргается об угол, а анимация бега крутится на месте.
-          const nx2 = distX / d, ny2 = distY / d;
           const vn = (ent.vx || 0) * nx2 + (ent.vy || 0) * ny2;
           if (vn < 0) {
             ent.vx = (ent.vx || 0) - nx2 * vn;
             ent.vy = (ent.vy || 0) - ny2 * vn;
           }
         } else {
+          // Точно в центре дома — выталкиваем по мировой оси Y
           ent.y = rectCy + halfH + ent.radius + 1;
           ent.vx = 0;
           ent.vy = 0;
@@ -1427,12 +1474,14 @@ export class GameEngine {
       }
     }
 
-    // 3. Активные деревья, ящики и бочки поблизости
-    for (let i = 0; i < this.world.nodes.length; i++) {
-      const nd = this.world.nodes[i];
+    // 3. Активные деревья, ящики и бочки поблизости.
+    // Для деревьев берём colRadius (ствол), а не radius (габарит кроны).
+    const nodes = this.world.nodes;
+    for (let i = 0; i < nodes.length; i++) {
+      const nd = nodes[i];
       if (!nd.solid || nd.respawnTimer > 0) continue;
       if (Math.abs(ent.x - nd.x) > 48 || Math.abs(ent.y - nd.y) > 48) continue;
-      const minD = ent.radius + nd.radius;
+      const minD = ent.radius + (nd.colRadius ?? nd.radius);
       const dx = ent.x - nd.x;
       const dy = ent.y - nd.y;
       const d2 = dx * dx + dy * dy;
@@ -1802,8 +1851,10 @@ export class GameEngine {
 
     // Урон врагам и боссам
     const r2 = radius * radius;
-    for (let i = this.enemies.length - 1; i >= 0; i--) {
-      const e = this.enemies[i];
+    const blastList = this.enemies;
+    for (let i = blastList.length - 1; i >= 0; i--) {
+      const e = blastList[i];
+      if (!e) continue;
       const d2 = dist2(x, y, e.x, e.y);
       if (d2 <= (radius + e.radius) ** 2) {
         const ang = Math.atan2(e.y - y, e.x - x);
@@ -2166,8 +2217,16 @@ export class GameEngine {
   // ── ИИ 16 типов врагов: снайперы с лазером, гренадёры, невидимки, дроны, медики, мини-боссы ──
   updateEnemies(dt) {
     const p = this.player;
-    for (let i = this.enemies.length - 1; i >= 0; i--) {
-      const e = this.enemies[i];
+    // Массив врагов может быть ПЕРЕСОЗДАН прямо во время обхода: failRescue()
+    // делает this.enemies = filter(...) (эвакуация выжившего), а эффекты боя
+    // удаляют врагов через damageEnemy. Старый код на каждой итерации читал
+    // this.enemies[i] заново — после подмены индексы указывали в пустоту, и
+    // кадр падал на `e.animTime` (для игрока это выглядело как зависание).
+    // Работаем по локальной ссылке и номерам, а «мёртвых» пропускаем.
+    const list = this.enemies;
+    for (let i = list.length - 1; i >= 0; i--) {
+      const e = list[i];
+      if (!e) continue;
       e.animTime += dt * 7;
       if (e.hitFlash > 0) e.hitFlash = Math.max(0, e.hitFlash - dt);
       if (e.slowTimer > 0) e.slowTimer = Math.max(0, e.slowTimer - dt);
@@ -2179,8 +2238,12 @@ export class GameEngine {
         e.hp -= (e.burnDps || 8) * dt;
         if (Math.random() < dt * 6) this.spawnSpriteEffect('magic', e.x, e.y - 12, 0.55, 16);
         if (e.hp <= 0) {
-          this.enemies.splice(i, 1);
+          const alive = this.enemies;
+          const idx = alive.indexOf(e);
+          if (idx !== -1) alive.splice(idx, 1);
           this.onEnemyKilled(e);
+          // Массив мог быть пересоздан обработчиком смерти — продолжаем по новому
+          if (alive !== this.enemies) return this.updateEnemies(dt);
           continue;
         }
       }
@@ -3009,7 +3072,15 @@ export class GameEngine {
         const halfW = b.colW * 0.5 + radius;
         const halfH = b.colH * 0.5 + radius;
         const rectCy = b.y - b.colH * 0.5;
-        if (Math.abs(x - b.x) < halfW && Math.abs(y - rectCy) < halfH) return false;
+        let dx = x - b.x, dy = y - rectCy;
+        const ang = b.angle || 0;
+        if (ang) {
+          const cs = Math.cos(-ang), sn = Math.sin(-ang);
+          const lx = dx * cs - dy * sn;
+          const ly = dx * sn + dy * cs;
+          dx = lx; dy = ly;
+        }
+        if (Math.abs(dx) < halfW && Math.abs(dy) < halfH) return false;
       }
       // Пропы и твёрдые ноды
       for (const pr of this.world.props) {
@@ -3173,8 +3244,10 @@ export class GameEngine {
 
       if (pr.fromPlayer) {
         let consumed = false;
-        for (let j = this.enemies.length - 1; j >= 0; j--) {
-          const e = this.enemies[j];
+        const projList = this.enemies;
+        for (let j = projList.length - 1; j >= 0; j--) {
+          const e = projList[j];
+          if (!e) continue;
           if (dist2(pr.x, pr.y, e.x, e.y) <= (pr.radius + e.radius) ** 2) {
             this.onPlayerProjHit(pr, e, false);
             if (pr.pierce > 0) pr.pierce--;
@@ -3218,8 +3291,10 @@ export class GameEngine {
         x: pr.x, y: pr.y, radius: 10, maxRadius: pr.splashRadius,
         color: pr.color, friendly: true, damage: 0
       });
-      for (let k = this.enemies.length - 1; k >= 0; k--) {
-        const other = this.enemies[k];
+      const splashList = this.enemies;
+      for (let k = splashList.length - 1; k >= 0; k--) {
+        const other = splashList[k];
+        if (!other) continue;
         if (other !== target && dist2(pr.x, pr.y, other.x, other.y) <= (pr.splashRadius + other.radius) ** 2) {
           this.damageEnemy(other, Math.round(pr.damage * 0.65), false, pr.color);
         }

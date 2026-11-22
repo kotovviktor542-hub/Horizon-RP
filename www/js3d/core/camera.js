@@ -49,7 +49,10 @@ export class ThirdPersonCamera {
       const dy = y - this.lastY;
       this.lastX = x;
       this.lastY = y;
-      this.rotate(-dx * this.sensitivity * this.sensitivityMultiplier, -dy * this.sensitivity * this.sensitivityMultiplier);
+      // Ведём мышь/палец вправо → камера поворачивает вправо (yaw растёт).
+      // Раньше здесь стоял минус: горизонталь была инвертирована.
+      this.rotate(dx * this.sensitivity * this.sensitivityMultiplier,
+        dy * this.sensitivity * this.sensitivityMultiplier);
     };
     el.addEventListener('pointermove', (e) => {
       if (e.pointerType === 'touch') return;   // касания обрабатывает Game3D (_bindTouchLook)
@@ -78,10 +81,28 @@ export class ThirdPersonCamera {
     }, { passive: false });
   }
 
+  // Накапливаем намерение поворота, а к цели подтягиваемся в update(dt):
+  // на мобильных touchmove приходит рывками (30–60 Гц), и прямая запись yaw
+  // давала дёргание камеры.
   rotate(dx, dy) {
-    this.yaw += dx;
-    this.pitch = clamp(this.pitch + dy, -0.42, 1.22);
+    this._pendingYaw = (this._pendingYaw || 0) + dx;
+    this._pendingPitch = (this._pendingPitch || 0) + dy;
     this.autoRotateTimer = 0;
+  }
+
+  // Применить накопленный поворот с плавным сглаживанием
+  _applyLook(dt) {
+    const py = this._pendingYaw || 0;
+    const pp = this._pendingPitch || 0;
+    if (!py && !pp) return;
+    // 1 - exp(-k*dt): независимо от FPS, но заметно быстрее кадра
+    const k = 1 - Math.exp(-34 * dt);
+    this.yaw += py * k;
+    this.pitch = clamp(this.pitch + pp * k, -0.42, 1.22);
+    this._pendingYaw = py * (1 - k);
+    this._pendingPitch = pp * (1 - k);
+    if (Math.abs(this._pendingYaw) < 1e-5) this._pendingYaw = 0;
+    if (Math.abs(this._pendingPitch) < 1e-5) this._pendingPitch = 0;
   }
 
   zoom(amount) {
@@ -98,6 +119,7 @@ export class ThirdPersonCamera {
 
   update(dt, heroPos, terrainHeightFn, opts = {}) {
     const { sprinting = false, aiming = false, autoFollow = true, deltaFacing = 0 } = opts;
+    this._applyLook(dt);
 
     // Мягкий автоповорот камеры вслед за движением (если игрок не вращал вручную)
     if (autoFollow && Math.abs(deltaFacing) > 0.0001) {

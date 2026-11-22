@@ -368,7 +368,8 @@ export class Game3D {
         const dy = t.clientY - lastY;
         lastX = t.clientX;
         lastY = t.clientY;
-        this.controls.rotate(-dx * 0.0042, -dy * 0.0032);
+        // Палец вправо → камера вправо, палец вверх → взгляд вверх
+        this.controls.rotate(dx * 0.0042, -dy * 0.0032);
       }
     }, { passive: true });
     const endLook = (e) => {

@@ -373,7 +373,8 @@ export class WorldBuilder {
       const pos = { x: b.x * WORLD_SCALE, z: b.y * WORLD_SCALE };
       const y = this.terrain.heightAt3D(pos.x, pos.z);
       model.position.set(pos.x, y, pos.z);
-      model.rotation.y = rnd(b.x, 3) * TAU;
+      // Тот же угол, что и у коллизии здания (см. world.js: addBuilding → angle)
+      model.rotation.y = (typeof b.angle === 'number') ? b.angle : rnd(b.x, 3) * TAU;
       model.castShadow = true;
       model.receiveShadow = true;
       // Тени — только у корпуса здания: мелкие детали (окна, вывески, трубы)
