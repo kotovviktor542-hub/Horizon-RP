@@ -194,6 +194,24 @@ export class Game3D {
     bind('btn3d-dodge', 'dodge');
     bind('btn3d-interact', 'interact');
     bind('btn3d-block', 'block');
+    bind('btn3d-heal', 'heal');
+    bind('btn3d-potion', 'potion');
+    bind('btn3d-weapon', 'weapon');
+
+    // Навыки: тап по кнопке → useSkill движка (откат обновляется в HUD)
+    const skills = document.querySelectorAll('[data-skill3d]');
+    for (const btn of skills) {
+      const id = btn.dataset.skill3d;
+      const tap = (e) => {
+        e.preventDefault();
+        btn.classList.add('active');
+        this.engine.useSkill?.(id);
+        setTimeout(() => btn.classList.remove('active'), 120);
+      };
+      btn.addEventListener('touchstart', tap, { passive: false });
+      btn.addEventListener('mousedown', tap);
+    }
+    this.skillButtons = skills;
 
     // Вращение камеры касанием (вторая половина экрана)
     this._bindTouchLook();
@@ -260,6 +278,12 @@ export class Game3D {
         break;
       case 'heal':
         e.useConsumable?.('medkit');
+        break;
+      case 'potion':
+        e.useConsumable?.('potion');
+        break;
+      case 'weapon':
+        e.cycleWeapon?.();
         break;
     }
   }
@@ -650,6 +674,28 @@ export class Game3D {
       const lbl = document.getElementById('btn3d-interact-label');
       if (lbl) lbl.textContent = inter ? 'Взаимодействие' : '';
     }
+    // Счётчики аптечек и зелий
+    const cons = this.engine.inventory?.consumables || {};
+    const healCount = document.getElementById('btn3d-heal-count');
+    if (healCount) healCount.textContent = cons.medkit ?? 0;
+    const potionCount = document.getElementById('btn3d-potion-count');
+    if (potionCount) potionCount.textContent = cons.potion ?? 0;
+    const healBtn = document.getElementById('btn3d-heal');
+    if (healBtn) healBtn.classList.toggle('hint', (cons.medkit ?? 0) > 0 && this.engine.player.hp < this.engine.player.maxHp * 0.5);
+
+    // Навыки: доступность и откат
+    if (this.skillButtons) {
+      for (const btn of this.skillButtons) {
+        const st = this.engine.skills?.[btn.dataset.skill3d];
+        const cd = st?.cd || 0;
+        const locked = !st || st.level <= 0;
+        btn.classList.toggle('locked', locked);
+        btn.classList.toggle('cooling', !locked && cd > 0);
+        const label = btn.querySelector('small');
+        if (label) label.textContent = locked ? '🔒' : cd > 0 ? Math.ceil(cd) : '';
+      }
+    }
+
     // День/ночь на мини-карте
     const day = document.getElementById('hud3d-day');
     if (day) {

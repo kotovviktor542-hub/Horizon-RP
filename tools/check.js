@@ -911,7 +911,8 @@ test('24. 3D-АРСЕНАЛ: все 31 оружие имеет 3D-категор
 
 test('25. 3D-ИНТЕРФЕЙС: разметка и стили 3D-режима присутствуют', () => {
   const html = fs.readFileSync(path.join(rootDir, 'www/index.html'), 'utf8');
-  for (const id of ['hud3d', 'stick3d', 'btn3d-attack', 'btn3d-heavy', 'btn3d-jump', 'btn3d-interact', 'minimap3d', 'loading3d']) {
+  for (const id of ['hud3d', 'stick3d', 'btn3d-attack', 'btn3d-heavy', 'btn3d-jump', 'btn3d-interact',
+    'minimap3d', 'loading3d', 'btn3d-heal', 'btn3d-potion', 'btn3d-weapon', 'skills3d']) {
     assert.ok(html.includes(`id="${id}"`), `В разметке должен быть элемент #${id}`);
   }
   assert.ok(html.includes('type="importmap"') && html.includes('vendor/three/three.module.js'),
@@ -929,6 +930,13 @@ test('25. 3D-ИНТЕРФЕЙС: разметка и стили 3D-режима 
     'Меню 3D уходит влево, чтобы не перекрывать мини-карту');
   assert.ok(css.includes('padding-right: calc(12px + 108px + 10px)'),
     'Верхняя панель в 3D оставляет место шириной мини-карты');
+  // Полный набор действий доступен пальцем и в 3D-режиме
+  for (const btn of ['heal', 'potion', 'weapon']) {
+    assert.ok(html.includes(`id="btn3d-${btn}"`), `В 3D-HUD должна быть кнопка ${btn}`);
+  }
+  for (const skill of ['slash_wave', 'magic_nova', 'adrenaline', 'fire_strike', 'ice_blast', 'shadow_teleport']) {
+    assert.ok(html.includes(`data-skill3d="${skill}"`), `Навык ${skill} должен быть доступен в 3D`);
+  }
 });
 
 test('26. 3D-МОДУЛИ: все файлы движка на месте и содержат ключевые системы', () => {

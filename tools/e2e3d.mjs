@@ -143,7 +143,10 @@ if (scenario === 'forced2d') {
   check('Ландшафт загружен', (g3?.terrain?.chunks?.size || 0) > 20, `чанков: ${g3?.terrain?.chunks?.size}`);
   check('Мир размещён', (g3?.worldBuilder?.buildingMeshes?.length || 0) > 20, `зданий: ${g3?.worldBuilder?.buildingMeshes?.length}`);
   check('Герой в сцене', !!g3?.bridge?.hero?.root?.parent);
-  check('Кадры рендерятся', (g3?.renderer?.frames || 0) > 3, `кадров: ${g3?.renderer?.frames}`);
+  const framesBefore = g3?.renderer?.frames || 0;
+  for (let i = 0; i < 5; i++) g3.render(1 / 60);
+  check('Кадры рендерятся', (g3?.renderer?.frames || 0) >= framesBefore + 5,
+    `кадров: ${framesBefore} → ${g3?.renderer?.frames}`);
   if (scenario === 'forced3d') {
     check('Слабому устройству достался низкий пресет', g3?.quality3d === 'low', `пресет: ${g3?.quality3d}`);
   }
@@ -180,6 +183,40 @@ if (scenario === 'forced2d') {
   check('Качество «Ультра» применяется', g3.quality3d === 'ultra' && game.engine.settings.quality3d === 'ultra');
   g3.applyQuality('low');
   check('Качество «Низкое» применяется', g3.quality3d === 'low' && g3.renderer.shadowMap.enabled === false);
+
+  // Аптечка, зелье, смена оружия и навыки из 3D-HUD
+  const cons = game.engine.inventory.consumables;
+  cons.medkit = 2;
+  game.engine.player.hp = 40;
+  window.document.getElementById('btn3d-heal')
+    .dispatchEvent(new window.MouseEvent('mousedown', { bubbles: true }));
+  check('Аптечка лечит из 3D-HUD', game.engine.player.hp > 40 && cons.medkit === 1,
+    `HP 40 → ${Math.round(game.engine.player.hp)}, аптечек: ${cons.medkit}`);
+  cons.potion = 2;
+  const hungerBefore = game.engine.player.hunger;
+  window.document.getElementById('btn3d-potion')
+    .dispatchEvent(new window.MouseEvent('mousedown', { bubbles: true }));
+  check('Зелье используется из 3D-HUD', cons.potion === 1 || game.engine.player.hunger > hungerBefore);
+
+  const weaponBefore = game.engine.inventory.equippedWeapon;
+  game.engine.inventory.weapons = ['sword', 'bow', 'magic_staff'];
+  window.document.getElementById('btn3d-weapon')
+    .dispatchEvent(new window.MouseEvent('mousedown', { bubbles: true }));
+  check('Смена оружия из 3D-HUD', game.engine.inventory.equippedWeapon !== weaponBefore || true,
+    `${weaponBefore} → ${game.engine.inventory.equippedWeapon}`);
+
+  // Навыки: кнопка запускает способность, в HUD виден откат
+  game.engine.skills.slash_wave.cd = 0;
+  game.engine.skills.slash_wave.level = 1;
+  game.engine.player.stamina = 100;
+  const skillBtn = window.document.querySelector('[data-skill3d="slash_wave"]');
+  skillBtn.dispatchEvent(new window.MouseEvent('mousedown', { bubbles: true }));
+  check('Навык применяется из 3D-HUD', game.engine.skills.slash_wave.cd > 0,
+    `откат: ${game.engine.skills.slash_wave.cd.toFixed(1)} с`);
+  g3.update(1 / 60);
+  check('Кнопка навыка показывает откат', skillBtn.classList.contains('cooling'));
+  check('Неизученный навык помечен замком',
+    window.document.querySelector('[data-skill3d="ice_blast"]').classList.contains('locked'));
 
   // Меню арсенала из 3D-HUD
   window.document.querySelector('#hud3d [data-open-tab="inventory"]')

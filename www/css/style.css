@@ -1138,6 +1138,81 @@ body.mode2d .hud3d { display: none !important; }
   background: radial-gradient(circle at 42% 34%, #3f8a6a, #1c4a38 68%, #0d241c);
 }
 
+/* Small-кнопки: аптечка, зелье, смена оружия — левый столбец кластера */
+.a3d.small { width: 52px; height: 52px; font-size: 18px; }
+.a3d.heal {
+  left: 0;
+  bottom: 158px;
+  background: radial-gradient(circle at 42% 34%, #b8494c, #74222a 68%, #3a0f14);
+}
+.a3d.potion {
+  left: 0;
+  bottom: 98px;
+  background: radial-gradient(circle at 42% 34%, #4f7fbf, #23406e 68%, #101f37);
+}
+.a3d.weapon {
+  left: 0;
+  bottom: 38px;
+  background: radial-gradient(circle at 42% 34%, #5b6a86, #2b364a 68%, #121a26);
+}
+.cnt3d {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  min-width: 17px;
+  height: 17px;
+  padding: 0 4px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  line-height: 17px;
+  text-align: center;
+  color: #0b1220;
+  background: #f8d477;
+  border: 1px solid rgba(0, 0, 0, 0.45);
+  text-transform: none;
+  opacity: 1;
+}
+
+/* ── Навыки в 3D: вертикальный столбец у правого края над кластером ── */
+.skills3d {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-78%);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  pointer-events: auto;
+  z-index: 2;
+}
+.a3d-skill {
+  position: relative;
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  border: 1px solid rgba(150, 185, 235, 0.4);
+  background: linear-gradient(180deg, rgba(44, 60, 88, 0.94), rgba(18, 26, 40, 0.94));
+  color: #e7eefb;
+  font-size: 19px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.45);
+  -webkit-tap-highlight-color: transparent;
+}
+.a3d-skill small {
+  position: absolute;
+  right: 2px;
+  bottom: 1px;
+  font-size: 9.5px;
+  color: #bcd3f0;
+}
+.a3d-skill.locked { opacity: 0.4; }
+.a3d-skill.cooling { opacity: 0.62; }
+.a3d-skill.cooling small { color: #fbbf24; }
+.a3d-skill.active { transform: scale(0.92); }
+
 /* ── Правый верх: мини-карта и метрики ── */
 .hud3d-top-right {
   position: absolute;
@@ -1317,6 +1392,12 @@ body.mode3d .icon-btn3d { width: 40px; height: 40px; font-size: 18px; }
   body.mode3d .hud-center-info { max-width: 132px; top: auto; bottom: 8px; }
   body.mode3d .hud3d-menu { gap: 4px; max-width: 120px; }
   body.mode3d .icon-btn3d { width: 36px; height: 36px; font-size: 16px; }
+  .skills3d { gap: 4px; transform: translateY(-72%); }
+  .a3d-skill { width: 38px; height: 38px; font-size: 16px; border-radius: 10px; }
+  .a3d.small { width: 46px; height: 46px; font-size: 16px; }
+  .a3d.heal { bottom: 150px; }
+  .a3d.potion { bottom: 96px; }
+  .a3d.weapon { bottom: 42px; }
 }
 
 /* 3D-холст: отдельный canvas, чтобы WebGL-контекст не конфликтовал с 2D */
