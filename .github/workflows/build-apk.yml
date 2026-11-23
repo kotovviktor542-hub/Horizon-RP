@@ -115,7 +115,24 @@ jobs:
           name: VEXMORA-apk-build${{ github.run_number }}
           path: ${{ steps.prep.outputs.apk_path }}
 
+      # Теги сборок ведутся на стороне CI. Отдельная проверка позволяет
+      # перезапустить упавшую публикацию, не создавая конфликт тегов.
+      - name: Release tag availability
+        id: reltag
+        if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/arena/')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="v1.0.0-build${{ github.run_number }}"
+          if gh api "repos/${{ github.repository }}/git/ref/tags/$TAG" >/dev/null 2>&1; then
+            echo "Тег $TAG уже существует — публикация пропущена"
+            echo "skip=true" >> $GITHUB_OUTPUT
+          else
+            echo "skip=false" >> $GITHUB_OUTPUT
+          fi
+
       - name: Publish GitHub Release
+        if: steps.reltag.outputs.skip != 'true'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v1.0.0-build${{ github.run_number }}
