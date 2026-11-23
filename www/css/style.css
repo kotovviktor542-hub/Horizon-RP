@@ -200,10 +200,11 @@ html, body {
   pointer-events: auto;
   background: var(--bg-dark);
   border: 2px solid var(--border);
-  border-radius: 12px;
-  padding: 7px 9px;
-  min-width: 205px;
-  max-width: 265px;
+  border-radius: 10px;
+  padding: 5px 8px;
+  min-width: 0;
+  max-width: 232px;
+  opacity: var(--hud-opacity, 1);
 }
 
 .hero-header {
@@ -440,14 +441,15 @@ html, body {
 
 .icon-btn {
   position: relative;
-  width: 38px;
-  height: 38px;
-  border-radius: 9px;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
   border: 2px solid var(--border);
   background: var(--bg-dark);
   color: #fff;
-  font-size: 17px;
+  font-size: 15px;
   cursor: pointer;
+  opacity: var(--hud-opacity, 1);
 }
 
 .icon-btn:active { transform: scale(0.92); }
@@ -524,30 +526,33 @@ html, body {
 }
 
 /* ── ДЖОЙСТИК И БОЕВОЙ КЛАСТЕР ────────────────────────────────────── */
+/* 2D-слой (устройства без WebGL): та же компактная геометрия, что и в 3D,
+   чтобы управление не занимало пол-экрана ни в одном режиме. */
 .controls-layer {
   position: fixed;
   left: 0;
   right: 0;
   bottom: 0;
-  height: 220px;
+  height: 168px;
   display: flex;
   justify-content: space-between;
   align-items: flex-end;
-  padding: 0 max(14px, env(safe-area-inset-right)) max(12px, env(safe-area-inset-bottom)) max(14px, env(safe-area-inset-left));
+  padding: 0 max(10px, env(safe-area-inset-right)) max(8px, env(safe-area-inset-bottom)) max(10px, env(safe-area-inset-left));
 }
 
 .joystick-zone {
   pointer-events: auto;
-  width: 168px;
-  height: 168px;
+  width: 128px;
+  height: 128px;
   display: flex;
   align-items: center;
   justify-content: center;
 }
 
 .joystick-base {
-  width: 120px;
-  height: 120px;
+  width: 92px;
+  height: 92px;
+  opacity: var(--hud-opacity, 1);
   border-radius: 50%;
   background: rgba(15, 23, 42, 0.56);
   border: 2px solid rgba(148, 163, 184, 0.42);
@@ -561,8 +566,8 @@ html, body {
 }
 
 .joystick-knob {
-  width: 50px;
-  height: 50px;
+  width: 40px;
+  height: 40px;
   border-radius: 50%;
   background: radial-gradient(circle at 35% 35%, #e2e8f0, #64748b);
   border: 2px solid #f8fafc;
@@ -571,8 +576,8 @@ html, body {
 .combat-cluster {
   pointer-events: auto;
   position: relative;
-  width: 244px;
-  height: 204px;
+  width: 192px;
+  height: 158px;
 }
 
 .ctrl-btn {
@@ -596,75 +601,75 @@ html, body {
 }
 
 .ctrl-btn.big.attack {
-  right: 2px;
-  bottom: 4px;
-  width: 84px;
-  height: 84px;
-  font-size: 24px;
+  right: 0;
+  bottom: 0;
+  width: 64px;
+  height: 64px;
+  font-size: 20px;
   background: radial-gradient(circle at 35% 30%, #ef4444, #991b1b);
   border-color: #fca5a5;
 }
 .ctrl-btn.big.attack span { font-size: 10px; margin-top: 1px; letter-spacing: 0.6px; }
 
 .ctrl-btn.medium {
-  width: 56px;
-  height: 56px;
-  font-size: 17px;
+  width: 44px;
+  height: 44px;
+  font-size: 15px;
 }
-.ctrl-btn.medium span { font-size: 9px; }
+.ctrl-btn.medium span { font-size: 8px; }
 
 .ctrl-btn.jump {
-  right: 96px;
-  bottom: 4px;
-  background: rgba(14, 116, 144, 0.88);
+  right: 72px;
+  bottom: 0;
+  background: rgba(14, 116, 144, 0.8);
   border-color: #67e8f9;
 }
 
 .ctrl-btn.dash {
-  right: 90px;
-  bottom: 68px;
-  background: rgba(30, 64, 175, 0.88);
+  right: 68px;
+  bottom: 50px;
+  background: rgba(30, 64, 175, 0.8);
   border-color: #93c5fd;
 }
 
 .ctrl-btn.small.heal {
-  right: 158px;
-  bottom: 10px;
-  width: 48px;
-  height: 48px;
-  background: rgba(21, 128, 61, 0.90);
+  right: 124px;
+  bottom: 0;
+  width: 38px;
+  height: 38px;
+  background: rgba(21, 128, 61, 0.82);
   border-color: #86efac;
 }
 
 .ctrl-btn.small.grenade {
-  right: 154px;
-  bottom: 66px;
-  width: 48px;
-  height: 48px;
-  background: rgba(180, 83, 9, 0.90);
+  right: 120px;
+  bottom: 44px;
+  width: 38px;
+  height: 38px;
+  background: rgba(180, 83, 9, 0.82);
   border-color: #fdba74;
 }
 
 .px-btn-img {
-  width: 24px;
-  height: 24px;
+  width: 20px;
+  height: 20px;
 }
 
 .count-pill {
   position: absolute;
-  bottom: -4px;
-  right: -4px;
+  bottom: -3px;
+  right: -3px;
   background: #0f172a;
   border: 1px solid #cbd5e1;
-  border-radius: 8px;
-  padding: 0 5px;
-  font-size: 10px;
+  border-radius: 7px;
+  padding: 0 4px;
+  font-size: 9px;
 }
 
 .ctrl-btn.skill {
-  width: 46px;
-  height: 46px;
-  font-size: 17px;
+  width: 36px;
+  height: 36px;
+  font-size: 14px;
 }
 .ctrl-btn.skill small {
   position: absolute;
@@ -679,9 +684,13 @@ html, body {
 }
 .ctrl-btn.skill small:empty { display: none; }
 
-.ctrl-btn.s1 { right: 120px; bottom: 132px; border-color: #fb923c; }
-.ctrl-btn.s2 { right: 64px;  bottom: 146px; border-color: #38bdf8; }
-.ctrl-btn.s3 { right: 8px;   bottom: 102px; border-color: #4ade80; }
+/* Навыки 2D — плотная сетка над боевым блоком, без наложения на кнопки */
+.ctrl-btn.s1 { right: 116px; bottom: 88px;  border-color: #fb923c; }
+.ctrl-btn.s2 { right: 77px;  bottom: 100px; border-color: #38bdf8; }
+.ctrl-btn.s3 { right: 38px;  bottom: 88px;  border-color: #4ade80; }
+.ctrl-btn.s4 { right: 116px; bottom: 128px; border-color: #f97316; }
+.ctrl-btn.s5 { right: 77px;  bottom: 140px; border-color: #7dd3fc; }
+.ctrl-btn.s6 { right: 38px;  bottom: 128px; border-color: #a855f7; }
 
 /* ── МОДАЛЬНЫЕ ОКНА ───────────────────────────────────────────────── */
 .modal-backdrop {
@@ -917,11 +926,17 @@ html, body {
 }
 
 @media (max-height: 450px) {
-  .hud-bars-card { padding: 5px 8px; min-width: 185px; }
-  #minimap-canvas { width: 68px; height: 68px; }
-  .controls-layer { height: 188px; }
-  .combat-cluster { transform: scale(0.88); transform-origin: bottom right; }
+  .hud-bars-card { padding: 4px 7px; min-width: 0; max-width: 210px; }
+  #minimap-canvas { width: 62px; height: 62px; }
+  .controls-layer { height: 150px; }
+  /* Масштаб не «уменьшает плавающие кнопки», а сжимает весь кластер целиком:
+     относительные смещения внутри него остаются согласованными. */
+  .combat-cluster { transform: scale(0.9); transform-origin: bottom right; }
   .joystick-zone { transform: scale(0.9); transform-origin: bottom left; }
+  .ctrl-btn.big.attack { width: 58px; height: 58px; font-size: 18px; }
+  .ctrl-btn.medium { width: 40px; height: 40px; font-size: 14px; }
+  .ctrl-btn.small.heal, .ctrl-btn.small.grenade, .ctrl-btn.small.reload { width: 34px; height: 34px; }
+  .ctrl-btn.skill { width: 33px; height: 33px; font-size: 13px; }
 }
 
 /* ── VEXMORA 2.0: объявление об обновлении, перезарядка, новые карточки ── */
@@ -981,23 +996,23 @@ html, body {
 .update-section p { margin: 3px 0 0 !important; font-size: 12px !important; }
 
 .ctrl-btn.small.reload {
-  right: 158px;
-  bottom: 122px;
-  width: 48px;
-  height: 48px;
+  right: 124px;
+  bottom: 88px;
+  width: 38px;
+  height: 38px;
   background: rgba(14, 116, 144, 0.92);
   border-color: #67e8f9;
   font-size: 18px;
 }
 .ctrl-btn.small.reload small {
   position: absolute;
-  bottom: -5px;
-  right: -5px;
+  bottom: -4px;
+  right: -4px;
   background: #0f172a;
   border: 1px solid #67e8f9;
-  border-radius: 8px;
-  padding: 0 5px;
-  font-size: 10px;
+  border-radius: 7px;
+  padding: 0 4px;
+  font-size: 9px;
   color: #bae6fd;
 }
 
@@ -1052,15 +1067,23 @@ body.mode2d .hud3d { display: none !important; }
   user-select: none;
   -webkit-user-select: none;
   touch-action: none;
+  /* Настраиваемая прозрачность интерфейса: 1 — плотная, 0.45 — почти прозрачная.
+     Значение задаёт игрок в настройках (--hud-opacity). */
+  --hud-opacity: 1;
+  --hud-btn: rgba(18, 26, 42, 0.55);
+  --hud-btn-solid: rgba(18, 26, 42, 0.72);
+  --hud-border: rgba(160, 195, 245, 0.42);
 }
 
-/* ── Виртуальный стик ── */
+/* ── Виртуальный стик: компактный, но с той же свободой хода ──
+   Площадка касаний остаётся крупной (68 px радиуса) — палец не «теряет» стик,
+   при этом на экране виден аккуратный круг 96 px. */
 .stick3d-zone {
   position: absolute;
-  left: 18px;
-  bottom: 22px;
-  width: 176px;
-  height: 176px;
+  left: max(10px, env(safe-area-inset-left));
+  bottom: max(10px, env(safe-area-inset-bottom));
+  width: 136px;
+  height: 136px;
   pointer-events: auto;
   touch-action: none;
   display: flex;
@@ -1068,128 +1091,208 @@ body.mode2d .hud3d { display: none !important; }
   justify-content: center;
 }
 .stick3d {
-  width: 138px;
-  height: 138px;
+  width: 96px;
+  height: 96px;
   border-radius: 50%;
-  background: radial-gradient(circle at 50% 42%, rgba(46, 62, 92, 0.55), rgba(12, 18, 30, 0.62));
-  border: 2px solid rgba(150, 185, 235, 0.38);
-  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45), inset 0 0 26px rgba(90, 130, 200, 0.18);
+  background: radial-gradient(circle at 50% 42%, rgba(46, 62, 92, 0.42), rgba(12, 18, 30, 0.46));
+  border: 1.5px solid var(--hud-border);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35), inset 0 0 18px rgba(90, 130, 200, 0.14);
   display: flex;
   align-items: center;
   justify-content: center;
-  backdrop-filter: blur(3px);
+  backdrop-filter: blur(2px);
+  opacity: var(--hud-opacity);
 }
 .stick3d-knob {
-  width: 62px;
-  height: 62px;
+  width: 42px;
+  height: 42px;
   border-radius: 50%;
-  background: radial-gradient(circle at 40% 35%, #cfe0f8, #6c86ad 62%, #3d4f6e);
-  border: 2px solid rgba(230, 240, 255, 0.65);
-  box-shadow: 0 3px 14px rgba(0, 0, 0, 0.55);
+  background: radial-gradient(circle at 40% 35%, rgba(207, 224, 248, 0.92), rgba(108, 134, 173, 0.9) 62%, rgba(61, 79, 110, 0.9));
+  border: 1.5px solid rgba(230, 240, 255, 0.6);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.45);
   transition: transform 0.04s linear;
   pointer-events: none;
 }
 .stick3d-hint {
   position: absolute;
-  bottom: 2px;
+  bottom: -1px;
   left: 50%;
   transform: translateX(-50%);
-  font-size: 11px;
-  letter-spacing: 0.08em;
+  font-size: 8.5px;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: rgba(190, 210, 240, 0.6);
+  color: rgba(190, 210, 240, 0.45);
 }
 
-/* ── Кластер действий ── */
-.actions3d {
+/* ── Правый нижний блок: способности сверху, бой снизу ──
+   Всё на flex-колонке с gap: кнопки физически не могут наложиться. */
+.hud3d-right-bottom {
   position: absolute;
-  right: 16px;
-  bottom: 20px;
-  width: 232px;
-  height: 224px;
+  right: max(10px, env(safe-area-inset-right));
+  bottom: max(10px, env(safe-area-inset-bottom));
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
   pointer-events: none;
 }
-.a3d {
+
+/* Способности: сетка 3×3, компактные плитки */
+.skills3d {
+  display: grid;
+  grid-template-columns: repeat(3, var(--sk3, 34px));
+  gap: 5px;
+  pointer-events: auto;
+}
+.a3d-skill {
+  position: relative;
+  width: var(--sk3, 34px);
+  height: var(--sk3, 34px);
+  border-radius: 9px;
+  border: 1px solid var(--hud-border);
+  background: var(--hud-btn-solid);
+  color: #e7eefb;
+  font-size: calc(var(--sk3, 34px) * 0.44);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.32);
+  -webkit-tap-highlight-color: transparent;
+  opacity: var(--hud-opacity);
+  backdrop-filter: blur(2px);
+}
+.a3d-skill small {
   position: absolute;
+  right: 1px;
+  bottom: 0;
+  font-size: 8.5px;
+  color: #bcd3f0;
+}
+.a3d-skill.locked { opacity: calc(var(--hud-opacity) * 0.45); }
+.a3d-skill.cooling { opacity: calc(var(--hud-opacity) * 0.7); }
+.a3d-skill.cooling small { color: #fbbf24; }
+.a3d-skill.active { transform: scale(0.92); }
+
+/* ── Боевой блок: утилиты и основное действие ── */
+.fight3d {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  pointer-events: none;
+}
+.utility3d {
+  display: grid;
+  grid-template-columns: repeat(3, auto);
+  gap: 4px;
+  align-content: end;
+  pointer-events: auto;
+}
+.combat3d {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(2, auto);
+  grid-template-areas:
+    'dodge jump'
+    'heavy attack';
+  gap: 5px;
+  align-items: center;
+  justify-items: center;
+  pointer-events: none;
+}
+
+/* Базовый круглый стиль боевых кнопок — сохраняет облик VEXMORA */
+.a3d {
   pointer-events: auto;
   touch-action: none;
   border-radius: 50%;
-  border: 2px solid rgba(160, 195, 245, 0.45);
-  background: radial-gradient(circle at 42% 34%, rgba(64, 84, 122, 0.95), rgba(20, 28, 44, 0.95));
+  border: 1.5px solid var(--hud-border);
+  background: radial-gradient(circle at 42% 34%, rgba(64, 84, 122, 0.72), rgba(20, 28, 44, 0.78));
   color: #e7eefb;
-  font-size: 22px;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 1px;
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.12);
+  gap: 0;
+  box-shadow: 0 3px 12px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.1);
   transition: transform 0.06s ease, box-shadow 0.06s ease, background 0.12s;
   -webkit-tap-highlight-color: transparent;
+  opacity: var(--hud-opacity);
+  backdrop-filter: blur(2px);
 }
 .a3d span {
-  font-size: 10px;
-  letter-spacing: 0.04em;
+  font-size: 8px;
+  letter-spacing: 0.03em;
   opacity: 0.82;
   text-transform: uppercase;
+  line-height: 1;
 }
 .a3d.active {
   transform: scale(0.92);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.6), inset 0 0 18px rgba(120, 180, 255, 0.55);
+  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.5), inset 0 0 14px rgba(120, 180, 255, 0.5);
 }
-.a3d.small { width: 60px; height: 60px; font-size: 20px; }
-.a3d.medium { width: 78px; height: 78px; font-size: 24px; }
-.a3d.big { width: 104px; height: 104px; font-size: 32px; }
 
-.a3d.attack3d {
-  right: 0;
-  bottom: 58px;
-  background: radial-gradient(circle at 42% 34%, #d9584a, #8f241c 65%, #4d100c);
-  border-color: rgba(255, 190, 170, 0.65);
-  box-shadow: 0 8px 26px rgba(180, 40, 30, 0.45), inset 0 2px 0 rgba(255, 255, 255, 0.18);
+/* Размеры: xs — утилиты, sm — рывок/прыжок, med — тяжёлый удар, atk — основная атака */
+.a3d.xs {
+  width: 38px;
+  height: 38px;
+  font-size: 16px;
 }
+.a3d.sm {
+  width: 44px;
+  height: 44px;
+  font-size: 18px;
+}
+.a3d.med {
+  width: 58px;
+  height: 58px;
+  font-size: 21px;
+}
+.a3d.atk {
+  width: 74px;
+  height: 74px;
+  font-size: 27px;
+  background: radial-gradient(circle at 42% 34%, rgba(217, 88, 74, 0.86), rgba(143, 36, 28, 0.9) 65%, rgba(77, 16, 12, 0.92));
+  border-color: rgba(255, 190, 170, 0.62);
+  box-shadow: 0 5px 18px rgba(180, 40, 30, 0.38), inset 0 2px 0 rgba(255, 255, 255, 0.16);
+}
+.a3d.attack3d { grid-area: attack; }
 .a3d.heavy {
-  right: 60px;
-  bottom: 0;
-  background: radial-gradient(circle at 42% 34%, #c98a3c, #7a4a14 68%, #3f2408);
-  border-color: rgba(255, 210, 150, 0.55);
+  grid-area: heavy;
+  background: radial-gradient(circle at 42% 34%, rgba(201, 138, 60, 0.85), rgba(122, 74, 20, 0.9) 68%, rgba(63, 36, 8, 0.92));
+  border-color: rgba(255, 210, 150, 0.52);
 }
-.a3d.jump { right: 132px; bottom: 8px; }
-.a3d.dodge { right: 148px; bottom: 78px; }
-.a3d.block { right: 96px; bottom: 128px; }
+.a3d.dodge {
+  grid-area: dodge;
+  background: radial-gradient(circle at 42% 34%, rgba(59, 106, 168, 0.8), rgba(28, 52, 92, 0.88));
+}
+.a3d.jump { grid-area: jump; }
 .a3d.interact {
-  right: 12px;
-  bottom: 168px;
-  background: radial-gradient(circle at 42% 34%, #3f8a6a, #1c4a38 68%, #0d241c);
+  background: radial-gradient(circle at 42% 34%, rgba(63, 138, 106, 0.78), rgba(28, 74, 56, 0.86));
+  position: relative;
 }
-
-/* Small-кнопки: аптечка, зелье, смена оружия — левый столбец кластера */
-.a3d.small { width: 52px; height: 52px; font-size: 18px; }
 .a3d.heal {
-  left: 0;
-  bottom: 158px;
-  background: radial-gradient(circle at 42% 34%, #b8494c, #74222a 68%, #3a0f14);
+  background: radial-gradient(circle at 42% 34%, rgba(184, 73, 76, 0.8), rgba(116, 34, 42, 0.88));
 }
 .a3d.potion {
-  left: 0;
-  bottom: 98px;
-  background: radial-gradient(circle at 42% 34%, #4f7fbf, #23406e 68%, #101f37);
+  background: radial-gradient(circle at 42% 34%, rgba(79, 127, 191, 0.8), rgba(35, 64, 110, 0.88));
 }
 .a3d.weapon {
-  left: 0;
-  bottom: 38px;
-  background: radial-gradient(circle at 42% 34%, #5b6a86, #2b364a 68%, #121a26);
+  background: radial-gradient(circle at 42% 34%, rgba(91, 106, 134, 0.8), rgba(43, 54, 74, 0.88));
+}
+.a3d.block {
+  background: radial-gradient(circle at 42% 34%, rgba(107, 122, 158, 0.82), rgba(52, 62, 88, 0.9));
 }
 .cnt3d {
   position: absolute;
-  top: -5px;
-  right: -5px;
-  min-width: 17px;
-  height: 17px;
-  padding: 0 4px;
+  top: -4px;
+  right: -4px;
+  min-width: 14px;
+  height: 14px;
+  padding: 0 3px;
   border-radius: 999px;
-  font-size: 10.5px;
-  line-height: 17px;
+  font-size: 9px;
+  line-height: 14px;
   text-align: center;
   color: #0b1220;
   background: #f8d477;
@@ -1198,76 +1301,27 @@ body.mode2d .hud3d { display: none !important; }
   opacity: 1;
 }
 
-/* ── Навыки в 3D: вертикальный столбец у правого края над кластером ── */
-.skills3d {
-  position: absolute;
-  right: 12px;
-  top: 50%;
-  transform: translateY(-78%);
-  display: grid;
-  /* OPEN WORLD: 9 способностей — две колонки, чтобы панель не уходила
-     под кнопки боя и не перекрывала стик на телефоне */
-  grid-template-columns: repeat(2, 44px);
-  gap: 6px;
-  justify-items: center;
-  pointer-events: auto;
-  z-index: 2;
-}
-@media (max-width: 620px) {
-  .skills3d { grid-template-columns: repeat(2, 38px); }
-}
-@media (max-height: 520px) {
-  .skills3d { gap: 4px; transform: translateY(-70%); }
-  .a3d-skill { width: 34px; height: 34px; font-size: 14px; }
-}
-.a3d-skill {
-  position: relative;
-  width: 44px;
-  height: 44px;
-  border-radius: 12px;
-  border: 1px solid rgba(150, 185, 235, 0.4);
-  background: linear-gradient(180deg, rgba(44, 60, 88, 0.94), rgba(18, 26, 40, 0.94));
-  color: #e7eefb;
-  font-size: 19px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.45);
-  -webkit-tap-highlight-color: transparent;
-}
-.a3d-skill small {
-  position: absolute;
-  right: 2px;
-  bottom: 1px;
-  font-size: 9.5px;
-  color: #bcd3f0;
-}
-.a3d-skill.locked { opacity: 0.4; }
-.a3d-skill.cooling { opacity: 0.62; }
-.a3d-skill.cooling small { color: #fbbf24; }
-.a3d-skill.active { transform: scale(0.92); }
-
-/* ── Правый верх: мини-карта и метрики ── */
+/* ── Правый верх: мини-карта и метрики (компактнее прежнего) ── */
 .hud3d-top-right {
   position: absolute;
-  top: 12px;
-  right: 12px;
+  top: max(8px, env(safe-area-inset-top));
+  right: max(8px, env(safe-area-inset-right));
   display: flex;
   flex-direction: column;
   align-items: flex-end;
-  gap: 6px;
+  gap: 4px;
   pointer-events: auto;
 }
 .minimap3d-wrap {
   position: relative;
-  width: 108px;
-  height: 108px;
-  border-radius: 14px;
+  width: 84px;
+  height: 84px;
+  border-radius: 11px;
   overflow: hidden;
-  border: 2px solid rgba(150, 185, 235, 0.42);
-  box-shadow: 0 6px 22px rgba(0, 0, 0, 0.5);
-  background: rgba(10, 16, 26, 0.7);
+  border: 1.5px solid var(--hud-border);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  background: rgba(10, 16, 26, 0.55);
+  opacity: var(--hud-opacity);
 }
 #minimap3d { width: 100%; height: 100%; display: block; }
 .mm3d-day {
@@ -1276,46 +1330,156 @@ body.mode2d .hud3d { display: none !important; }
   right: 0;
   bottom: 0;
   text-align: center;
-  font-size: 10px;
-  padding: 2px 0;
+  font-size: 8.5px;
+  padding: 1px 0;
   color: #e8eefb;
-  background: rgba(8, 14, 24, 0.72);
+  background: rgba(8, 14, 24, 0.62);
 }
 .mm3d-meta {
   display: flex;
-  gap: 6px;
-  font-size: 10.5px;
+  gap: 4px;
+  font-size: 9px;
   color: #b8cae2;
 }
 .mm3d-meta span {
-  padding: 2px 8px;
+  padding: 1px 6px;
   border-radius: 999px;
-  background: rgba(14, 22, 36, 0.78);
-  border: 1px solid rgba(120, 155, 205, 0.28);
+  background: rgba(14, 22, 36, 0.6);
+  border: 1px solid rgba(120, 155, 205, 0.24);
 }
 
-/* ── Меню 3D ── */
+/* ── Меню 3D: вертикальная колонка под мини-картой ── */
 .hud3d-menu {
   position: absolute;
-  top: 132px;
-  right: 12px;
+  top: calc(max(8px, env(safe-area-inset-top)) + 116px);
+  right: max(8px, env(safe-area-inset-right));
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
   pointer-events: auto;
 }
 .icon-btn3d {
-  width: 42px;
-  height: 42px;
-  border-radius: 12px;
-  font-size: 19px;
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
+  font-size: 16px;
   color: #e7eefb;
-  background: linear-gradient(180deg, rgba(44, 60, 88, 0.94), rgba(20, 28, 44, 0.94));
-  border: 1px solid rgba(130, 165, 215, 0.35);
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
+  background: var(--hud-btn-solid);
+  border: 1px solid rgba(130, 165, 215, 0.3);
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.35);
   cursor: pointer;
+  opacity: var(--hud-opacity);
+  backdrop-filter: blur(2px);
 }
 .icon-btn3d:active { transform: scale(0.94); }
+
+/* ── АДАПТАЦИЯ: переменные размеров под разрешение ──
+   Меняются только размеры/отступы, структура остаётся прежней — кнопки
+   масштабируются вместе и не наезжают друг на друга. */
+@media (max-width: 900px) {
+  :root { --sk3: 32px; }
+  .a3d.xs { width: 36px; height: 36px; font-size: 15px; }
+  .a3d.sm { width: 42px; height: 42px; font-size: 17px; }
+  .a3d.med { width: 54px; height: 54px; font-size: 20px; }
+  .a3d.atk { width: 68px; height: 68px; font-size: 25px; }
+  .minimap3d-wrap { width: 78px; height: 78px; }
+  .hud3d-menu { top: calc(max(8px, env(safe-area-inset-top)) + 106px); }
+}
+@media (max-width: 700px) {
+  :root { --sk3: 30px; }
+  .stick3d-zone { width: 124px; height: 124px; }
+  .stick3d { width: 88px; height: 88px; }
+  .stick3d-knob { width: 38px; height: 38px; }
+  .a3d.xs { width: 34px; height: 34px; font-size: 14px; }
+  .a3d.sm { width: 40px; height: 40px; }
+  .a3d.med { width: 50px; height: 50px; font-size: 18px; }
+  .a3d.atk { width: 62px; height: 62px; font-size: 23px; }
+  .minimap3d-wrap { width: 70px; height: 70px; }
+  .hud3d-menu { top: calc(max(8px, env(safe-area-inset-top)) + 98px); }
+  .icon-btn3d { width: 31px; height: 31px; font-size: 14px; }
+}
+/* Низкий экран (типичный Android в горизонтали, 360–420 dp по высоте):
+   ужимаем вертикальные блоки, чтобы кластер не поднимался к центру экрана */
+@media (max-height: 430px) {
+  :root { --sk3: 28px; }
+  .hud3d-right-bottom { gap: 5px; }
+  .skills3d { gap: 4px; }
+  .fight3d { gap: 6px; }
+  .utility3d { gap: 3px; }
+  .a3d.xs { width: 32px; height: 32px; font-size: 14px; }
+  .a3d.sm { width: 38px; height: 38px; font-size: 16px; }
+  .a3d.med { width: 48px; height: 48px; font-size: 17px; }
+  .a3d.atk { width: 58px; height: 58px; font-size: 22px; }
+  .stick3d-zone { width: 112px; height: 112px; }
+  .stick3d { width: 80px; height: 80px; }
+  .stick3d-knob { width: 34px; height: 34px; }
+  .minimap3d-wrap { width: 64px; height: 64px; }
+  /* На низком экране справа уже нет места: меню уходит влево под панель
+     героя компактным горизонтальным рядом. */
+  body.mode3d .hud3d-menu,
+  .hud3d-menu {
+    top: 84px;
+    left: max(8px, env(safe-area-inset-left));
+    right: auto;
+    flex-direction: row;
+    flex-wrap: nowrap;
+    gap: 3px;
+  }
+  .icon-btn3d { width: 28px; height: 28px; font-size: 13px; }
+  .mm3d-meta { display: none; }
+}
+/* Узкие экраны (портрет, мини-телефоны): уменьшаем кластер, чтобы он не
+   дотягивался до стика */
+@media (max-width: 420px) {
+  :root { --sk3: 26px; }
+  .skills3d { gap: 3px; }
+  .fight3d { gap: 4px; }
+  .utility3d { gap: 3px; }
+  .combat3d { gap: 3px; }
+  .a3d.xs { width: 30px; height: 30px; font-size: 13px; }
+  .a3d.sm { width: 34px; height: 34px; font-size: 14px; }
+  .a3d.med { width: 42px; height: 42px; font-size: 15px; }
+  .a3d.atk { width: 52px; height: 52px; font-size: 20px; }
+  .a3d span { font-size: 7px; }
+  .stick3d-zone { width: 104px; height: 104px; }
+  .stick3d { width: 76px; height: 76px; }
+  .stick3d-knob { width: 32px; height: 32px; }
+}
+
+/* Совсем узкий экран (портрет 360dp): кластер не должен занимать больше
+   половины ширины, иначе он дотягивается до стика */
+@media (max-width: 380px) {
+  :root { --sk3: 24px; }
+  .skills3d { gap: 2px; }
+  .fight3d { gap: 3px; }
+  .utility3d { gap: 2px; }
+  .combat3d { gap: 2px; }
+  .a3d.xs { width: 26px; height: 26px; font-size: 12px; }
+  .a3d.sm { width: 30px; height: 30px; font-size: 13px; }
+  .a3d.med { width: 38px; height: 38px; font-size: 14px; }
+  .a3d.atk { width: 48px; height: 48px; font-size: 18px; }
+  .a3d span { display: none; }
+  .cnt3d { min-width: 12px; height: 12px; font-size: 8px; line-height: 12px; }
+  .stick3d-zone { width: 92px; height: 92px; }
+  .stick3d { width: 68px; height: 68px; }
+  .stick3d-knob { width: 28px; height: 28px; }
+  .minimap3d-wrap { width: 58px; height: 58px; }
+}
+
+/* Очень узкий и невысокий экран: минимальный, но рабочий вариант */
+@media (max-height: 360px) {
+  :root { --sk3: 26px; }
+  .a3d.xs { width: 30px; height: 30px; font-size: 13px; }
+  .a3d.sm { width: 34px; height: 34px; font-size: 14px; }
+  .a3d.med { width: 42px; height: 42px; font-size: 15px; }
+  .a3d.atk { width: 52px; height: 52px; font-size: 20px; }
+  .stick3d-zone { width: 100px; height: 100px; }
+  .stick3d { width: 72px; height: 72px; }
+  .stick3d-knob { width: 30px; height: 30px; }
+  .stick3d-hint { display: none; }
+  .minimap3d-wrap { width: 56px; height: 56px; }
+  .hud3d-menu { top: calc(max(6px, env(safe-area-inset-top)) + 66px); }
+}
 
 /* Плавное появление игры */
 #game-canvas { background: #05070f; }
@@ -1421,11 +1585,8 @@ body.mode3d #hud .hud-bars-card { backdrop-filter: blur(4px); }
   .update-box { max-height: 72vh; }
 }
 
-@media (max-width: 520px) {
-  .actions3d { transform: scale(0.92); transform-origin: bottom right; }
-  .stick3d-zone { transform: scale(0.92); transform-origin: bottom left; }
-  .hud3d-top-right { top: 8px; right: 8px; }
-}
+/* Узкие экраны: размеры заданы переменными выше, отдельный transform
+   не нужен — он создавал «плавающие» кнопки поверх соседних элементов. */
 
 /* ── Раскладка HUD в 3D: мини-карта справа, полосы по центру, меню слева ──
    В 2D панель полос и мини-карта стоят в одном ряду .hud-top; в 3D мини-карта
@@ -1433,10 +1594,34 @@ body.mode3d #hud .hud-bars-card { backdrop-filter: blur(4px); }
 body.mode3d #hud { z-index: 14; }
 body.mode3d .hud-top {
   align-items: flex-start;
-  padding-top: 6px;
-  padding-right: calc(12px + 108px + 10px);   /* место под мини-карту 3D */
+  padding-top: 4px;
+  padding-right: calc(8px + 84px + 8px);   /* место под компактную мини-карту 3D */
 }
-body.mode3d .hud-bars-card { max-width: 300px; }
+/* Информационная панель героя компактнее: только суть, меньше высоты */
+body.mode3d .hud-bars-card {
+  max-width: 236px;
+  min-width: 0;
+  padding: 5px 7px;
+  border-width: 1.5px;
+  border-radius: 10px;
+  background: rgba(11, 17, 30, 0.62);
+  backdrop-filter: blur(3px);
+  opacity: var(--hud-opacity, 1);
+}
+body.mode3d .hud-bars-card .hero-header { margin-bottom: 3px; gap: 4px; }
+body.mode3d .lvl-pill { font-size: 10px; padding: 1px 5px; }
+body.mode3d .biome-pill { font-size: 10px; max-width: 110px; }
+body.mode3d .bar-row { margin-bottom: 2px; gap: 3px; }
+body.mode3d .bar-track { height: 9px; border-radius: 3px; }
+body.mode3d .bar-track.small { max-width: 44px; height: 7px; }
+body.mode3d .bar-track.thin { height: 4px; }
+body.mode3d .bar-text { font-size: 8.5px; }
+body.mode3d .bar-icon { font-size: 9px; width: 11px; }
+body.mode3d .currency-row { margin-top: 3px; gap: 3px; font-size: 9.5px; }
+body.mode3d .stat-chip { padding: 1px 4px; gap: 2px; border-radius: 4px; }
+body.mode3d .px-icon { width: 12px; height: 12px; }
+body.mode3d .px-icon-w { height: 12px; }
+body.mode3d .weapon-switch-chip { padding: 1px 5px; font-size: 9px; }
 body.mode3d .hud-center-info {
   position: absolute;
   top: calc(6px + env(safe-area-inset-top));
@@ -1445,27 +1630,30 @@ body.mode3d .hud-center-info {
   max-width: 240px;
 }
 body.mode3d .hud-right-top { display: none; }          /* заменён мини-картой 3D */
+/* Меню в 3D — вертикальная колонка под мини-картой, справа:
+   так он не спорит с полосами героя и не закрывает центр экрана. */
 body.mode3d .hud3d-menu {
-  top: 8px;
-  left: 12px;
-  right: auto;
-  flex-direction: row;
-  flex-wrap: wrap;
-  max-width: 132px;
+  top: calc(max(8px, env(safe-area-inset-top)) + 116px);
+  right: max(8px, env(safe-area-inset-right));
+  left: auto;
+  flex-direction: column;
+  flex-wrap: nowrap;
+  max-width: none;
+  gap: 4px;
 }
-body.mode3d .icon-btn3d { width: 40px; height: 40px; font-size: 18px; }
+body.mode3d .icon-btn3d { width: 34px; height: 34px; font-size: 16px; }
 
 @media (max-width: 620px) {
-  body.mode3d .hud-bars-card { max-width: 148px; }
-  body.mode3d .hud-center-info { max-width: 132px; top: auto; bottom: 8px; }
-  body.mode3d .hud3d-menu { gap: 4px; max-width: 120px; }
-  body.mode3d .icon-btn3d { width: 36px; height: 36px; font-size: 16px; }
-  .skills3d { gap: 4px; transform: translateY(-72%); grid-template-columns: repeat(2, 38px); }
-  .a3d-skill { width: 38px; height: 38px; font-size: 16px; border-radius: 10px; }
-  .a3d.small { width: 46px; height: 46px; font-size: 16px; }
-  .a3d.heal { bottom: 150px; }
-  .a3d.potion { bottom: 96px; }
-  .a3d.weapon { bottom: 42px; }
+  body.mode3d .hud-bars-card { max-width: 190px; }
+  /* Трекер квеста — компактной полоской сверху по центру, не поверх боя */
+  body.mode3d .hud-center-info { max-width: 180px; top: 2px; bottom: auto; }
+  body.mode3d .quest-tracker { padding: 3px 7px; border-width: 1.5px; border-radius: 8px; }
+  body.mode3d .qt-title, body.mode3d .qt-goal { font-size: 9.5px; }
+  body.mode3d .boss-banner { padding: 3px 7px; border-width: 1.5px; }
+  body.mode3d .boss-name { font-size: 9.5px; margin-bottom: 2px; }
+  body.mode3d .boss-bar-track { height: 7px; }
+  body.mode3d .hud3d-menu { gap: 3px; max-width: none; }
+  body.mode3d .icon-btn3d { width: 31px; height: 31px; font-size: 14px; }
 }
 
 /* 3D-холст: отдельный canvas, чтобы WebGL-контекст не конфликтовал с 2D */

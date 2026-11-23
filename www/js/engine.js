@@ -67,7 +67,9 @@ export class GameEngine {
       quality3dAuto: true,   // подобрано автоматически по устройству (можно переопределить)
       sound: true,
       autoAim: true,
-      showFps: false
+      showFps: false,
+      // Прозрачность экранных кнопок (1 — плотные, 0.42 — почти невидимые)
+      hudOpacity: 0.85
     };
 
     this.resetState();
@@ -732,6 +734,9 @@ export class GameEngine {
       if (!this.settings.quality3d) this.settings.quality3d = detectQuality3D();
       if (!['low', 'medium', 'high', 'ultra'].includes(this.settings.quality3d)) this.settings.quality3d = detectQuality3D();
       this.settings.quality3dAuto = this.settings.quality3dAuto !== false;
+      // Прозрачность HUD появилась вместе с компактным интерфейсом
+      const hudOp = Number(this.settings.hudOpacity);
+      this.settings.hudOpacity = Number.isFinite(hudOp) ? Math.min(1, Math.max(0.3, hudOp)) : 0.85;
 
       Object.assign(this.player, data.player);
       this.player.z = 0;

@@ -351,8 +351,17 @@ export class Game3D {
     el.addEventListener('touchstart', (e) => {
       if (!this.running) return;
       for (const t of e.changedTouches) {
-        // Левая нижняя четверть — стик, остальное — камера
-        const isStickZone = t.clientX < window.innerWidth * 0.45 && t.clientY > window.innerHeight * 0.45;
+        // Зона стика — его фактический прямоугольник с запасом для пальца
+        const zone = document.getElementById('stick3d-zone');
+        let isStickZone = false;
+        if (zone) {
+          const r = zone.getBoundingClientRect();
+          const pad = 24;
+          isStickZone = t.clientX >= r.left - pad && t.clientX <= r.right + pad
+            && t.clientY >= r.top - pad && t.clientY <= r.bottom + pad;
+        } else {
+          isStickZone = t.clientX < window.innerWidth * 0.45 && t.clientY > window.innerHeight * 0.45;
+        }
         if (!isStickZone && lookId === null) {
           lookId = t.identifier;
           lastX = t.clientX;
@@ -426,7 +435,9 @@ export class Game3D {
     if (!zone || !base) return;
     let pointerId = null;
     let originX = 0, originY = 0;
-    const R = 58;
+    // Радиус хода считается от фактического размера стика: при компактном
+    // интерфейсе кнопка меньше, но ход остаётся тем же (72% радиуса).
+    const stickR = () => Math.max(28, (base.getBoundingClientRect().width || 96) * 0.36);
 
     const setKnob = (dx, dy) => {
       if (knob) knob.style.transform = `translate(${dx}px, ${dy}px)`;
@@ -451,6 +462,7 @@ export class Game3D {
       if (!t) return;
       let dx = t.clientX - originX;
       let dy = t.clientY - originY;
+      const R = stickR();
       const len = Math.hypot(dx, dy);
       if (len > R) { dx = (dx / len) * R; dy = (dy / len) * R; }
       setKnob(dx, dy);

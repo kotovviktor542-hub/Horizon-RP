@@ -18,6 +18,7 @@ const data = await import('../www/js/data.js');
 const { WEAPONS, WEAPON_MODS, BASE_ROOMS, ITEMS, SKILLS, SKILL_TREE, ENEMIES, BOSSES, QUESTS, SECRETS, NPCS, ACHIEVEMENTS, BIOMES, CAMPFIRES, RESCUE_MISSIONS, UPDATE_ANNOUNCEMENT, GAME_TITLE, LOCATIONS, ARTIFACTS, FACTIONS, ARMORS, TRIALS } = data;
 const { getLocationIdAt, VEHICLE_KINDS } = await import('../www/js/world.js');
 const { createMap, encodeMapGrid, decodeMapGrid, MAP_BIOMES, getTerrainAt } = await import('../www/js/mapgen.js');
+const { checkLayout } = await import('./hudlayout.mjs');
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(__dirname, '..');
@@ -928,8 +929,20 @@ test('25. 3D-ИНТЕРФЕЙС: разметка и стили 3D-режима 
   assert.ok(html.includes('type="importmap"') && html.includes('vendor/three/three.module.js'),
     'Модуль three.js должен подключаться через importmap');
   const css = fs.readFileSync(path.join(rootDir, 'www/css/style.css'), 'utf8');
-  assert.ok(css.includes('.hud3d') && css.includes('.actions3d') && css.includes('.stick3d'),
+  assert.ok(css.includes('.hud3d') && css.includes('.fight3d') && css.includes('.combat3d') && css.includes('.stick3d'),
     'Стили 3D-HUD должны быть заданы');
+  // Компактный интерфейс: кнопки в потоке flex/grid, а не на абсолютных смещениях
+  assert.ok(!/\.a3d\.(heal|potion|weapon|jump|dodge|block|interact)\s*\{[^}]*position:\s*absolute/.test(css),
+    'Кнопки 3D-HUD не должны позиционироваться абсолютными смещениями (иначе наезжают друг на друга)');
+  assert.ok(/\.combat3d\s*\{[^}]*display:\s*grid/.test(css), 'Боевые кнопки собраны в grid-кластер');
+  assert.ok(/\.utility3d\s*\{[^}]*display:\s*grid/.test(css), 'Лечение и защита собраны в компактную группу');
+  assert.ok(/\.skills3d\s*\{[^}]*grid-template-columns:\s*repeat\(3/.test(css),
+    'Способности — компактная сетка 3×3');
+  assert.ok(css.includes('--hud-opacity'), 'Прозрачность интерфейса должна настраиваться переменной --hud-opacity');
+  assert.ok(/\.minimap3d-wrap\s*\{[^}]*width:\s*84px/.test(css), 'Мини-карта уменьшена');
+  for (const mq of ['max-width: 900px', 'max-width: 700px', 'max-height: 430px', 'max-height: 360px']) {
+    assert.ok(css.includes(mq), `Адаптация HUD под разрешение: нужен media-запрос (${mq})`);
+  }
   // 2D-слой управления остаётся для устройств без WebGL
   assert.ok(html.includes('id="joystick-zone"') && html.includes('id="btn-attack"'),
     'Классический 2D-слой управления должен сохраниться как резервный');
@@ -945,9 +958,9 @@ test('25. 3D-ИНТЕРФЕЙС: разметка и стили 3D-режима 
     'Список секций доски прокручивается внутри, кнопка остаётся на виду');
   assert.ok(css.includes('body.mode3d .hud-right-top') && css.includes('body.mode3d .hud-center-info'),
     'В 3D-режиме верхний ряд HUD перестраивается (полосы по центру, 2D-мини-карта скрыта)');
-  assert.ok(/body\.mode3d \.hud3d-menu \{[^}]*left: 12px/.test(css),
-    'Меню 3D уходит влево, чтобы не перекрывать мини-карту');
-  assert.ok(css.includes('padding-right: calc(12px + 108px + 10px)'),
+  assert.ok(/body\.mode3d \.hud3d-menu \{[^}]*flex-direction: column/.test(css),
+    'Меню 3D — колонка под мини-картой, а не поверх игрового поля');
+  assert.ok(/padding-right: calc\(8px \+ 84px \+ 8px\)/.test(css),
     'Верхняя панель в 3D оставляет место шириной мини-карты');
   // Полный набор действий доступен пальцем и в 3D-режиме
   for (const btn of ['heal', 'potion', 'weapon']) {
@@ -1097,6 +1110,42 @@ test('30. OPEN WORLD: 12 классов техники, включая кате�
   eng.player.x = car.x; eng.player.y = car.y; eng.player.vehicleId = car.id;
   eng.update(1 / 60, {});
   assert.ok(car.stalled, 'Обычный транспорт глохнет на глубокой воде');
+});
+
+test('32. КОМПАКТНЫЙ HUD: кнопки уменьшены, не наезжают друг на друга на любом разрешении', () => {
+  const css = fs.readFileSync(path.join(rootDir, 'www/css/style.css'), 'utf8');
+  // Типичные Android-разрешения в горизонтали + портрет + планшет
+  const viewports = [
+    [640, 360], [740, 360], [800, 360], [854, 400], [915, 412],
+    [1024, 600], [1280, 720], [1920, 1080], [360, 640], [768, 1024]
+  ];
+  const { problems, stats } = checkLayout(css, viewports);
+  assert.deepEqual(problems, [], `Наложения/переполнение HUD:\n${problems.join('\n')}`);
+  assert.ok(stats.length === viewports.length, 'Раскладка проверена на всех разрешениях');
+  // Управление должно занимать заметно меньше экрана (было почти пол-экрана)
+  for (const s2 of stats) {
+    assert.ok(s2.frac < 0.30, `${s2.tag}: кнопки занимают ${(s2.frac * 100).toFixed(1)}% экрана`);
+  }
+  // Кнопки действительно уменьшены относительно прежних размеров
+  const rules = css;
+  assert.ok(/\.a3d\.atk \{[^}]*width: 74px/.test(rules), 'Основная атака уменьшена (было 104px)');
+  assert.ok(/\.a3d\.sm \{[^}]*width: 44px/.test(rules), 'Рывок и прыжок уменьшены (было 60px)');
+  assert.ok(/\.a3d\.xs \{[^}]*width: 38px/.test(rules), 'Лечение и защита уменьшены (были 52px)');
+  assert.ok(/\.stick3d \{[^}]*width: 96px/.test(rules), 'Джойстик уменьшен (был 138px)');
+  // Все прежние кнопки и функции на месте
+  const html = fs.readFileSync(path.join(rootDir, 'www/index.html'), 'utf8');
+  for (const id of ['btn3d-attack', 'btn3d-heavy', 'btn3d-jump', 'btn3d-dodge', 'btn3d-block',
+    'btn3d-heal', 'btn3d-potion', 'btn3d-weapon', 'btn3d-interact']) {
+    assert.ok(html.includes(`id="${id}"`), `Кнопка #${id} должна остаться`);
+  }
+  assert.equal((html.match(/class="a3d-skill"/g) || []).length, 9, 'Все 9 способностей на месте');
+  assert.equal((html.match(/class="icon-btn3d"/g) || []).length, 5, 'Все 5 кнопок меню на месте');
+  // Настройка прозрачности кнопок
+  const ui = fs.readFileSync(path.join(rootDir, 'www/js/ui.js'), 'utf8');
+  assert.ok(ui.includes('applyHudOpacity'), 'Прозрачность кнопок применяется из настроек');
+  assert.ok(ui.includes('data-hud-op'), 'В настройках есть выбор прозрачности');
+  const eng = new GameEngine(noopSound);
+  assert.ok(eng.settings.hudOpacity > 0 && eng.settings.hudOpacity <= 1, 'Прозрачность HUD хранится в настройках');
 });
 
 console.log(`\nИТОГ: ${passed}/${TOTAL} комплексных проверок VEXMORA 3D успешно пройдено!`);

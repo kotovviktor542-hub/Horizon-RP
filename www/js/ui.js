@@ -174,6 +174,7 @@ export class UIManager {
 
     this.els.titleScreen.classList.add('hidden');
     this.els.hud.classList.remove('hidden');
+    this.applyHudOpacity();
     this.engine.paused = false;
     this.updateHud(true);
   }
@@ -292,6 +293,18 @@ export class UIManager {
     this.game3d = game3d;
     const level = this.engine.settings.quality3d || 'high';
     try { game3d.applyQuality(level, false); } catch (err) { console.warn('3D quality', err); }
+    this.applyHudOpacity();
+  }
+
+  // Прозрачность интерфейса: значение 0.3…1.0 хранится в настройках.
+  // Меняется только прозрачность кнопок — размеры и раскладка не трогаются.
+  applyHudOpacity() {
+    const v = Number(this.engine.settings.hudOpacity);
+    const opacity = Number.isFinite(v) ? Math.min(1, Math.max(0.3, v)) : 0.85;
+    if (typeof document === 'undefined' || !document.documentElement) return;
+    document.documentElement.style.setProperty('--hud-opacity', String(opacity));
+    // В 2D-режиме кнопки управления тоже должны слушаться настройки
+    document.body?.style?.setProperty('--hud-opacity', String(opacity));
   }
 
   updateHud(force = false) {
@@ -1237,6 +1250,16 @@ export class UIManager {
     `;
   }
 
+  // Ближайший пресет прозрачности — чтобы подсветить выбранную кнопку
+  hudOpacityLevel() {
+    const v = Number(this.engine.settings.hudOpacity);
+    const cur = Number.isFinite(v) ? v : 0.85;
+    const presets = [['solid', 1], ['normal', 0.85], ['light', 0.62], ['ghost', 0.42]];
+    let best = presets[0];
+    for (const pr of presets) if (Math.abs(pr[1] - cur) < Math.abs(best[1] - cur)) best = pr;
+    return best[0];
+  }
+
   renderSettingsTab(body) {
     const eng = this.engine;
     const s = eng.settings;
@@ -1275,6 +1298,17 @@ export class UIManager {
             <button class="action-btn ${s.autoAim ? 'green' : ''}" id="btn-toggle-aim">
               ${s.autoAim ? '🎯 Автоприцел: ВКЛ' : '🎯 Автоприцел: ВЫКЛ'}
             </button>
+          </div>
+        </div>
+
+        <div class="item-card">
+          <div class="card-title">🫥 Прозрачность кнопок</div>
+          <div class="card-desc">Насколько плотно выглядят кнопки управления поверх мира. Меньше значение — больше обзора. Текущее: ${Math.round((Number.isFinite(Number(s.hudOpacity)) ? Number(s.hudOpacity) : 0.85) * 100)}%</div>
+          <div class="card-actions">
+            <button class="action-btn ${this.hudOpacityLevel() === 'solid' ? 'gold' : ''}" data-hud-op="1">Плотные</button>
+            <button class="action-btn ${this.hudOpacityLevel() === 'normal' ? 'gold' : ''}" data-hud-op="0.85">Обычные</button>
+            <button class="action-btn ${this.hudOpacityLevel() === 'light' ? 'gold' : ''}" data-hud-op="0.62">Прозрачные</button>
+            <button class="action-btn ${this.hudOpacityLevel() === 'ghost' ? 'gold' : ''}" data-hud-op="0.42">Минимальные</button>
           </div>
         </div>
 
@@ -1320,6 +1354,13 @@ export class UIManager {
       s.quality3d = b.dataset.q3;
       s.quality3dAuto = false;   // выбор игрока отключает автоподбор по устройству
       if (this.game3d) this.game3d.applyQuality(s.quality3d);
+      eng.saveGame(true);
+      this.renderModalTab();
+    }));
+
+    body.querySelectorAll('[data-hud-op]').forEach(b => b.addEventListener('click', () => {
+      s.hudOpacity = Number(b.dataset.hudOp);
+      this.applyHudOpacity();
       eng.saveGame(true);
       this.renderModalTab();
     }));
