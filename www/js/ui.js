@@ -404,7 +404,9 @@ export class UIManager {
     }
     if (nearBoss) {
       this.els.bossBanner.classList.remove('hidden');
-      this.els.bossName.textContent = `☠️ ${nearBoss.name} · Фаза ${nearBoss.phase}${nearBoss.shieldTimer > 0 ? ' · 🛡️ ЩИТ' : ''} (${Math.ceil(nearBoss.hp)} / ${nearBoss.maxHp})`;
+      const phaseDef = BOSSES[nearBoss.bossId]?.phases?.[nearBoss.phase - 1];
+      const phaseLabel = phaseDef ? `${nearBoss.phase} «${phaseDef.title}»` : `${nearBoss.phase}`;
+      this.els.bossName.textContent = `☠️ ${nearBoss.name} · Фаза ${phaseLabel}${nearBoss.shieldTimer > 0 ? ' · 🛡️ ЩИТ' : ''} (${Math.ceil(nearBoss.hp)} / ${nearBoss.maxHp})`;
       this.els.bossBarFill.style.width = `${Math.max(0, (nearBoss.hp / nearBoss.maxHp) * 100).toFixed(1)}%`;
     } else {
       this.els.bossBanner.classList.add('hidden');
@@ -995,6 +997,7 @@ export class UIManager {
         <div class="item-card ${dead ? 'equipped' : ''}">
           <div class="card-head"><span class="card-title">${dead ? '🏆' : '👹'} #${b.order} ${b.name}</span><small style="color:#fda4af">${b.title}</small></div>
           <div class="card-desc">${b.desc}<br/>Арена: ${BIOMES[b.biome]?.name || b.biome} · HP ${b.hp} · Награда: <b style="color:#fbbf24">${WEAPONS[b.rewardWeapon]?.name}</b> + ${b.coins}🪙</div>
+          ${Array.isArray(b.phases) ? `<div class="card-desc"><b>Фазы боя:</b> ${b.phases.map((ph, i) => `Ф${i + 1} «${ph.title}» — ${ph.notes}`).join(' · ')}</div>` : ''}
           <div class="card-desc ${dead ? 'ok-note' : 'boss-phase-note'}">${dead ? `✅ Побеждён! Открыто: ${b.unlocksZone}` : `❌ Ещё жив · Открывает: ${b.unlocksZone}`}</div>
           <div class="card-actions"><button class="action-btn gold" data-set-objective="${b.x},${b.y},👹 ${b.name}" ${dead ? 'disabled' : ''}>${dead ? 'Трофей в коллекции' : '📍 Отметить арену босса'}</button></div>
         </div>`;
@@ -1061,9 +1064,14 @@ export class UIManager {
       <div class="res-pills" style="margin-top:8px">
         <span class="res-pill">🌍 Мир #${eng.worldSeed}</span>
         <span class="res-pill">🏞️ Суша: ${stats ? stats.landPercent : 0}%</span>
-        <span class="res-pill">🧭 Процедурная карта WorldBox</span>
+        <span class="res-pill">📐 ${eng.world.width}×${eng.world.height} world-единиц (${Math.round(eng.world.width * 0.1)}×${Math.round(eng.world.height * 0.1)} м)</span>
+        <span class="res-pill">🧭 Процедурная карта</span>
         <button class="action-btn gold" data-new-world="1">🎲 Сгенерировать новый мир</button>
       </div>
+      ${this.renderExplorationSummary(eng)}
+      <div class="section-title" style="margin-top:12px">🗺️ Легенда исследования</div>
+      <div class="card-desc">🔶 Руины · 🟣 Пещеры · 🔷 Достопримечательности · 🟡 Тайники · золотой контур — огромные поля.
+      Ненайденные места показаны приглушённо — иди и разведай!</div>
       <div class="res-pills">${biomeRows}</div>
       <div class="section-title" style="margin-top:12px">🌌 Локации RISE OF THE ABYSS</div>
       <div class="grid-cards">
@@ -1104,6 +1112,35 @@ export class UIManager {
       this.engine.pushToast('🌍 Новый мир сгенерирован! Исследуй новые земли', '#4ade80');
       this.openModal('map');
     }));
+  }
+
+  // OPEN WORLD: сводка исследования — сколько найдено руин, пещер, полей.
+  renderExplorationSummary(eng) {
+    const w = eng.world;
+    const landmarks = w.landmarks || [];
+    const ruins = landmarks.filter(l => l.type === 'ruin');
+    const finds = landmarks.filter(l => l.type === 'landmark');
+    const caches = landmarks.filter(l => l.type === 'hidden_cache');
+    const caves = w.caves || [];
+    const fields = w.fields || [];
+    const found = (list) => list.filter(l => l.discovered).length;
+    const total = ruins.length + finds.length + caches.length + caves.length;
+    const opened = found(ruins) + found(finds) + found(caches) + found(caves);
+    const pct = total ? Math.round((opened / total) * 100) : 0;
+    const near = eng.nearestLandmark ? eng.nearestLandmark(eng.player.x, eng.player.y, true) : null;
+    const hint = near ? `Ближайшее неоткрытое место: ${near.landmark.name} — ${Math.round(near.dist * 0.1)} м` : 'Все места уже открыты!';
+    return `
+      <div class="section-title" style="margin-top:12px">🧭 Исследование мира — ${opened}/${total} (${pct}%)</div>
+      <div class="res-pills">
+        <span class="res-pill">🏛️ Руины: ${found(ruins)}/${ruins.length}</span>
+        <span class="res-pill">🕳️ Пещеры: ${found(caves)}/${caves.length}</span>
+        <span class="res-pill">🗿 Достопримечательности: ${found(finds)}/${finds.length}</span>
+        <span class="res-pill">💎 Тайники: ${found(caches)}/${caches.length}</span>
+        <span class="res-pill">🌾 Полей: ${fields.length}</span>
+      </div>
+      <div class="card-desc">${hint}</div>
+      ${near ? `<div class="card-actions"><button class="action-btn" data-set-objective="${Math.round(near.landmark.x)},${Math.round(near.landmark.y)},${near.landmark.name}">📍 Отметить ближайшее место целью</button></div>` : ''}
+    `;
   }
 
   // ── VEXMORA 3.0: Фракции Эпохи Павших Богов ───────────────────────────

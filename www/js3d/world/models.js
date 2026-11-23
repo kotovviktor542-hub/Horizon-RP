@@ -663,6 +663,95 @@ export const Structures = {
 
 // ── Транспорт ────────────────────────────────────────────────────────────
 export const Vehicles3D = {
+  // ── OPEN WORLD: лёгкая техника для исследования (квадроцикл, багги, катер) ──
+  // Отдельные компактные модели: они строятся один раз на мир и живут в LOD-сетке,
+  // поэтому детализация выше, чем у машин, при меньшем бюджете полигонов.
+  quad() {
+    const g = new THREE.Group();
+    const frame = new THREE.MeshStandardMaterial({ color: 0xdc5a1e, metalness: 0.55, roughness: 0.45 });
+    const dark = new THREE.MeshStandardMaterial({ color: 0x1b1d22, roughness: 0.85 });
+    const rubber = new THREE.MeshStandardMaterial({ color: 0x14151a, roughness: 0.95 });
+    const chrome = new THREE.MeshStandardMaterial({ color: 0xc8ced6, metalness: 1.0, roughness: 0.2 });
+
+    const body = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.32, 2.1), frame);
+    body.position.y = 0.52; body.castShadow = true; g.add(body);
+    const nose = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.22, 0.8), dark);
+    nose.position.set(0, 0.62, 1.15); nose.castShadow = true; g.add(nose);
+    const seat = new THREE.Mesh(new THREE.BoxGeometry(1.05, 0.2, 0.9), dark);
+    seat.position.set(0, 0.74, -0.35); g.add(seat);
+    // Дуга безопасности
+    const bar = new THREE.Mesh(new THREE.TorusGeometry(0.45, 0.05, 6, 10, Math.PI), chrome);
+    bar.position.set(0, 0.92, 0.1); bar.rotation.x = -0.35; g.add(bar);
+    // Руль
+    const handle = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.9, 6), chrome);
+    handle.rotation.z = Math.PI / 2; handle.position.set(0, 0.92, 0.62); g.add(handle);
+    // Четыре колеса с агрессивным протектором
+    for (const [x, z] of [[-0.78, 0.72], [0.78, 0.72], [-0.82, -0.75], [0.82, -0.75]]) {
+      const wheel = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.42, 0.34, 12), rubber);
+      wheel.rotation.z = Math.PI / 2; wheel.position.set(x, 0.42, z); wheel.castShadow = true; g.add(wheel);
+      const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.16, 0.36, 8), chrome);
+      hub.rotation.z = Math.PI / 2; hub.position.set(x, 0.42, z); g.add(hub);
+    }
+    const light = new THREE.Mesh(new THREE.SphereGeometry(0.12, 8, 6), emissiveMaterial(0xfff2c0, 1.2));
+    light.position.set(0, 0.7, 1.55); g.add(light);
+    return g;
+  },
+
+  buggy() {
+    const g = new THREE.Group();
+    const paint = new THREE.MeshStandardMaterial({ color: 0x2f7d4f, metalness: 0.6, roughness: 0.38 });
+    const dark = new THREE.MeshStandardMaterial({ color: 0x191b20, roughness: 0.8 });
+    const rubber = new THREE.MeshStandardMaterial({ color: 0x111216, roughness: 0.95 });
+    const chrome = new THREE.MeshStandardMaterial({ color: 0xb9c1cb, metalness: 1.0, roughness: 0.22 });
+
+    // Трубчатая рама
+    for (const z of [0.9, -0.15, -1.1]) {
+      const tube = new THREE.Mesh(new THREE.TorusGeometry(0.62, 0.055, 5, 9, Math.PI), chrome);
+      tube.position.set(0, 0.62, z); tube.rotation.y = Math.PI / 2; g.add(tube);
+    }
+    const floor = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.16, 2.5), paint);
+    floor.position.y = 0.58; floor.castShadow = true; g.add(floor);
+    const engine = new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.5, 0.7), dark);
+    engine.position.set(0, 0.72, -1.05); engine.castShadow = true; g.add(engine);
+    const seat = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.22, 0.85), dark);
+    seat.position.set(0, 0.78, -0.1); g.add(seat);
+    const wheelBase = [[-0.85, 1.05, 0.5], [0.85, 1.05, 0.5], [-0.9, -1.05, 0.55], [0.9, -1.05, 0.55]];
+    for (const [x, z, r] of wheelBase) {
+      const wheel = new THREE.Mesh(new THREE.CylinderGeometry(r, r, 0.38, 12), rubber);
+      wheel.rotation.z = Math.PI / 2; wheel.position.set(x, r, z); wheel.castShadow = true; g.add(wheel);
+    }
+    const lightBar = new THREE.Mesh(new THREE.BoxGeometry(0.85, 0.12, 0.1), emissiveMaterial(0xfff2c0, 1.4));
+    lightBar.position.set(0, 0.98, 1.28); g.add(lightBar);
+    return g;
+  },
+
+  speedboat() {
+    const g = new THREE.Group();
+    const hullMat = new THREE.MeshStandardMaterial({ color: 0xe8eef4, metalness: 0.35, roughness: 0.35 });
+    const trim = new THREE.MeshStandardMaterial({ color: 0x1f6fb2, metalness: 0.6, roughness: 0.3 });
+    const glass = new THREE.MeshStandardMaterial({ color: 0x9fd0e6, metalness: 0.3, roughness: 0.1, transparent: true, opacity: 0.7 });
+    const deck = new THREE.MeshStandardMaterial({ color: 0x2a2f38, roughness: 0.8 });
+
+    // Корпус: сужение к носу
+    const shape = new THREE.Shape();
+    shape.moveTo(-1.1, -2.4); shape.lineTo(1.1, -2.4); shape.lineTo(0.95, 1.0);
+    shape.lineTo(0, 2.7); shape.lineTo(-0.95, 1.0); shape.closePath();
+    const hull = new THREE.Mesh(new THREE.ExtrudeGeometry(shape, { depth: 0.9, bevelEnabled: true, bevelSize: 0.12, bevelThickness: 0.08, bevelSegments: 2 }), hullMat);
+    hull.rotation.x = -Math.PI / 2; hull.position.y = 0.9; hull.castShadow = true; g.add(hull);
+    const stripe = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.09, 3.6), trim);
+    stripe.position.set(0, 0.62, 0); g.add(stripe);
+    const cockpit = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.55, 1.5), deck);
+    cockpit.position.set(0, 1.2, -0.5); cockpit.castShadow = true; g.add(cockpit);
+    const windshield = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.45, 0.08), glass);
+    windshield.position.set(0, 1.45, 0.32); windshield.rotation.x = -0.35; g.add(windshield);
+    const motor = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.6, 0.5), deck);
+    motor.position.set(0, 1.1, -2.5); g.add(motor);
+    // Волна за кормой — маленькие полосы, видны только на ходу (анимируются мостом)
+    const wake = new THREE.Mesh(new THREE.PlaneGeometry(2.4, 1.2), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.22, depthWrite: false }));
+    wake.rotation.x = -Math.PI / 2; wake.position.set(0, 0.08, -3.2); wake.name = 'wake'; g.add(wake);
+    return g;
+  },
+
   car(kind, colors = {}) {
     const group = new THREE.Group();
     const bodyColor = colors.body ?? 0xa01820;

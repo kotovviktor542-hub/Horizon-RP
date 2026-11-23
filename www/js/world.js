@@ -5,6 +5,7 @@
 // транспорт и O(1) сетка препятствий — всё привязано к сгенерированной карте.
 
 import { WORLD_CONFIG, BIOMES, CAMPFIRES, SECRETS, BOSSES, RESCUE_MISSIONS, LOCATIONS } from './data.js';
+import { buildExploration } from './exploration.js';
 import {
   createMap, createMapFromSave, setActiveMap, getActiveMap, getBiomeIdAt as mapBiomeAt,
   getTerrainAt, MAP_CONFIG, MAP_BIOMES, mulberry32, fbm, randomMapSeed
@@ -53,7 +54,11 @@ export const VEHICLE_KINDS = {
   pickup:    { name: 'Пикап',         speed: 345, accel: 2.2, grip: 0.90, radius: 27, hp: 250 },
   bike:      { name: 'Мотоцикл',      speed: 400, accel: 3.4, grip: 0.82, radius: 18, hp: 120 },
   truck:     { name: 'Грузовик',      speed: 300, accel: 1.7, grip: 0.80, radius: 32, hp: 380 },
-  apc:       { name: 'Бронетранспортёр', speed: 285, accel: 1.8, grip: 0.86, radius: 34, hp: 520 }
+  apc:       { name: 'Бронетранспортёр', speed: 285, accel: 1.8, grip: 0.86, radius: 34, hp: 520 },
+  // ── OPEN WORLD: техника для исследования большой карты ────────────────
+  buggy:     { name: 'Багги «Скарабей»', speed: 415, accel: 3.3, grip: 0.96, radius: 22, hp: 210 },
+  quad:      { name: 'Квадроцикл',       speed: 385, accel: 3.5, grip: 0.94, radius: 17, hp: 140 },
+  speedboat: { name: 'Катер «Волна»',    speed: 480, accel: 3.0, grip: 0.70, radius: 26, hp: 260, water: true }
 };
 
 const BUILDING_SPECS = {
@@ -173,7 +178,30 @@ export function createWorld(seed = 20261025, savedGrid = null) {
   };
 
   addVehicle('veh_base_moto', 'bike', 'Развед-мотоцикл «Вихрь»', 3530, 3150, { baseSpeed: 400 });
+  // OPEN WORLD: быстрый транспорт для дальних вылазок и катер для воды
+  addVehicle('veh_base_quad', 'quad', 'Квадроцикл «Стрекоза»', 3620, 3080, { baseSpeed: 385 });
+  addVehicle('veh_base_buggy', 'buggy', 'Багги «Скарабей»', 3450, 3320, { baseSpeed: 415 });
   addVehicle('veh_base_sport', 'sportscar', 'Спорткар «Фантом»', 3260, 3420, { baseSpeed: 470, angle: -0.4 });
+
+  // Катер — только на реальной воде: ищем ближайшую глубокую точку рядом с лагерем.
+  (function placeBoat() {
+    const isDeep = (x, y) => {
+      const t = map.terrainAt(x, y);
+      return !!t.water && t.deep;
+    };
+    for (let ring = 0; ring < 110; ring++) {
+      const r = 260 + ring * 52;
+      for (let a = 0; a < 16; a++) {
+        const ang = (a / 16) * Math.PI * 2 + ring * 0.4;
+        const x = Math.min(W - 120, Math.max(120, 3160 + Math.cos(ang) * r));
+        const y = Math.min(H - 120, Math.max(120, 3180 + Math.sin(ang) * r));
+        if (isDeep(x, y) && isDeep(x + 40, y) && isDeep(x - 40, y)) {
+          addVehicle('veh_base_boat', 'speedboat', 'Катер «Волна»', Math.round(x), Math.round(y), { baseSpeed: 480 });
+          return;
+        }
+      }
+    }
+  })();
 
   // ── 2. ЗАБРОШЕННЫЙ МЕГАПОЛИС (Восток) ─────────────────────────────────
   addBuilding('hospital',  4680, 3040, { interactType: 'heal', name: 'Центральная Больница' });
@@ -385,6 +413,31 @@ export function createWorld(seed = 20261025, savedGrid = null) {
     return true;
   }
 
+  // ── 9. OPEN WORLD: древние руины, пещеры, огромные поля, достопримечательности ──
+  // Генератор получает готовую карту и уже расставленный контент, чтобы не
+  // ставить руины поверх арен боссов, дорог или зданий.
+  const exploration = buildExploration({
+    seed, W, H, rand, map,
+    isClearSpot,
+    nodes, props, buildings, hazards,
+    makeNode,
+    occupied: { camps: CAMPFIRES, bosses: Object.values(BOSSES), rescues: RESCUE_MISSIONS, modCaches }
+  });
+
+  // Точка внутри площадки исследования (руины, пещера, достопримечательность, поле)
+  const exploreSites = [
+    ...exploration.landmarks.map(l => ({ x: l.x, y: l.y, r: (l.radius || 90) + 30 })),
+    ...exploration.caves.map(c => ({ x: c.x, y: c.y, r: 110 })),
+    ...exploration.fields.map(f => ({ x: f.x, y: f.y, r: f.radius * 0.55 }))
+  ];
+  function insideExplorationSite(x, y) {
+    for (const s2 of exploreSites) {
+      const dx = x - s2.x, dy = y - s2.y;
+      if (dx * dx + dy * dy < s2.r * s2.r) return true;
+    }
+    return false;
+  }
+
   // ── GLOBAL MAP: естественное распределение растительности по биомам ──
   const BIOME_FLORA = {
     forest:  { density: 0.62, pick: [[0.50, 'tree'], [0.70, 'bush'], [0.84, 'rock'], [0.94, 'crates'], [1.0, 'barrel']] },
@@ -395,6 +448,11 @@ export function createWorld(seed = 20261025, savedGrid = null) {
     mountains:{ density: 0.48, pick: [[0.52, 'rock'], [0.74, 'pine_tree'], [0.88, 'crates'], [1.0, 'barrel']] },
     city:    { density: 0.62, pick: [[0.30, 'crates'], [0.52, 'barrel'], [0.70, 'barrel_red'], [0.86, 'fence'], [1.0, 'bush']] },
     coast:   { density: 0.42, pick: [[0.40, 'rock'], [0.62, 'crates'], [0.84, 'barrel'], [1.0, 'bush']] },
+    // OPEN WORLD: новые территории
+    deep_forest: { density: 0.78, pick: [[0.62, 'tree'], [0.80, 'bush'], [0.90, 'rock'], [0.96, 'crates'], [1.0, 'barrel']] },
+    ruins:       { density: 0.40, pick: [[0.30, 'rock'], [0.52, 'bush'], [0.72, 'crates'], [0.88, 'barrel'], [1.0, 'crystal_node']] },
+    ashland:     { density: 0.34, pick: [[0.44, 'rock'], [0.66, 'bush'], [0.84, 'barrel_red'], [1.0, 'crates']] },
+    canyon:      { density: 0.38, pick: [[0.56, 'rock'], [0.76, 'bush'], [0.90, 'crates'], [1.0, 'barrel']] },
     water:   { density: 0 }
   };
 
@@ -406,6 +464,9 @@ export function createWorld(seed = 20261025, savedGrid = null) {
 
     const terrain = map.terrainAt(x, y);
     if (terrain.water) continue;                 // растительность только на суше
+    // Не засоряем площадки исследования: руины, пещеры и поля должны
+    // оставаться читаемыми, иначе игрок их не заметит среди деревьев.
+    if (insideExplorationSite(x, y)) continue;
     const flora = BIOME_FLORA[terrain.biome];
     if (!flora || !flora.density) continue;
     // Кластерность: густые чащи и редколесье вместо равномерного «гороха»
@@ -498,6 +559,10 @@ export function createWorld(seed = 20261025, savedGrid = null) {
     modCaches,
     traps,
     chests,
+    landmarks: exploration.landmarks,     // достопримечательности и скрытые места
+    caves: exploration.caves,             // входы в пещеры
+    fields: exploration.fields,           // огромные открытые поля
+    fieldAt: exploration.fieldAt,         // O(1) запрос поля по точке мира
     queryPropsNear
   };
 }

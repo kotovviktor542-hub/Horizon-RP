@@ -7,8 +7,10 @@
 import {
   WORLD_CONFIG, RARITIES, BIOMES, CAMPFIRES, NPCS, WEAPONS, WEAPON_MODS, BASE_ROOMS,
   ITEMS, RESOURCES, RECIPES, SKILLS, SKILL_TREE, ENEMIES, BOSSES, SECRETS, QUESTS, ACHIEVEMENTS,
-  RESCUE_MISSIONS, MISSION_TEMPLATES, LOCATIONS, ARTIFACTS, FACTIONS, ARMORS, TRIALS
+  RESCUE_MISSIONS, MISSION_TEMPLATES, LOCATIONS, ARTIFACTS, FACTIONS, ARMORS, TRIALS,
+  ANIMALS, TRAVELERS
 } from './data.js';
+import { LivingWorld } from './livingworld.js';
 import { createWorld, dist2, getBiomeIdAt, getLocationIdAt, VEHICLE_KINDS } from './world.js';
 import { encodeMapGrid, getTerrainAt, randomMapSeed } from './mapgen.js';
 
@@ -131,6 +133,10 @@ export class GameEngine {
       slowTimer: 0,
       foodRegenTimer: 0,
       comboCount: 0,
+      counterWindow: 0,        // окно контратаки после идеального уклонения
+      perfectDodgeFlash: 0,    // подсветка идеального уклонения в HUD
+      timeSlowTimer: 0,        // замедление времени (способность)
+
       comboTimer: 0,
       dead: false
     };
@@ -175,6 +181,17 @@ export class GameEngine {
     }));
     this.companionActive = false;
     this.companion = null;           // {x,y,hp,maxHp,attackCd,animTime,respawnTimer}
+
+    // ── OPEN WORLD: живой мир ────────────────────────────────────────────
+    // Животные, нейтральные путники и случайные встречи. Отдельный слой,
+    // чтобы не раздувать основной тик и не ломать существующий ИИ врагов.
+    this.animalDefs = Object.values(ANIMALS);
+    this.travelerDefs = TRAVELERS;
+    this.living = new LivingWorld(this);
+    this.animals = this.living.animals;       // короткий доступ для 2D-отрисовки и моста
+    this.travelers = this.living.travelers;
+    this.landmarks = [];                      // достопримечательности текущего мира
+    this.discoveredLandmarks = [];            // id найденных мест (идёт в сохранение)
     this.activeContract = null;
     this.contractSeq = 0;
     this.contractNpc = null;         // сопровождаемый/пленный персонаж спецоперации
@@ -188,7 +205,11 @@ export class GameEngine {
       adrenaline: { level: 0, cd: 0 },
       fire_strike: { level: 0, cd: 0 },
       ice_blast: { level: 0, cd: 0 },
-      shadow_teleport: { level: 0, cd: 0 }
+      shadow_teleport: { level: 0, cd: 0 },
+      // OPEN WORLD: новые боевые способности
+      energy_strike: { level: 0, cd: 0 },
+      ground_slam: { level: 0, cd: 0 },
+      time_warp: { level: 0, cd: 0 }
     };
 
     // RISE OF THE ABYSS: локации, артефакты, кинематография, события
@@ -658,6 +679,10 @@ export class GameEngine {
         companionActive: this.companionActive,
         skills: Object.fromEntries(Object.entries(this.skills).map(([k, v]) => [k, { level: v.level }])),
         discoveredLocations: this.discoveredLocations,
+        // OPEN WORLD: какие руины/пещеры/достопримечательности уже найдены
+        discoveredLandmarks: this.discoveredLandmarks,
+        clearedCaves: (this.world.caves || []).filter(c => c.cleared).map(c => c.id),
+        searchedRuins: (this.world.landmarks || []).filter(l => l.searched).map(l => l.id),
         artifacts: this.artifacts,
         lootedChests: this.lootedChests,
         factionRep: this.factionRep,
@@ -774,6 +799,21 @@ export class GameEngine {
       this.hardMode = !!data.hardMode;
       this.unlockedCamps = data.unlockedCamps || ['camp_forest'];
       this.discoveredSecrets = data.discoveredSecrets || [];
+      this.discoveredLandmarks = data.discoveredLandmarks || [];
+      // Помечаем найденные ранее места, чтобы повторно не выдавать награду
+      if (this.world && this.world.landmarks) {
+        for (const lm of this.world.landmarks) {
+          if (this.discoveredLandmarks.includes(lm.id)) lm.discovered = true;
+        }
+        const searched = Array.isArray(data.searchedRuins) ? data.searchedRuins : [];
+        for (const lm of this.world.landmarks) if (searched.includes(lm.id)) lm.searched = true;
+      }
+      if (this.world && this.world.caves) {
+        const cleared = Array.isArray(data.clearedCaves) ? data.clearedCaves : [];
+        for (const cv of this.world.caves) {
+          if (cleared.includes(cv.id)) { cv.cleared = true; cv.discovered = true; }
+        }
+      }
       this.lootedBuildings = data.lootedBuildings || [];
       for (const b of this.world.buildings) {
         if (this.lootedBuildings.includes(b.id)) b.looted = true;
@@ -875,9 +915,14 @@ export class GameEngine {
     }
     const biomeId = getBiomeIdAt(x, y);
     const locId = getLocationIdAt(x, y);
-    const pool = (locId && LOCATIONS[locId]?.enemies?.length) ? LOCATIONS[locId].enemies : BIOMES[biomeId].enemies;
+    // Фолбэк: неизвестный биом не должен ронять спавн (новые территории
+    // карты могут появиться раньше, чем их описание в данных).
+    const biomeDef = BIOMES[biomeId] || BIOMES.forest;
+    const pool = (locId && LOCATIONS[locId]?.enemies?.length) ? LOCATIONS[locId].enemies : biomeDef.enemies;
     const isNight = this.isNightTime();
     let kind = forcedKind || pool[Math.floor(Math.random() * pool.length)];
+    // Неизвестный вид (опечатка в данных или новый биом) не должен ронять спавн
+    if (!ENEMIES[kind]) kind = 'zombie';
     if (!forcedKind && isNight && biomeId === 'forest' && Math.random() < 0.35) {
       kind = 'infected_runner';
     }
@@ -1038,7 +1083,22 @@ export class GameEngine {
 
     this.updatePlayer(dt, inputState);
     this.animClock = (this.animClock || 0) + dt;
+
+    // OPEN WORLD: животные, путники, случайные встречи и открытие новых мест.
+    // Слой самостоятельный: если он отключён или пуст, кадр не меняется.
+    if (this.living && !p.dead) this.living.update(dt);
+    this.updateExploration(dt);
+    this._updateCombatWindows(dt);
+    // Замедление времени: держится, пока жив таймер, и плавно возвращается
+    if (p.timeSlowTimer > 0) {
+      p.timeSlowTimer = Math.max(0, p.timeSlowTimer - dt);
+      this.enemyTimeScale = 0.5;
+      if (p.timeSlowTimer === 0) this.pushToast('⏱️ Время снова идёт обычно', '#94a3b8');
+    } else {
+      this.enemyTimeScale = 1;
+    }
     this.updateVehicles(dt);
+    this.updateCaves(dt);
     this.updateNodes(dt);
     this.updateRescues(dt);
     this.updateCompanion(dt);
@@ -1053,12 +1113,16 @@ export class GameEngine {
     this.updateEffects(dt);
     this.checkWorldInteractions();
 
-    // Поддержание живой плотности врагов вокруг героя
+    // Поддержание живой плотности врагов вокруг героя.
+    // OPEN WORLD: враги живут только рядом с игроком. Раньше каждый спавн
+    // пересобирал массив и через фильтр «1750» на большой карте; теперь
+    // дальний радиус меньше, а фильтр выполняется раз в 2 секунды — это
+    // снимает лишнюю работу с кадра при исследовании мира.
     this.spawnTimer -= dt;
     const maxEnemies = this.settings.quality === 'low' ? 24 : 36;
     if (this.spawnTimer <= 0) {
       this.spawnTimer = 1.9;
-      this.enemies = this.enemies.filter(e => dist2(e.x, e.y, p.x, p.y) < 1750 * 1750);
+      this.enemies = this.enemies.filter(e => dist2(e.x, e.y, p.x, p.y) < 1400 * 1400);
       if (this.enemies.length < maxEnemies) {
         const ang = Math.random() * Math.PI * 2;
         const dist = randRange(540, 960);
@@ -1351,10 +1415,21 @@ export class GameEngine {
         const veh = this.world.vehicles.find(v => v.id === p.vehicleId);
         if (veh) {
           const terr = getTerrainAt(veh.x, veh.y);
+          const vkind = VEHICLE_KINDS[veh.kind] || {};
           veh.onWater = !!terr.water && terr.deep;
-          if (terr.water && !veh.stalled) {
+          if (vkind.water) {
+            // OPEN WORLD: катер — единственная техника, которой вода не преграда
+            veh.stalled = false;
+            if (veh.onWater) {
+              veh.wakeTimer = (veh.wakeTimer || 0) - dt;
+              if (veh.wakeTimer <= 0) {
+                veh.wakeTimer = 0.24;
+                this.spawnSpriteEffect('water', veh.x, veh.y + 10, 0.9, 8);
+              }
+            }
+          } else if (terr.water && !veh.stalled) {
             veh.stalled = true;
-            this.pushToast('🌊 Глубокая вода! Транспорт не пройдёт — вернись на сушу', '#38bdf8');
+            this.pushToast('🌊 Глубокая вода! Транспорт не пройдёт — вернись на сушу (или найди катер)', '#38bdf8');
           } else if (!terr.water) {
             veh.stalled = false;
           }
@@ -1526,9 +1601,27 @@ export class GameEngine {
     p.invulnTimer = 0.28;
     p.dashDirX = Math.cos(p.facing);
     p.dashDirY = Math.sin(p.facing);
+    // Рывок таранит: враги на пути получают урон и отбрасывание, а сам герой
+    // проходит сквозь них. Урон начисляется один раз за рывок на цель.
+    p._dashHits = p._dashHits || new Set();
+    p._dashHits.clear();
     this.sound.play('dash');
     this.spawnDust(p.x, p.y, '#38bdf8', 8);
+    this.spawnSpriteEffect('magic', p.x, p.y - 8, 0.8, 18);
     return true;
+  }
+
+  // ── БОЙ: контратака и «энергетический удар» ────────────────────────────
+  // Контратака доступна сразу после идеального уклонения: если герой уклонился
+  // за мгновение до удара, следующий удар бьёт вдвое сильнее.
+  get counterReady() {
+    return (this.player.counterWindow || 0) > 0;
+  }
+
+  _updateCombatWindows(dt) {
+    const p = this.player;
+    if (p.counterWindow > 0) p.counterWindow = Math.max(0, p.counterWindow - dt);
+    if (p.perfectDodgeFlash > 0) p.perfectDodgeFlash = Math.max(0, p.perfectDodgeFlash - dt);
   }
 
   cycleWeapon() {
@@ -1890,6 +1983,13 @@ export class GameEngine {
   applyMeleeHit(angle, range, arc, baseDmg, critChance, knockback, weaponId = null) {
     const p = this.player;
     let hitAny = false;
+    // КОНТРАТАКА: после идеального уклонения удар бьёт вдвое сильнее.
+    // Окно сбрасывается только при попадании, чтобы промах не «съедал» бонус.
+    const counterReady = (p.counterWindow || 0) > 0;
+    if (counterReady) {
+      baseDmg *= 2;
+      knockback *= 1.6;
+    }
 
     const inCone = (tx, ty, tr) => {
       const dx = tx - p.x;
@@ -1925,7 +2025,16 @@ export class GameEngine {
     }
 
     this.damageNodesInCone(angle, range, arc, Math.max(18, Math.round(baseDmg * 0.75)));
-    if (hitAny) this.bumpCombo();
+    if (hitAny) {
+      this.bumpCombo();
+      // Контратака сработала: гасим окно и показываем акцент
+      if ((this.player.counterWindow || 0) > 0) {
+        this.player.counterWindow = 0;
+        this.addFloatingText(this.player.x, this.player.y - 52, 'КОНТРАТАКА ×2!', '#fbbf24', true);
+        this.sound.play('crit');
+        this.camera.shake = Math.max(this.camera.shake, 6);
+      }
+    }
   }
 
   damageNodesInCone(angle, range, arc, dmg) {
@@ -2058,6 +2167,72 @@ export class GameEngine {
         if (dist2(p.x, p.y, b.x, b.y) <= (r + b.radius) ** 2) { b.stunTimer = Math.max(b.stunTimer || 0, 0.7); this.damageBoss(b, dmg, false); }
       }
       this.camera.shake = 7;
+    } else if (skillId === 'energy_strike') {
+      // ЭНЕРГЕТИЧЕСКИЙ УДАР: узкий импульс по прямой, пробивает навылет.
+      // Визуально — яркий луч и расходящееся кольцо в точке попадания.
+      const range = skDef.radius || 190;
+      const aim = p.facing;
+      const dmg = Math.round(baseDmg * skillMult);
+      this.slashes.push({ x: p.x, y: p.y, angle: aim, arc: 0.55, range, color: '#38bdf8', life: 0.2, maxLife: 0.2 });
+      this.shockwaves.push({ x: p.x, y: p.y, radius: 12, maxRadius: 52, color: '#38bdf8', friendly: true, damage: 0 });
+      this.spawnSpriteEffect('magic', p.x + Math.cos(aim) * 40, p.y - 6 + Math.sin(aim) * 40, 1.25, 18);
+      // Пробитие: задевает всех в узком коридоре, а не только первую цель
+      const hitBeam = (t) => {
+        const dx = t.x - p.x, dy = t.y - p.y;
+        const d = Math.hypot(dx, dy);
+        if (d > range + t.radius) return false;
+        const ang = Math.atan2(dy, dx);
+        let diff = Math.abs(ang - aim);
+        while (diff > Math.PI) diff = Math.abs(diff - Math.PI * 2);
+        return diff < 0.34 || d < 40;
+      };
+      for (let i = this.enemies.length - 1; i >= 0; i--) {
+        const e = this.enemies[i];
+        if (hitBeam(e)) { e.stunTimer = Math.max(e.stunTimer || 0, 0.45); this.damageEnemy(e, dmg, true, '#38bdf8'); }
+      }
+      for (const b of [...this.bossEntities]) if (hitBeam(b)) this.damageBoss(b, dmg, false);
+      this.sound.play('skill');
+      this.camera.shake = 4;
+    } else if (skillId === 'ground_slam') {
+      // УДАР ПО ПЛОЩАДИ: волны от героя, отбрасывание и оглушение
+      const r = skDef.radius || 205;
+      const dmg = Math.round(baseDmg * skillMult);
+      this.spawnSpriteEffect('explosion', p.x, p.y, 1.5, 15);
+      this.spawnDust(p.x, p.y, '#fb923c', 14);
+      for (let k = 0; k < 3; k++) {
+        this.shockwaves.push({
+          x: p.x, y: p.y, radius: 16 + k * 18, maxRadius: r - k * 22,
+          color: k % 2 ? '#fb923c' : '#fbbf24', friendly: true, damage: 0
+        });
+      }
+      this.slashes.push({ x: p.x, y: p.y, angle: 0, arc: Math.PI * 2, range: r * 0.8, color: '#fb923c', life: 0.26, maxLife: 0.26 });
+      for (let i = this.enemies.length - 1; i >= 0; i--) {
+        const e = this.enemies[i];
+        if (dist2(p.x, p.y, e.x, e.y) <= (r + e.radius) ** 2) {
+          const ka = Math.atan2(e.y - p.y, e.x - p.x);
+          e.vx = Math.cos(ka) * 340;
+          e.vy = Math.sin(ka) * 340;
+          e.stunTimer = Math.max(e.stunTimer || 0, 0.6);
+          this.damageEnemy(e, dmg, false, '#fb923c');
+        }
+      }
+      for (const b of [...this.bossEntities]) {
+        if (dist2(p.x, p.y, b.x, b.y) <= (r + b.radius) ** 2) { b.stunTimer = Math.max(b.stunTimer || 0, 0.5); this.damageBoss(b, dmg, false); }
+      }
+      this.sound.play('explosion');
+      this.camera.shake = 10;
+    } else if (skillId === 'time_warp') {
+      // ЗАМЕДЛЕНИЕ ВРЕМЕНИ: враги, снаряды и боссы вокруг двигаются вдвое
+      // медленнее, герой — с обычной скоростью. Визуально — искажение и синий
+      // купол вокруг героя; все существующие системы продолжают работать.
+      const dur = skDef.duration || 4.5;
+      p.timeSlowTimer = dur;
+      this.timeSlowFactor = 0.5;
+      this.spawnSpriteEffect('magic', p.x, p.y, 2.3, 14);
+      this.shockwaves.push({ x: p.x, y: p.y, radius: 20, maxRadius: skDef.radius || 260, color: '#a3e635', friendly: true, damage: 0 });
+      this.spawnDust(p.x, p.y, '#a3e635', 12);
+      this.pushToast('⏳ Время замедлилось!', '#a3e635');
+      this.camera.shake = 3;
     } else if (skillId === 'shadow_teleport') {
       // Теневой Телепорт: мгновенный рывок сквозь тьму по направлению взгляда
       const distTp = 250 + effLevel * 22;
@@ -2215,7 +2390,10 @@ export class GameEngine {
   }
 
   // ── ИИ 16 типов врагов: снайперы с лазером, гренадёры, невидимки, дроны, медики, мини-боссы ──
-  updateEnemies(dt) {
+  updateEnemies(rawDt) {
+    // Замедление времени (способность time_warp): враги живут в своём времени.
+    // Герой и его снаряды идут в обычном — это и есть суть эффекта.
+    const dt = rawDt * (this.enemyTimeScale || 1);
     const p = this.player;
     // Массив врагов может быть ПЕРЕСОЗДАН прямо во время обхода: failRescue()
     // делает this.enemies = filter(...) (эвакуация выжившего), а эффекты боя
@@ -2844,6 +3022,50 @@ export class GameEngine {
           summon('void_cultist', 2);
         }
         break;
+      case 'boss_warden_of_gates': // ХРАНИТЕЛЬ ВРАТ: каменные плиты, стены, стражи руин
+        // Каменные плиты встают перед героем и бьют с задержкой — уклонение работает
+        for (let k = 0; k < (b.phase >= 2 ? 4 : 3); k++) {
+          const ang = Math.atan2(ny, nx) + randRange(-0.9, 0.9);
+          const dist = 120 + k * 70;
+          this.spawnTelegraph(b.x + Math.cos(ang) * dist, b.y + Math.sin(ang) * dist, 70, 0.95, Math.round(b.damage * 0.9));
+        }
+        fan(b.phase >= 2 ? 7 : 5, 1.3, 330, 0.95, '#d6d3d1');
+        if (b.phase >= 2) {
+          b.shieldTimer = 2.2;
+          summon(b.phase >= 3 ? 'ancient_guard' : 'stone_golem', 2);
+        }
+        if (b.phase >= 3) {
+          this.shockwaves.push({ x: b.x, y: b.y, radius: 26, maxRadius: 300, color: '#a8a29e', friendly: false, damage: b.damage, hitPlayer: false });
+          this.camera.shake = Math.max(this.camera.shake, 10);
+        }
+        break;
+      case 'boss_canyon_devourer': // ПОЖИРАТЕЛЬ КАНЬОНА: рывки из-под земли, песчаные вихри, обвалы
+        b.dashActive = 0.5; b.dashVx = nx * 520; b.dashVy = ny * 520;
+        ring(b.phase >= 2 ? 14 : 10, 320, '#f59e0b');
+        if (b.phase >= 2) {
+          for (let k = 0; k < 3; k++) this.spawnTelegraph(p.x + randRange(-120, 120), p.y + randRange(-120, 120), 92, 0.8, Math.round(b.damage * 1.1));
+        }
+        if (b.phase >= 3) {
+          // Рывок второй раз подряд — «двойной удар из-под земли»
+          b.dashActive = 0.5; b.dashVx = nx * 600; b.dashVy = ny * 600;
+          p.slowTimer = Math.max(p.slowTimer || 0, 0.8);
+        }
+        break;
+      case 'boss_ash_sovereign': // ПЕПЕЛЬНЫЙ ГОСУДАРЬ: нова, дождь огня, огненный рывок
+        ring(b.phase >= 2 ? 18 : 14, 350, '#fb923c');
+        fan(b.phase >= 2 ? 7 : 5, 1.25, 430, 1.0, '#f97316');
+        if (b.phase >= 2) {
+          for (let k = 0; k < 3; k++) {
+            this.spawnTelegraph(p.x + randRange(-130, 130), p.y + randRange(-130, 130), 80, 1.0, Math.round(b.damage * 1.05));
+          }
+          summon('ash_imp', 2);
+        }
+        if (b.phase >= 3) {
+          b.dashActive = 0.42; b.dashVx = nx * 500; b.dashVy = ny * 500;
+          // Пепельный след: поджог земли вокруг героя
+          this.spawnTelegraph(p.x, p.y, 96, 0.75, Math.round(b.damage * 1.2));
+        }
+        break;
       case 'boss_catacomb_king': // КОРОЛЬ КАТАКОМБ: призыв скелетов, веера костей, удар гробниц
         summon(b.phase >= 2 ? 'tomb_knight' : 'crypt_skeleton', b.phase >= 3 ? 3 : 2);
         fan(b.phase >= 2 ? 7 : 5, 1.25, 390, 0.95, '#fda4af', 'bullet');
@@ -3033,6 +3255,16 @@ export class GameEngine {
 
   damagePlayer(rawDmg) {
     const p = this.player;
+    // ИДЕАЛЬНОЕ УКЛОНЕНИЕ: удар пришёл в окно неуязвимости рывка.
+    // Даём окно контратаки (следующий удар x2) и визуальный акцент.
+    if (!p.dead && p.invulnTimer > 0 && p.dashTimer > 0 && (p.counterWindow || 0) <= 0) {
+      p.counterWindow = 1.15;
+      p.perfectDodgeFlash = 0.5;
+      this.addFloatingText(p.x, p.y - 34, 'ИДЕАЛЬНОЕ УКЛОНЕНИЕ!', '#38bdf8', true);
+      this.spawnSpriteEffect('magic', p.x, p.y - 10, 1.05, 20);
+      this.sound.play('crit');
+      this.camera.shake = Math.max(this.camera.shake, 3);
+    }
     if (p.dead || p.invulnTimer > 0) return;
 
     // Если игрок в машине — часть урона гасит кузов
@@ -3182,9 +3414,11 @@ export class GameEngine {
   }
 
   // ── Снаряды, трофеи и эффекты ────────────────────────────────────────
-  updateProjectiles(dt) {
+  updateProjectiles(rawDt) {
     for (let i = this.projectiles.length - 1; i >= 0; i--) {
       const pr = this.projectiles[i];
+      // Вражеские снаряды тоже замедляются вместе с хозяевами
+      const dt = pr.fromPlayer ? rawDt : rawDt * (this.enemyTimeScale || 1);
       pr.life -= dt;
       if (pr.life <= 0) {
         if (pr.fromPlayer && pr.splashRadius > 0 && (pr.kind === 'grenade_shell' || pr.kind === 'rocket' || pr.kind === 'magic')) {
@@ -3509,6 +3743,157 @@ export class GameEngine {
     }
   }
 
+  // ── OPEN WORLD: исследование и достопримечательности ───────────────────
+  // Достопримечательности открываются при приближении и дают небольшой бонус:
+  // лагеря лечат, святилища дают опыт, руины и пещеры становятся точками боя.
+  updateExploration(dt = 0) {
+    const p = this.player;
+    const w = this.world;
+    if (!w.landmarks || !w.landmarks.length) return;
+    this._exploreTimer = (this._exploreTimer || 0) + dt;
+    // Проверяем не каждый кадр: список мест может быть большим
+    if (this._exploreTimer < 0.35) return;
+    this._exploreTimer = 0;
+    for (const lm of w.landmarks) {
+      if (lm.discovered) continue;
+      const dx = lm.x - p.x, dy = lm.y - p.y;
+      const r = (lm.radius || 90) + 60;
+      if (dx * dx + dy * dy > r * r) continue;
+      lm.discovered = true;
+      if (!this.discoveredLandmarks.includes(lm.id)) this.discoveredLandmarks.push(lm.id);
+      // Награда за первое открытие
+      let msg = `🧭 Открыто: ${lm.name}`;
+      if (lm.type === 'ruin') { this.gainXp(45); msg += ' (+45 опыта)'; }
+      else if (lm.type === 'hidden_cache') { msg = `💎 Найден ${lm.name}!`; if (lm.reward) { this.inventory.coins += lm.reward.coins || 0; this.gainXp(lm.reward.xp || 0); } }
+      else if (lm.type === 'landmark') this.gainXp(25);
+      else this.gainXp(15);
+      this.pushToast(msg, '#a78bfa');
+      this.sound.play('unlock');
+      this.spawnSpriteEffect('magic', lm.x, lm.y, 1.2, 12);
+      this.checkAchievements();
+    }
+    // Отдых у лагеря/святилища: лечит при стоянии рядом
+    for (const lm of w.landmarks) {
+      if (!lm.rest || !lm.discovered) continue;
+      const dx = lm.x - p.x, dy = lm.y - p.y;
+      if (dx * dx + dy * dy > 130 * 130) continue;
+      this._restTimer = (this._restTimer || 0) + 0.35;
+      if (this._restTimer < 1) break;
+      this._restTimer = 0;
+      if (p.hp < p.maxHp) {
+        p.hp = Math.min(p.maxHp, p.hp + p.maxHp * 0.06);
+        if (lm.bonus === 'xp') this.gainXp(4);
+      }
+      break;
+    }
+  }
+
+  // Поле/луг в точке мира (для травы, замедления и звуков) — O(1)
+  fieldAt(x, y) {
+    return this.world.fieldAt ? this.world.fieldAt(x, y) : null;
+  }
+
+  // ── OPEN WORLD: пещера — арена с волнами врагов и лутом в глубине ──────────
+  // Вход не телепортирует: игрок дерётся у порога, поэтому не ломаются
+  // коллизии, камера и сохранения (позиция остаётся обычной).
+  enterCave(cave) {
+    if (!cave || cave.cleared) return null;
+    cave.discovered = true;
+    if (!this.discoveredLandmarks.includes(cave.id)) this.discoveredLandmarks.push(cave.id);
+    if (cave.encounterStarted) {
+      const left = this.enemies.filter(e => e.caveId === cave.id).length;
+      this.pushToast(left ? `🕳️ В пещере ещё враги: ${left}` : '🕳️ Пещера зачищена — забери лут', '#a78bfa');
+      return null;
+    }
+    cave.encounterStarted = true;
+    cave.depthTimer = 0;
+    // Волны: 2 + уровень героя/6, но не больше 5
+    cave.wavesLeft = Math.min(5, 2 + Math.floor((this.player.level || 1) / 6));
+    cave.waveTimer = 0.6;
+    const pool = cave.enemies && cave.enemies.length ? cave.enemies : ['cave_troll'];
+    for (let i = 0; i < 2 + Math.floor((this.player.level || 1) / 5); i++) {
+      const ang = Math.random() * Math.PI * 2;
+      const r = 90 + Math.random() * 70;
+      const e = this.spawnEnemyAt(cave.x + Math.cos(ang) * r, cave.y + Math.sin(ang) * r,
+        pool[Math.floor(Math.random() * pool.length)], true);
+      if (e) { e.caveId = cave.id; e.aggroTarget = 'player'; }
+    }
+    this.sound.play('unlock');
+    this.pushToast(`🕳️ ${cave.name}: пещера проснулась! Волн осталось: ${cave.wavesLeft}`, '#a78bfa');
+    this.spawnSpriteEffect('magic', cave.x, cave.y, 1.4, 16);
+    return null;
+  }
+
+  // Руины: обыск даёт ресурсы, опыт и шанс на артефакт
+  searchRuin(lm) {
+    if (!lm || lm.searched) return null;
+    lm.searched = true;
+    lm.discovered = true;
+    if (!this.discoveredLandmarks.includes(lm.id)) this.discoveredLandmarks.push(lm.id);
+    const lvl = this.player.level || 1;
+    const coins = Math.round(40 + Math.random() * 60 + lvl * 8);
+    this.inventory.coins += coins;
+    this.gainXp(30 + lvl * 4);
+    this.inventory.resources.crystal = (this.inventory.resources.crystal || 0) + 1 + Math.floor(Math.random() * 3);
+    let msg = `🏛️ ${lm.name}: найдено ${coins} монет и кристаллы`;
+    if (Math.random() < 0.22) {
+      this.inventory.consumables.key = (this.inventory.consumables.key || 0) + 1;
+      msg += ' + Ключ-карта 🗝️';
+    }
+    this.sound.play('unlock');
+    this.spawnSpriteEffect('magic', lm.x, lm.y, 1.3, 14);
+    this.pushToast(msg, '#fbbf24');
+    return null;
+  }
+
+  // Волны в пещере: подкрепление, пока игрок рядом и волны не кончились
+  updateCaves(dt) {
+    for (const cave of this.world.caves || []) {
+      if (!cave.encounterStarted || cave.cleared) continue;
+      const near = dist2(this.player.x, this.player.y, cave.x, cave.y);
+      const alive = this.enemies.filter(e => e.caveId === cave.id).length;
+      if (alive === 0) {
+        if (cave.wavesLeft > 0 && near < 220 * 220) {
+          cave.waveTimer -= dt;
+          if (cave.waveTimer <= 0) {
+            cave.wavesLeft--;
+            cave.waveTimer = 4;
+            const pool = cave.enemies && cave.enemies.length ? cave.enemies : ['cave_troll'];
+            const count = 2 + Math.min(3, Math.floor((this.player.level || 1) / 7));
+            for (let i = 0; i < count; i++) {
+              const ang = Math.random() * Math.PI * 2;
+              const r = 80 + Math.random() * 60;
+              const e = this.spawnEnemyAt(cave.x + Math.cos(ang) * r, cave.y + Math.sin(ang) * r,
+                pool[Math.floor(Math.random() * pool.length)], true);
+              if (e) { e.caveId = cave.id; e.aggroTarget = 'player'; }
+            }
+            if (cave.wavesLeft > 0) this.pushToast(`🕳️ Новая волна! Осталось: ${cave.wavesLeft}`, '#f59e0b');
+          }
+        } else if (cave.wavesLeft === 0 && near < 220 * 220) {
+          cave.cleared = true;
+          const loot = cave.loot || {};
+          const coins = Math.round(loot.coins ? randRange(loot.coins[0], loot.coins[1]) : 100);
+          this.inventory.coins += coins;
+          this.gainXp(loot.xp || 90);
+          this.inventory.resources.crystal = (this.inventory.resources.crystal || 0) + 2;
+          this.pushToast(`🏆 Пещера «${cave.name}» зачищена! +${coins} монет, +${loot.xp || 90} опыта, кристаллы`, '#4ade80');
+          this.sound.play('levelup');
+        }
+      }
+    }
+  }
+
+  // Ближайшее открытое или ещё не найденное место — для компаса и карты
+  nearestLandmark(x = this.player.x, y = this.player.y, onlyUndiscovered = false) {
+    let best = null, bestD = Infinity;
+    for (const lm of this.world.landmarks || []) {
+      if (onlyUndiscovered && lm.discovered) continue;
+      const d = dist2(x, y, lm.x, lm.y);
+      if (d < bestD) { bestD = d; best = lm; }
+    }
+    return best ? { landmark: best, dist: Math.sqrt(bestD) } : null;
+  }
+
   getNearbyInteractable() {
     const p = this.player;
     if (p.vehicleId) {
@@ -3560,6 +3945,20 @@ export class GameEngine {
     if (this.contractNpc && this.contractNpc.active && this.activeContract?.type === 'free_captive') {
       if (dist2(p.x, p.y, this.contractNpc.x, this.contractNpc.y) < 92 * 92) {
         return { type: 'contract_captive', target: this.contractNpc, label: `🗝️ Освободить пленного (сначала зачисти охрану!)` };
+      }
+    }
+
+    // ── OPEN WORLD: пещеры и руины как реальные точки взаимодействия ──
+    for (const cave of this.world.caves || []) {
+      if (cave.cleared) continue;
+      if (dist2(p.x, p.y, cave.x, cave.y) < 92 * 92) {
+        return { type: 'cave_enter', target: cave, label: `🕳️ Войти в пещеру: ${cave.name}` };
+      }
+    }
+    for (const lm of this.world.landmarks || []) {
+      if (lm.type !== 'ruin' || lm.searched) continue;
+      if (dist2(p.x, p.y, lm.x, lm.y) < 96 * 96) {
+        return { type: 'ruin_search', target: lm, label: `🏛️ Обыскать руины: ${lm.name}` };
       }
     }
 
@@ -3698,6 +4097,14 @@ export class GameEngine {
         return inter;
       }
       return inter;
+    }
+
+    if (inter.type === 'cave_enter') {
+      return this.enterCave(inter.target);
+    }
+
+    if (inter.type === 'ruin_search') {
+      return this.searchRuin(inter.target);
     }
 
     if (inter.type === 'mod_cache') {

@@ -38,6 +38,10 @@ const LOOKS = {
 export function looksFor(enemy) {
   const id = (enemy.id || '').toLowerCase();
   if (enemy.isBoss) {
+    // OPEN WORLD: у новых огромных боссов свой облик, а не общий «босс-человек»
+    if (id.includes('warden_of_gates')) return { ...LOOKS.boss, ...LOOKS.construct, scale: 3.1 };
+    if (id.includes('canyon_devourer')) return { ...LOOKS.boss, ...LOOKS.beast, scale: 3.3 };
+    if (id.includes('ash_sovereign')) return { ...LOOKS.boss, ...LOOKS.elemental, scale: 3.2 };
     if (id.includes('frost') || id.includes('ice')) return { ...LOOKS.boss, ...LOOKS.frost, scale: 2.7 };
     if (id.includes('crystal')) return { ...LOOKS.boss, ...LOOKS.crystal, scale: 2.8 };
     if (id.includes('abyss') || id.includes('void') || id.includes('warlock') || id.includes('necromancer')) return { ...LOOKS.boss, ...LOOKS.abyss, scale: 2.7 };
@@ -133,7 +137,13 @@ export class Creature3D {
 
   _classifyKind(def) {
     const id = (def.id || '').toLowerCase();
-    if (this.isBoss) return /golem|robot|construct/.test(id) ? 'colossus' : 'boss_humanoid';
+    if (this.isBoss) {
+      // Уникальные силуэты новых боссов: колосс из камня, зверь каньона, элементаль пепла
+      if (/warden_of_gates/.test(id)) return 'colossus';
+      if (/canyon_devourer/.test(id)) return 'quadruped';
+      if (/ash_sovereign/.test(id)) return 'elemental';
+      return /golem|robot|construct/.test(id) ? 'colossus' : 'boss_humanoid';
+    }
     if (/drone/.test(id)) return 'drone';
     if (/wraith|ghost|soul|spirit/.test(id)) return 'wraith';
     if (/wolf|hound/.test(id)) return 'quadruped';

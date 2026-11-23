@@ -71,12 +71,21 @@ test('1. Все прозрачные пиксель-арт PNG и спрайт-�
   assert.ok(totalFiles.length >= 100, `Всего спрайтов должно быть 100+, найдено ${totalFiles.length}`);
 });
 
-test('2. Мир: 4 биома, 9 зданий, 6 транспортов, 8 NPC базы, 15 боссов, 13 спасений, 3 спецконтейнера', () => {
+test('2. Мир: биомы, здания, транспорт, NPC базы, боссы, спасения, спецконтейнеры', () => {
   const eng = new GameEngine(noopSound);
-  assert.equal(Object.keys(BIOMES).length, 9, 'Биомы: 4 базовых + 5 процедурных (равнины, болото, снег, берег, море)');
+  // OPEN WORLD: к 9 прежним биомам добавлены территории исследования
+  assert.equal(Object.keys(BIOMES).length, 13, 'Биомы: 9 базовых + густая чаща, пепельные пустоши, руины, каньон');
+  assert.ok(BIOMES.deep_forest && BIOMES.ruins && BIOMES.canyon && BIOMES.ashland, 'Новые биомы описаны в данных');
   assert.equal(NPCS.length, 8);
-  assert.equal(eng.bossEntities.length, 23);
-  assert.equal(Object.keys(BOSSES).length, 23);
+  // OPEN WORLD: 23 прежних босса + 3 новых огромных босса новых территорий
+  assert.equal(Object.keys(BOSSES).length, 26, 'Боссы: 23 прежних + 3 новых');
+  assert.equal(eng.bossEntities.length, 26);
+  for (const id of ['boss_warden_of_gates', 'boss_canyon_devourer', 'boss_ash_sovereign']) {
+    const b = BOSSES[id];
+    assert.ok(b, `Новый босс ${id} описан в данных`);
+    assert.ok(Array.isArray(b.phases) && b.phases.length >= 3, `У босса ${id} три фазы боя`);
+    assert.ok(b.phases.every(ph => ph.title && ph.notes), `Фазы ${id} описаны`);
+  }
   assert.equal(eng.rescueSites.length, 13);
   assert.equal(RESCUE_MISSIONS.length, 13);
   assert.equal(eng.world.modCaches.length, 3);
@@ -86,18 +95,19 @@ test('2. Мир: 4 биома, 9 зданий, 6 транспортов, 8 NPC �
     assert.ok(bldKinds.has(k), `Здание типа ${k} должно быть размещено в мире`);
   }
   const vehKinds = new Set(eng.world.vehicles.map(v => v.kind));
-  for (const k of ['sportscar', 'muscle', 'sedan', 'suv', 'miljeep', 'pickup', 'bike', 'truck', 'apc']) {
+  // OPEN WORLD: добавлены квадроцикл, багги и катер для дальних вылазок
+  for (const k of ['sportscar', 'muscle', 'sedan', 'suv', 'miljeep', 'pickup', 'bike', 'truck', 'apc', 'quad', 'buggy', 'speedboat']) {
     assert.ok(vehKinds.has(k), `Транспорт типа ${k} должен быть размещён в мире`);
     assert.ok(VEHICLE_KINDS[k], `Класс техники ${k} должен иметь спецификацию`);
   }
   // У каждого босса уникальный спрайт, арена и награда-оружие
   const bossSprites = new Set(Object.values(BOSSES).map(b => b.sprite));
-  assert.equal(bossSprites.size, 23);
+  assert.equal(bossSprites.size, 26, 'У каждого босса свой спрайт');
   for (const b of Object.values(BOSSES)) assert.ok(WEAPONS[b.rewardWeapon], `Награда босса ${b.id}`);
 });
 
 test('3. Герой: 4 направления, бег, прыжок + все 30 оружий стреляют, магазины и перезарядка работают', () => {
-  assert.equal(Object.keys(WEAPONS).length, 31);
+  assert.equal(Object.keys(WEAPONS).length, 34, 'Оружие: 31 + 3 награды новых боссов');
   assert.equal(Object.keys(ITEMS).length, 8);
   assert.equal(Object.keys(ENEMIES).length, 48);
 
@@ -783,10 +793,10 @@ test('20. GLOBAL MAP: процедурная карта, 6+ биомов, рек
   }
 });
 
-test('21. TRANSPORT: 9 классов техники, езда, повороты, вода и таран', () => {
+test('21. TRANSPORT: 12 классов техники, езда, повороты, вода и таран', () => {
   const eng = new GameEngine(noopSound);
   const kinds = new Set(eng.world.vehicles.map(v => v.kind));
-  assert.equal(kinds.size, 9, `Должно быть 9 классов техники, найдено ${kinds.size}: ${[...kinds].join(',')}`);
+  assert.equal(kinds.size, 12, `Должно быть 12 классов техники, найдено ${kinds.size}: ${[...kinds].join(',')}`);
   for (const k of ['sportscar', 'suv', 'miljeep', 'truck', 'bike', 'apc']) {
     assert.ok(kinds.has(k), `Отсутствует требуемый транспорт: ${k}`);
   }
@@ -987,6 +997,106 @@ test('27. 3D-ГРАФИКА: 4 уровня качества, тени, пого
   }
   const terrain = fs.readFileSync(path.join(rootDir, 'www/js3d/world/terrain.js'), 'utf8');
   assert.ok(terrain.includes('lod'), 'Ландшафт должен использовать LOD');
+});
+
+test('28. OPEN WORLD: исследование — руины, пещеры, поля и достопримечательности на карте', () => {
+  const eng = new GameEngine(noopSound);
+  const w = eng.world;
+  assert.ok(w.landmarks.length >= 15, `Достопримечательностей должно быть 15+, найдено ${w.landmarks.length}`);
+  assert.ok(w.landmarks.some(l => l.type === 'ruin'), 'На карте есть древние руины');
+  assert.ok(w.landmarks.some(l => l.type === 'landmark'), 'На карте есть уникальные достопримечательности');
+  assert.ok(w.landmarks.some(l => l.type === 'hidden_cache'), 'На карте есть скрытые тайники');
+  assert.ok(w.caves.length >= 5, `Пещер должно быть 5+, найдено ${w.caves.length}`);
+  assert.ok(w.fields.length >= 5, `Огромных полей должно быть 5+, найдено ${w.fields.length}`);
+
+  // Открытие места при приближении + запись в сохранение
+  const ruin = w.landmarks.find(l => l.type === 'ruin');
+  eng.player.x = ruin.x; eng.player.y = ruin.y;
+  for (let i = 0; i < 40; i++) eng.update(1 / 60, {});
+  assert.ok(ruin.discovered, 'Руины открываются при приближении');
+  assert.ok(eng.discoveredLandmarks.includes(ruin.id), 'Открытие запоминается в списке героя');
+
+  // Обыск руин даёт награду ровно один раз
+  const coinsBefore = eng.inventory.coins;
+  const inter = eng.getNearbyInteractable();
+  assert.equal(inter?.type, 'ruin_search', 'У руин есть действие «Обыскать»');
+  eng.interact();
+  assert.ok(eng.inventory.coins > coinsBefore, 'Обыск руин даёт монеты');
+  assert.ok(ruin.searched, 'Руины помечены как обысканные');
+  assert.equal(eng.interact(), null, 'Повторный обыск недоступен');
+
+  // Пещера: вход запускает бой, зачистка даёт лут и сохраняется
+  const cave = w.caves[0];
+  eng.player.x = cave.x; eng.player.y = cave.y;
+  for (let i = 0; i < 10; i++) eng.update(1 / 60, {});
+  assert.equal(eng.getNearbyInteractable()?.type, 'cave_enter', 'У пещеры есть действие «Войти»');
+  eng.interact();
+  assert.ok(cave.encounterStarted, 'Вход в пещеру запускает бой');
+  assert.ok(eng.enemies.filter(e => e.caveId === cave.id).length > 0, 'В пещере появляются враги');
+  cave.cleared = true;
+  eng.saveGame(true);
+  const eng2 = new GameEngine(noopSound);
+  eng2.loadGame();
+  assert.ok(eng2.world.caves[0].cleared, 'Зачищенная пещера остаётся зачищенной после загрузки');
+  assert.ok(eng2.world.landmarks.find(l => l.id === ruin.id).searched, 'Обысканные руины помнятся после загрузки');
+  assert.ok(eng2.discoveredLandmarks.includes(ruin.id), 'Открытые места восстанавливаются из сохранения');
+});
+
+test('29. OPEN WORLD: 3 новых огромных босса — уникальные модели, награды и три фазы', () => {
+  const eng = new GameEngine(noopSound);
+  const ids = ['boss_warden_of_gates', 'boss_canyon_devourer', 'boss_ash_sovereign'];
+  for (const id of ids) {
+    const def = BOSSES[id];
+    assert.ok(def, `Босс ${id} описан в данных`);
+    const b = eng.bossEntities.find(x => x.bossId === id);
+    assert.ok(b, `Босс ${id} присутствует на карте`);
+    assert.ok(def.hp >= 7000, `Босс ${id} должен быть огромным по HP`);
+    assert.ok(def.arenaRadius >= 350, `Арена ${id} должна быть большой`);
+    assert.equal(def.phases.length, 3, `У босса ${id} три фазы`);
+    assert.ok(WEAPONS[def.rewardWeapon], `Награда-оружие ${id} существует`);
+    assert.ok(ARMORS[def.rewardArmor], `Награда-броня ${id} существует`);
+  }
+  // Спрайты новых боссов уникальны
+  const sprites = Object.values(BOSSES).map(b => b.sprite);
+  assert.equal(new Set(sprites).size, sprites.length, 'У каждого босса уникальный спрайт');
+
+  // Фазы реально переключаются при уроне
+  const b = eng.bossEntities.find(x => x.bossId === 'boss_ash_sovereign');
+  eng.player.x = b.x + 100; eng.player.y = b.y;
+  const seen = new Set();
+  for (let step = 0; step < 80 && b.hp > 0; step++) {
+    eng.player.hp = eng.player.maxHp; eng.player.dead = false;
+    eng.damageBoss(b, Math.round(b.maxHp * 0.02));
+    seen.add(b.phase);
+    for (let i = 0; i < 20; i++) { eng.player.hp = eng.player.maxHp; eng.update(1 / 60, {}); }
+  }
+  assert.deepEqual([...seen].sort(), [1, 2, 3], 'Босс проходит все три фазы боя');
+});
+
+test('30. OPEN WORLD: 12 классов техники, включая катер, который держится на воде', () => {
+  const eng = new GameEngine(noopSound);
+  const kinds = new Set(eng.world.vehicles.map(v => v.kind));
+  for (const k of ['quad', 'buggy', 'speedboat']) {
+    assert.ok(kinds.has(k), `Транспорт «${k}» должен быть размещён в мире`);
+    assert.ok(VEHICLE_KINDS[k], `Класс «${k}» должен иметь спецификацию`);
+  }
+  // Катер стоит на глубокой воде и не глохнет там
+  const boat = eng.world.vehicles.find(v => v.kind === 'speedboat');
+  const cell = eng.world.map.cellAt(boat.x, boat.y);
+  assert.ok(cell.water === 2, 'Катер должен стоять на глубокой воде');
+  eng.player.x = boat.x; eng.player.y = boat.y;
+  eng.interact();
+  assert.equal(eng.player.vehicleId, boat.id, 'В катер можно сесть');
+  for (let i = 0; i < 10; i++) eng.update(1 / 60, { moveX: 1, moveY: 0 });
+  assert.ok(!boat.stalled, 'Катер не глохнет на глубокой воде');
+  assert.ok(boat.onWater, 'Катер определяется как находящийся на воде');
+  // Обычная машина на глубокой воде по-прежнему глохнет
+  const car = eng.world.vehicles.find(v => v.kind === 'sedan');
+  eng.player.vehicleId = null;
+  car.x = boat.x; car.y = boat.y; car.stalled = false;
+  eng.player.x = car.x; eng.player.y = car.y; eng.player.vehicleId = car.id;
+  eng.update(1 / 60, {});
+  assert.ok(car.stalled, 'Обычный транспорт глохнет на глубокой воде');
 });
 
 console.log(`\nИТОГ: ${passed}/${TOTAL} комплексных проверок VEXMORA 3D успешно пройдено!`);

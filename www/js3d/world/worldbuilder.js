@@ -6,6 +6,7 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { createMaterial, colorMaterial, emissiveMaterial } from '../core/materials.js';
 import { Structures, Vehicles3D } from './models.js';
+import { buildLandmarkModel, buildFieldGrass } from './landmarks.js';
 import { WORLD_SCALE } from '../core/sky.js';
 
 const TAU = Math.PI * 2;
@@ -51,6 +52,8 @@ export class WorldBuilder {
     this._prepareData();
     this._buildInstancedFoliage();
     this._buildStructures();
+    this._buildLandmarks();
+    this._buildFields();
     this._buildCampfires();
     this._buildVehicles();
     this._buildChests();
@@ -61,7 +64,7 @@ export class WorldBuilder {
     const cellSize = this.cellSize;
     const add = (obj, kind) => {
       const key = `${Math.floor(obj.x / cellSize)},${Math.floor(obj.y / cellSize)}`;
-      if (!this.cells.has(key)) this.cells.set(key, { props: [], nodes: [], buildings: [], chests: [], campfires: [] });
+      if (!this.cells.has(key)) this.cells.set(key, { props: [], nodes: [], buildings: [], chests: [], campfires: [], landmarks: [], fields: [] });
       this.cells.get(key)[kind].push(obj);
     };
     this.world.props.forEach(p => add(p, 'props'));
@@ -83,7 +86,9 @@ export class WorldBuilder {
         const cell = this.cells.get(`${cx + dx},${cy + dy}`);
         if (!cell) continue;
         for (const k of Object.keys(out)) {
-          for (const o of cell[k]) {
+          const list = cell[k];
+          if (!list) continue;
+          for (const o of list) {
             if (Math.abs(o.x - x) <= radius && Math.abs(o.y - y) <= radius) out[k].push(o);
           }
         }
@@ -469,6 +474,131 @@ export class WorldBuilder {
   }
 
   // ── Костры и лагеря ─────────────────────────────────────────────────────
+  // ── OPEN WORLD: руины, достопримечательности, пещеры ───────────────────
+  // Модели строятся только для мест в радиусе загрузки и с собственным LOD:
+  // при движении далёкие достопримечательности не создаются вовсе, поэтому
+  // расширение мира не увеличивает число draw call на кадр.
+  _buildLandmarks() {
+    const w = this.world;
+    this.landmarkGroup = new THREE.Group();
+    this.landmarkGroup.name = 'landmarks';
+    this.group.add(this.landmarkGroup);
+    this.landmarkMeshes = new Map();     // id -> { model, x, z, radius }
+    const list = [...(w.landmarks || []), ...(w.caves || [])];
+    for (const lm of list) {
+      const x = lm.x * WORLD_SCALE, z = lm.y * WORLD_SCALE;
+      this.landmarkMeshes.set(lm.id, {
+        data: lm, x, z,
+        radius: (lm.radius || 90) * WORLD_SCALE,
+        model: null,
+        built: false
+      });
+      // Индексируем в ячейки — чтобы при движении не перебирать весь мир
+      const key = `${Math.floor(lm.x / this.cellSize)},${Math.floor(lm.y / this.cellSize)}`;
+      if (!this.cells.has(key)) this.cells.set(key, { props: [], nodes: [], buildings: [], chests: [], campfires: [], landmarks: [], fields: [] });
+      const cell = this.cells.get(key);
+      if (!cell.landmarks) cell.landmarks = [];
+      cell.landmarks.push(lm);
+    }
+    this.maxLandmarkModels = this.quality === 'low' ? 6 : this.quality === 'medium' ? 10 : 16;
+    this._landmarkCursor = 0;
+  }
+
+  _buildFields() {
+    const w = this.world;
+    this.fieldGroup = new THREE.Group();
+    this.fieldGroup.name = 'fields';
+    this.group.add(this.fieldGroup);
+    this.fieldGrass = new Map();
+    // Трава строится лениво: при первом приближении к полю (см. _syncFields)
+    for (const f of (w.fields || [])) this.fieldGrass.set(f.id, { data: f, mesh: null });
+    this._fieldCheckTimer = 0;
+  }
+
+  // Ленивое создание моделей достопримечательностей рядом с игроком
+  _syncLandmarks(playerPos) {
+    if (!this.landmarkMeshes || !this.landmarkMeshes.size) return;
+    const px = playerPos.x, pz = playerPos.z;
+    const MAXD = this.quality === 'low' ? 62 : this.quality === 'medium' ? 78 : 92;
+    const MAXD2 = MAXD * MAXD;
+    let active = 0;
+    for (const item of this.landmarkMeshes.values()) {
+      const dx = item.x - px, dz = item.z - pz;
+      const d2 = dx * dx + dz * dz;
+      if (d2 > MAXD2) {
+        if (item.model && d2 > (MAXD + 12) * (MAXD + 12)) {
+          // Выгружаем: вне зоны видимости модель не нужна
+          this.landmarkGroup.remove(item.model);
+          this._disposeDeep(item.model);
+          item.model = null;
+          item.built = false;
+        }
+        continue;
+      }
+      if (active >= this.maxLandmarkModels && !item.model) continue;
+      if (!item.model) {
+        const data = item.data.type === 'cave_ref' ? item.data : item.data;
+        const model = buildLandmarkModel({ ...data, kind: data.kind || (item.data.type === 'hidden_cache' ? 'cache' : 'ruin') });
+        if (item.data.name && item.data.type === 'ruin') {
+          // Руины подписываем: игрок должен видеть, что это точка интереса
+          const label = this._makeLabelSprite(item.data.name.slice(0, 22), 0x1b2430);
+          label.position.set(item.x, this.terrain.heightAt3D(item.x, item.z) + 5.2, item.z);
+          label.scale.multiplyScalar(0.9);
+          model.add(label);
+        }
+        model.position.set(item.x, this.terrain.heightAt3D(item.x, item.z), item.z);
+        model.rotation.y = item.data.angle || 0;
+        this.landmarkGroup.add(model);
+        item.model = model;
+        item.built = true;
+      } else {
+        // Анимация огней и порталов — только у ближних объектов
+        const ud = item.model.userData;
+        if (ud.flames) {
+          const t = (this._landmarkTime || 0) * 6;
+          ud.flames.forEach((f, i) => {
+            const k = 0.85 + Math.sin(t + i * 1.7) * 0.2;
+            f.scale.set(k, 0.9 + Math.sin(t * 1.3 + i) * 0.3, k);
+          });
+        }
+      }
+      active++;
+    }
+    this._landmarkTime = (this._landmarkTime || 0) + 0.016;
+  }
+
+  // Трава поля включается при входе и выключается при уходе
+  _syncFields(playerPos) {
+    if (!this.fieldGrass || !this.fieldGrass.size) return;
+    const px = playerPos.x, pz = playerPos.z;
+    for (const item of this.fieldGrass.values()) {
+      const f = item.data;
+      const dx = f.x * WORLD_SCALE - px, dz = f.y * WORLD_SCALE - pz;
+      const r = f.radius * WORLD_SCALE + 30;
+      const inside = dx * dx + dz * dz < r * r;
+      if (inside && !item.mesh) {
+        const mesh = buildFieldGrass(f, this.terrain, this.quality);
+        this.fieldGroup.add(mesh);
+        item.mesh = mesh;
+      } else if (!inside && item.mesh) {
+        this.fieldGroup.remove(item.mesh);
+        item.mesh.geometry?.dispose?.();
+        item.mesh.material?.dispose?.();
+        item.mesh = null;
+      }
+    }
+  }
+
+  _disposeDeep(obj) {
+    obj.traverse?.((o) => {
+      if (o.isMesh) {
+        o.geometry?.dispose?.();
+        if (Array.isArray(o.material)) o.material.forEach(m => m.dispose?.());
+        else o.material?.dispose?.();
+      }
+    });
+  }
+
   _buildCampfires() {
     const fires = this.campfires || [];
     for (const c of fires) {
@@ -500,9 +630,18 @@ export class WorldBuilder {
       const kind = veh.kind || 'car';
       let model;
       if (kind === 'bike' || kind === 'motorcycle') model = Vehicles3D.bike();
+      else if (kind === 'quad') model = Vehicles3D.quad();
+      else if (kind === 'buggy') model = Vehicles3D.buggy();
+      else if (kind === 'speedboat') model = Vehicles3D.speedboat();
+      else if (kind === 'boat') model = Vehicles3D.speedboat();
       else model = Vehicles3D.car(kind, {});
       const pos = { x: veh.x * WORLD_SCALE, z: veh.y * WORLD_SCALE };
-      const y = this.terrain.heightAt3D(pos.x, pos.z);
+      let y = this.terrain.heightAt3D(pos.x, pos.z);
+      // Катер держится на поверхности воды (плоскость воды в TerrainManager на y=0.05),
+      // а не на дне водоёма — иначе модель уходит под воду.
+      if (veh.kind === 'speedboat' || veh.kind === 'boat') {
+        y = Math.max(y, 0.06);
+      }
       model.position.set(pos.x, y + 0.1, pos.z);
       model.rotation.y = veh.angle || 0;
       model.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
@@ -605,6 +744,14 @@ export class WorldBuilder {
 
     // Ближайшие источники света (раз в кадр — дёшево: только сравнение координат)
     this._updateLights(lightFactor, playerPos);
+
+    // OPEN WORLD: достопримечательности и трава полей — по дистанции
+    this._syncLandmarks(playerPos);
+    this._fieldCheckTimer += dt;
+    if (this._fieldCheckTimer > 0.25) {
+      this._fieldCheckTimer = 0;
+      this._syncFields(playerPos);
+    }
 
     // Костры: мерцание + искры
     for (const d of this.dynamicProps) {

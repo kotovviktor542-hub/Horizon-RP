@@ -6,6 +6,7 @@ import * as THREE from 'three';
 import { WORLD_SCALE, CHUNK_SIZE } from '../core/sky.js';
 import { Hero3D } from '../actors/hero.js';
 import { Creature3D } from '../actors/creatures.js';
+import { Animal3D, Traveler3D } from '../actors/animals.js';
 import { WEAPONS, ENEMIES, BOSSES } from '../../js/data.js';
 import { colorMaterial, emissiveMaterial } from '../core/materials.js';
 
@@ -34,6 +35,11 @@ export class World3D {
     this.heroRootY = 0;
 
     this.creatures = new Map();       // entity -> Creature3D
+    // OPEN WORLD: отдельные карты мешей для животных и нейтральных путников.
+    // Они не участвуют в бою, поэтому не должны попадать в creatures.
+    this.animals3d = new Map();       // animal -> Animal3D
+    this.travelers3d = new Map();     // traveler -> Traveler3D
+    this._animalShadowDist = 42;
     this.projectileMeshes = new Map();
     this.dropMeshes = new Map();
     this.pickupGroup = new THREE.Group();
@@ -178,6 +184,10 @@ export class World3D {
 
     // ── Враги ──
     this._syncEnemies(dt);
+
+    // ── Животные и путники (живой мир) ──
+    this._syncAnimals(dt);
+    this._syncTravelers(dt);
 
     // ── Боссы ──
     this._syncBosses(dt);
@@ -367,6 +377,73 @@ export class World3D {
           if (l) { c.root.remove(l); this.bossLights.delete(boss); }
         }
       }
+    }
+  }
+
+  // ── ЖИВОЙ МИР: животные ────────────────────────────────────────────────
+  _syncAnimals(dt) {
+    const e = this.engine;
+    const list = e.animals || [];
+    const seen = new Set();
+    const hp3 = to3(e.player.x, e.player.y);
+    for (const a of list) {
+      seen.add(a);
+      const pos = to3(a.x, a.y);
+      const gy = this.terrain.heightAt3D(pos.x, pos.z);
+      const dist2ToHero = (pos.x - hp3.x) ** 2 + (pos.z - hp3.z) ** 2;
+      // Дальние животные не рисуются вовсе — держим кадр лёгким.
+      // 80 м: модель зверя ~0.9 м, на большем расстоянии её не различить.
+      if (dist2ToHero > 80 * 80) {
+        const old = this.animals3d.get(a);
+        if (old) { old.dispose(); this.animals3d.delete(a); }
+        continue;
+      }
+      let mesh = this.animals3d.get(a);
+      if (!mesh) {
+        mesh = new Animal3D(this.scene, a);
+        mesh.root.position.set(pos.x, gy, pos.z);
+        this.animals3d.set(a, mesh);
+      }
+      const speed3d = Math.hypot(a.vx || 0, a.vy || 0) * WORLD_SCALE;
+      mesh.update(dt, {
+        position: { x: pos.x, y: gy, z: pos.z },
+        facing: Math.PI / 2 - (a.facing || 0),
+        speed: speed3d,
+        state: a.state,
+        airborne: false
+      });
+
+      if (a.hitFlash > 0) mesh.hitFlash = a.hitFlash;
+    }
+    // Убираем меши животных, которых больше нет
+    for (const [a, mesh] of this.animals3d) {
+      if (!seen.has(a) || a.dead) { mesh.dispose(); this.animals3d.delete(a); }
+    }
+  }
+
+  // ── ЖИВОЙ МИР: нейтральные путники ────────────────────────────────────
+  _syncTravelers(dt) {
+    const e = this.engine;
+    const list = e.travelers || [];
+    const seen = new Set();
+    for (const t of list) {
+      seen.add(t);
+      const pos = to3(t.x, t.y);
+      const gy = this.terrain.heightAt3D(pos.x, pos.z);
+      let mesh = this.travelers3d.get(t);
+      if (!mesh) {
+        mesh = new Traveler3D(this.scene, t);
+        mesh.root.position.set(pos.x, gy, pos.z);
+        this.travelers3d.set(t, mesh);
+      }
+      mesh.update(dt, {
+        position: { x: pos.x, y: gy, z: pos.z },
+        facing: Math.PI / 2 - (t.facing || 0),
+        speed: Math.hypot(t.vx || 0, t.vy || 0) * WORLD_SCALE
+      });
+    }
+    for (const [t, mesh] of this.travelers3d) {
+      if (!seen.has(t)) { mesh.dispose(); this.travelers3d.delete(t); }
     }
   }
 
@@ -584,6 +661,10 @@ export class World3D {
     this.hero.dispose();
     for (const [, c] of this.creatures) c.dispose();
     this.creatures.clear();
+    for (const [, a] of (this.animals3d || new Map())) a.dispose();
+    (this.animals3d || new Map()).clear();
+    for (const [, t] of (this.travelers3d || new Map())) t.dispose();
+    (this.travelers3d || new Map()).clear();
     for (const [, c] of (this.bossCreatures || new Map())) c.dispose();
     (this.bossCreatures || new Map()).clear();
     for (const [, m] of this.projectileMeshes) this.scene.remove(m);

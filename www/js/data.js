@@ -18,12 +18,15 @@ export const UPDATE_ANNOUNCEMENT = {
   ]
 };
 
+// OPEN WORLD: мир расширен с 6400×6400 до 8000×8000 world-единиц (+56% площади).
+// Центр (убежище VEXMORA) остаётся на прежнем месте — вся расстановка контента
+// привязана к центру через WORLD_CONTENT_SCALE, поэтому ничего не «уезжает».
 export const WORLD_CONFIG = {
-  width: 6400,
-  height: 6400,
+  width: 8000,
+  height: 8000,
   tileSize: 32,
-  spawnX: 3160,
-  spawnY: 3240
+  spawnX: 3960,
+  spawnY: 4040
 };
 
 export const RARITIES = {
@@ -35,6 +38,27 @@ export const RARITIES = {
 };
 
 export const BIOMES = {
+  // ── OPEN WORLD: новые территории (генерируются процедурной картой) ────
+  deep_forest: {
+    id: 'deep_forest', name: 'Густая Чаща', subtitle: 'Уровень 4–9 · Вековые деревья, волки и тролли',
+    tile: 'grass', groundBase: '#24401f', groundAlt: '#1d3419', accent: '#4f8a3a',
+    enemies: ['wolf_mutant', 'cave_troll', 'monster', 'infected_runner', 'bandit']
+  },
+  ashland: {
+    id: 'ashland', name: 'Пепельные Пустоши', subtitle: 'Уровень 7–12 · Выжженная земля и пепельные твари',
+    tile: 'ash', groundBase: '#5a4a44', groundAlt: '#4a3c37', accent: '#fb923c',
+    enemies: ['ash_imp', 'skeleton_warrior', 'stealth_hunter', 'bandit_gunner']
+  },
+  ruins: {
+    id: 'ruins', name: 'Древние Руины', subtitle: 'Уровень 6–11 · Колонны, алтари и стражи глубин',
+    tile: 'ruins', groundBase: '#6d675e', groundAlt: '#574f45', accent: '#fbbf24',
+    enemies: ['skeleton_warrior', 'dark_archer', 'stone_golem', 'bone_hound']
+  },
+  canyon: {
+    id: 'canyon', name: 'Красный Каньон', subtitle: 'Уровень 5–10 · Обрывы, ветер и каменные големы',
+    tile: 'rock', groundBase: '#8a5a40', groundAlt: '#744a34', accent: '#f59e0b',
+    enemies: ['stone_golem', 'goblin_shaman', 'cave_troll', 'sniper_guard']
+  },
   forest: {
     id: 'forest',
     name: 'Зелёный Рубеж и Убежище',
@@ -216,6 +240,76 @@ export const CAMPFIRES = [
 ];
 
 // Специалисты Главной Базы (Убежища VEXMORA)
+// ── OPEN WORLD: ЖИВОТНЫЕ ──────────────────────────────────────────────────
+// Мирная живность и хищники. Это НЕ survival-ресурс: животные оживляют мир,
+// на них можно охотиться, но голода и обязанности добывать еду в игре нет.
+// behavior: graze (пасётся), herd (стадо), predator (хищник), skittish (пугливый)
+export const ANIMALS = {
+  deer: {
+    id: 'deer', name: 'Благородный олень', sprite: 'deer', behavior: 'graze', herd: true,
+    hp: 46, speed: 78, fleeSpeed: 210, radius: 12, xp: 6,
+    biomes: ['forest', 'deep_forest', 'plains'],
+    loot: { food: 1 }, tint: 0xa0703a, build: 'deer'
+  },
+  boar: {
+    id: 'boar', name: 'Дикий кабан', sprite: 'boar', behavior: 'graze', herd: true,
+    hp: 74, speed: 66, fleeSpeed: 150, radius: 13, xp: 8,
+    biomes: ['forest', 'deep_forest', 'swamp'],
+    loot: { food: 2 }, tint: 0x6b4a34, build: 'boar'
+  },
+  rabbit: {
+    id: 'rabbit', name: 'Полевой кролик', sprite: 'rabbit', behavior: 'skittish', herd: false,
+    hp: 16, speed: 92, fleeSpeed: 260, radius: 7, xp: 3,
+    biomes: ['plains', 'forest', 'coast'],
+    loot: { food: 1 }, tint: 0xc8b89a, build: 'small'
+  },
+  goat: {
+    id: 'goat', name: 'Горный козёл', sprite: 'goat', behavior: 'graze', herd: true,
+    hp: 56, speed: 70, fleeSpeed: 170, radius: 12, xp: 7,
+    biomes: ['mountains', 'canyon', 'snow'],
+    loot: { food: 1 }, tint: 0xb8b0a0, build: 'goat'
+  },
+  wolf: {
+    id: 'wolf', name: 'Серый волк', sprite: 'wolf', behavior: 'predator', herd: true,
+    hp: 88, speed: 132, fleeSpeed: 190, radius: 12, xp: 14,
+    biomes: ['forest', 'deep_forest', 'snow', 'mountains'],
+    loot: { food: 1, scrap: 1 }, tint: 0x8a8f98, build: 'wolf'
+  },
+  bear: {
+    id: 'bear', name: 'Бурый медведь', sprite: 'bear', behavior: 'predator', herd: false,
+    hp: 168, speed: 108, fleeSpeed: 150, radius: 16, xp: 34,
+    biomes: ['forest', 'deep_forest', 'mountains'],
+    loot: { food: 3 }, tint: 0x5a4030, build: 'bear'
+  },
+  fox: {
+    id: 'fox', name: 'Рыжая лиса', sprite: 'fox', behavior: 'skittish', herd: false,
+    hp: 34, speed: 96, fleeSpeed: 220, radius: 9, xp: 5,
+    biomes: ['plains', 'forest', 'ruins', 'desert'],
+    loot: { food: 1 }, tint: 0xc86a32, build: 'wolf'
+  },
+  desert_lizard: {
+    id: 'desert_lizard', name: 'Пустынная ящерица', sprite: 'lizard', behavior: 'skittish', herd: false,
+    hp: 40, speed: 88, fleeSpeed: 190, radius: 10, xp: 6,
+    biomes: ['desert', 'ashland', 'canyon'],
+    loot: { food: 1 }, tint: 0xa89050, build: 'small'
+  },
+  crow: {
+    id: 'crow', name: 'Чёрный ворон', sprite: 'crow', behavior: 'skittish', herd: true,
+    hp: 14, speed: 110, fleeSpeed: 240, radius: 7, xp: 2,
+    biomes: ['plains', 'city', 'ruins', 'swamp', 'coast'],
+    loot: null, tint: 0x24242c, build: 'bird'
+  }
+};
+
+// ── OPEN WORLD: НЕЙТРАЛЬНЫЕ ПУТНИКИ ──────────────────────────────────────
+// Встречаются в дикой природе, не нападают, могут поделиться припасами.
+export const TRAVELERS = [
+  { id: 'hunter', name: 'Охотник Кирилл', greeting: 'Зверь здесь пугливый, но выносливый. Возьми аптечку — пригодится.', gift: 'medkit' },
+  { id: 'herbalist', name: 'Травница Мира', greeting: 'Травы в этих краях лечат лучше любых пилюль.', gift: 'medkit' },
+  { id: 'scout', name: 'Разведчица Аня', greeting: 'К востоку руины, к северу хребет. Иди по солнцу.', gift: null },
+  { id: 'pilgrim', name: 'Паломник Тихон', greeting: 'Древние камни помнят больше, чем кажется. Загляни к обелискам.', gift: null }
+];
+
 export const NPCS = [
   {
     id: 'trader',
@@ -647,6 +741,72 @@ export const WEAPONS = {
     baseDamage: 80, cooldown: 0.34, range: 480, projSpeed: 580, splashRadius: 115, critBonus: 0.3, knockback: 200, price: 2000,
     desc: 'Посох Пожирателя Душ: сферы тьмы пожирают целые отряды призраков.'
   },
+  // ── OPEN WORLD: оружие Хранителей новых земель ─────────────────────────
+  gate_greatsword: {
+    id: 'gate_greatsword',
+    name: 'Двуручник Хранителя Врат',
+    rarity: 'epic',
+    tier: 5,
+    sprite: 'ash_greatsword',
+    icon: 'assets/sprites/weapons/ash_greatsword.png',
+    category: 'melee',
+    classLabel: 'Холодное оружие',
+    ammoCost: 0,
+    magSize: 0,
+    reloadTime: 0,
+    baseDamage: 78,
+    cooldown: 0.72,
+    range: 104,
+    arc: 2.6,
+    critBonus: 0.16,
+    knockback: 320,
+    price: 2400,
+    desc: 'Медленный, но сокрушительный замах древком из цельного камня. Пробивает стойку Хранителей.'
+  },
+  canyon_repeater: {
+    id: 'canyon_repeater',
+    name: 'Камнемёт «Гресс»',
+    rarity: 'epic',
+    tier: 5,
+    sprite: 'colossus_maul',
+    icon: 'assets/sprites/weapons/colossus_maul.png',
+    category: 'bow',
+    classLabel: 'Тяжёлое оружие',
+    ammoCost: 1,
+    magSize: 6,
+    reloadTime: 1.9,
+    baseDamage: 96,
+    cooldown: 0.55,
+    range: 520,
+    arc: 0.6,
+    critBonus: 0.1,
+    knockback: 260,
+    splash: 86,
+    price: 2800,
+    desc: 'Швыряет раскалённые обломки скал: урон по площади и отбрасывание.'
+  },
+  ash_flamecaster: {
+    id: 'ash_flamecaster',
+    name: 'Пламевод «Кальдер»',
+    rarity: 'legendary',
+    tier: 6,
+    sprite: 'flame_sword',
+    icon: 'assets/sprites/weapons/flame_sword.png',
+    category: 'magic',
+    classLabel: 'Тяжёлое оружие',
+    ammoCost: 2,
+    magSize: 24,
+    reloadTime: 2.4,
+    baseDamage: 44,
+    cooldown: 0.16,
+    range: 330,
+    arc: 0.5,
+    critBonus: 0.08,
+    knockback: 60,
+    burn: 3,
+    price: 3200,
+    desc: 'Непрерывный поток пепельного пламени: поджигает всё на своём пути.'
+  },
   rune_crossbow: {
     id: 'rune_crossbow', name: 'Рунный Арбалет Охотников', rarity: 'epic', tier: 4,
     sprite: 'rune_crossbow', icon: 'assets/sprites/weapons/rune_crossbow.png',
@@ -732,6 +892,22 @@ export const SKILLS = {
     id: 'shadow_teleport', keyLabel: '6', name: 'Теневой Телепорт', icon: '🌑', color: '#a78bfa',
     baseCooldown: 7.0, staminaCost: 18, baseDamageMult: 1.2, radius: 80, unlockLevel: 6,
     desc: 'Мгновенный рывок сквозь тень на 240px в сторону прицела: неуязвимость и удар Бездны по врагам в точке выхода. Открывается также Артефактом Ядра Бездны!'
+  },
+  // ── OPEN WORLD: новые боевые способности ──────────────────────────────
+  energy_strike: {
+    id: 'energy_strike', keyLabel: '7', name: 'Энергетический Удар', icon: '⚡', color: '#38bdf8',
+    baseCooldown: 5.5, staminaCost: 16, baseDamageMult: 2.6, radius: 190, unlockLevel: 2,
+    desc: 'Концентрированный импульс по прямой: пробивает врагов насквозь и оглушает. Урон растёт с уровнем.'
+  },
+  ground_slam: {
+    id: 'ground_slam', keyLabel: '8', name: 'Удар по Площади', icon: '💥', color: '#fb923c',
+    baseCooldown: 8.0, staminaCost: 22, baseDamageMult: 2.2, radius: 205, unlockLevel: 3,
+    desc: 'Герой бьёт в землю: расходящиеся волны сбивают всех вокруг с ног и отбрасывают.'
+  },
+  time_warp: {
+    id: 'time_warp', keyLabel: '9', name: 'Замедление Времени', icon: '⏳', color: '#a3e635',
+    baseCooldown: 16.0, staminaCost: 24, duration: 4.5, radius: 260, unlockLevel: 5,
+    desc: 'Мир вокруг замирает: враги, снаряды и боссы движутся вдвое медленнее, герой — с обычной скоростью.'
   }
 };
 
@@ -1306,6 +1482,65 @@ export const BOSSES = {
     intro: 'Небо гаснет. Бог, которого мир забыл из страха, вспоминает своё имя.',
     faction: 'kings'
   },
+  // ── OPEN WORLD: огромные боссы новых территорий ─────────────────────────
+  // Каждый со своим набором приёмов и тремя боевыми фазами (пороги 66% / 33%).
+  boss_warden_of_gates: {
+    id: 'boss_warden_of_gates', order: 24,
+    name: 'Хранитель Врат «Терн»', title: 'Древний Страж Руин',
+    sprite: 'boss_warden_of_gates',
+    biome: 'ruins', x: 2600, y: 2100, arenaRadius: 380,
+    hp: 7200, damage: 55, speed: 96, radius: 36, xp: 2900, coins: 1900,
+    rewardWeapon: 'gate_greatsword', rewardArmor: 'set_dawn',
+    rewardItems: [{ id: 'key', count: 2 }, { id: 'potion', count: 2 }],
+    unlocksZone: 'Внутренний Двор Руин',
+    intro: 'Каменные плиты сдвигаются сами. Из них поднимается Хранитель — воплощение клятвы, которую забыли все, кроме него.',
+    faction: 'dawn',
+    abilities: { ruinQuake: true, stoneWall: true, summonSentinels: true },
+    mechanics: { armor: 0.86, telegraphScale: 1.15 },
+    phases: [
+      { title: 'Стража Врат', notes: 'Каменные плиты и одиночные удары' },
+      { title: 'Пробуждение Клятвы', notes: 'Стены из камня, призыв стражей' },
+      { title: 'Последний Долг', notes: 'Землетрясения по всей арене' }
+    ]
+  },
+  boss_canyon_devourer: {
+    id: 'boss_canyon_devourer', order: 25,
+    name: 'Пожиратель Каньона «Гресс»', title: 'Хозяин Красных Скал',
+    sprite: 'boss_canyon_devourer',
+    biome: 'canyon', x: 4300, y: 3600, arenaRadius: 400,
+    hp: 9800, damage: 68, speed: 118, radius: 40, xp: 3600, coins: 2500,
+    rewardWeapon: 'canyon_repeater', rewardArmor: 'set_titan',
+    rewardItems: [{ id: 'key', count: 2 }, { id: 'medkit', count: 3 }],
+    unlocksZone: 'Дно Красного Каньона',
+    intro: 'Каньон вздрагивает. Из трещины в скале вылезает нечто, что ело камни задолго до людей.',
+    faction: 'hunters',
+    abilities: { dustStorm: true, burrow: true, rockfall: true },
+    mechanics: { armor: 0.92, telegraphScale: 1.05 },
+    phases: [
+      { title: 'Голод', notes: 'Песчаные вихри и рывки из-под земли' },
+      { title: 'Камнепад', notes: 'Обвалы по площади, ускорение' },
+      { title: 'Безумие Каньона', notes: 'Двойные обвалы и рывки подряд' }
+    ]
+  },
+  boss_ash_sovereign: {
+    id: 'boss_ash_sovereign', order: 26,
+    name: 'Пепельный Государь «Кальдер»', title: 'Тот, Кто Сжёг Небо',
+    sprite: 'boss_ash_sovereign',
+    biome: 'ashland', x: 5200, y: 5000, arenaRadius: 410,
+    hp: 11500, damage: 74, speed: 112, radius: 42, xp: 4200, coins: 2900,
+    rewardWeapon: 'ash_flamecaster', rewardArmor: 'set_ember',
+    rewardItems: [{ id: 'key', count: 3 }, { id: 'medkit', count: 3 }],
+    unlocksZone: 'Трон Пепельных Земель',
+    intro: 'Ветер приносит запах гари, хотя горит только воздух. Пепельный Государь уже здесь — он ждал тебя.',
+    faction: 'kings',
+    abilities: { ashNova: true, burningRain: true, phoenixDash: true },
+    mechanics: { armor: 0.88, telegraphScale: 1.2 },
+    phases: [
+      { title: 'Пепел', notes: 'Пепельная нова и поджог земли' },
+      { title: 'Пламя', notes: 'Дождь огня, рывки с огненным следом' },
+      { title: 'Пепел Небес', notes: 'Всё сразу, максимальная скорость' }
+    ]
+  },
   boss_catacomb_king: {
     id: 'boss_catacomb_king', order: 21,
     name: 'Король Забытых Катакомб «Морт»',
@@ -1632,6 +1867,9 @@ export const ARMORS = {
   set_ice:    { id: 'set_ice',    name: 'Броня Ледяного Стража',    icon: '❄️', def: 0.24, price: 980,  desc: '−24% урона. Ледяные стрелы врагов не замедляют героя.' },
   set_shadow: { id: 'set_shadow', name: 'Комплект Теневого Охотника', icon: '🌑', def: 0.19, price: 860, desc: '−19% урона. +6% к скорости передвижения в тенях комплекта.' },
   set_storm:  { id: 'set_storm',  name: 'Доспех Грозового Стража',  icon: '⚡', def: 0.18, price: 780,  desc: '−18% урона. +5% к шансу критического попадания.' },
+  set_dawn:   { id: 'set_dawn',   name: 'Латы Хранителя Врат',    icon: '🗿', def: 0.21, price: 1400, desc: '−21% урона. Каменная клятва древних: выносливость восстанавливается быстрее.' },
+  set_titan:  { id: 'set_titan',  name: 'Броня Пожирателя Скал',  icon: '🪨', def: 0.25, price: 1650, desc: '−25% урона. Осколки обсидиана отводят удары в ближнем бою.' },
+  set_ember:  { id: 'set_ember',  name: 'Одеяние Пепельного Государя', icon: '🔥', def: 0.28, price: 2100, desc: '−28% урона. Иммунитет к поджогу и огненным ловушкам Пепельных земель.' },
   set_god:    { id: 'set_god',    name: 'Облачение Павшего Бога',   icon: '👑', def: 0.3,  price: 2400, desc: '−30% урона. Вершина кузнечного искусства Эпохи: броня самого Азарота.' }
 };
 

@@ -1873,6 +1873,49 @@ export class Renderer {
       ctx.strokeRect(engine.activeContract.x * sx - 3.5, engine.activeContract.y * sy - 3.5, 7, 7);
     }
 
+    // ── OPEN WORLD: исследование на карте ────────────────────────────────
+    // Открытые места — ромбами по типу, ненайденные пещеры/руины показываем
+    // приглушённо (их видно, но без названия), поля — тёплым контуром.
+    const landmarks = engine.world.landmarks || [];
+    for (const lm of landmarks) {
+      const x = lm.x * sx, y = lm.y * sy;
+      const open = lm.discovered;
+      if (lm.type === 'hidden_cache') {
+        if (!open) continue;                 // тайники не подсвечиваем до находки
+        ctx.fillStyle = '#fde047';
+      } else if (lm.type === 'ruin') {
+        ctx.fillStyle = open ? '#fbbf24' : 'rgba(251, 191, 36, 0.45)';
+      } else if (lm.type === 'cave_entrance') {
+        ctx.fillStyle = open ? '#a78bfa' : 'rgba(167, 139, 250, 0.45)';
+      } else {
+        ctx.fillStyle = open ? '#93c5fd' : 'rgba(147, 197, 253, 0.4)';
+      }
+      const size = open ? 3.4 : 2.4;
+      ctx.beginPath();
+      ctx.moveTo(x, y - size);
+      ctx.lineTo(x + size, y);
+      ctx.lineTo(x, y + size);
+      ctx.lineTo(x - size, y);
+      ctx.closePath();
+      ctx.fill();
+    }
+    // Пещеры
+    for (const cv of engine.world.caves || []) {
+      const x = cv.x * sx, y = cv.y * sy;
+      ctx.fillStyle = cv.discovered ? '#a78bfa' : 'rgba(167, 139, 250, 0.5)';
+      ctx.beginPath();
+      ctx.arc(x, y, cv.discovered ? 2.8 : 2, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    // Огромные поля — золотистый контур
+    for (const f of engine.world.fields || []) {
+      ctx.strokeStyle = f.kind === 'wheat' ? 'rgba(234, 179, 8, 0.55)' : 'rgba(134, 239, 172, 0.35)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.arc(f.x * sx, f.y * sy, Math.max(2, f.radius * sx), 0, Math.PI * 2);
+      ctx.stroke();
+    }
+
     // Цель квеста / спасения / спецоперации
     const objT = engine.getObjectiveTarget ? engine.getObjectiveTarget() : null;
     const q = objT ? null : engine.getActiveQuest();

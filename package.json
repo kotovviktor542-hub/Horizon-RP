@@ -1,7 +1,7 @@
 {
   "name": "vexmora",
   "version": "3.0.0",
-  "description": "VEXMORA 3D — ГЛОБАЛЬНОЕ 3D-ОБНОВЛЕНИЕ: полноценная трёхмерная dark fantasy action-RPG (three.js): объёмный мир, погода, день/ночь, 3D-бой, 23 босса",
+  "description": "VEXMORA 3D — ОБНОВЛЕНИЕ OPEN WORLD: огромный открытый мир 8000×8000 с 13 биомами, руины, пещеры, поля и секреты, живой мир, 12 видов транспорта, 26 боссов с фазами",
   "type": "module",
   "scripts": {
     "start": "node tools/serve.js",

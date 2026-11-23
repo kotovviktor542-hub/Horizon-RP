@@ -7,12 +7,19 @@ import { CAMPFIRES, BOSSES, RESCUE_MISSIONS, LOCATIONS } from './data.js';
 
 export const MAP_VERSION = 3;
 export const MAP_CONFIG = {
-  width: 6400,
-  height: 6400,
-  grid: 160,            // 40 world-единиц на клетку
+  width: 8000,          // OPEN WORLD: 8000×8000 world-единиц = 800×800 м (было 6400×6400)
+  height: 8000,
+  grid: 240,            // 40 world-единиц на клетку — детализация прежняя
   seaLevel: 0.375,
-  atlasStep: 10         // 1 пиксель атласа = 10 world-единиц (640x640)
+  atlasStep: 10         // 1 пиксель атласа = 10 world-единиц (800x800)
 };
+
+// Центр мира — от него строятся все координаты контента, поэтому расширение
+// карты не сдвигает ни один лагерь, арену или город.
+export const MAP_CENTER = MAP_CONFIG.width * 0.5;
+// Масштаб координат старого контента (6400) к новому миру: контент,
+// расставленный в абсолютных числах, растягивается вместе с картой.
+export const WORLD_CONTENT_SCALE = MAP_CONFIG.width / 6400;
 
 // ── Детерминированный генератор шума ──────────────────────────────────────
 export function mulberry32(seed) {
@@ -81,10 +88,18 @@ export const MAP_BIOMES = {
   desert:   { id: 'desert',   name: 'Раскалённые Пустыни',  tile: 'sand',     groundBase: '#c9a066', groundAlt: '#b98f55' },
   snow:     { id: 'snow',     name: 'Снежные Земли',        tile: 'snow',     groundBase: '#dbe6f0', groundAlt: '#c3d3e2' },
   mountains:{ id: 'mountains',name: 'Каменные Хребты',      tile: 'rock',     groundBase: '#7d7f84', groundAlt: '#686a70' },
-  city:     { id: 'city',     name: 'Заброшенный Мегаполис',tile: 'asphalt',  groundBase: '#333945', groundAlt: '#2b303b' }
+  city:     { id: 'city',     name: 'Заброшенный Мегаполис',tile: 'asphalt',  groundBase: '#333945', groundAlt: '#2b303b' },
+  // ── OPEN WORLD: новые территории ──────────────────────────────────────
+  deep_forest: { id: 'deep_forest', name: 'Густая Чаща',        tile: 'grass', groundBase: '#24401f', groundAlt: '#1d3419' },
+  ashland:     { id: 'ashland',     name: 'Пепельные Пустоши',  tile: 'ash',   groundBase: '#5a4a44', groundAlt: '#4a3c37' },
+  ruins:       { id: 'ruins',       name: 'Древние Руины',      tile: 'ruins', groundBase: '#6d675e', groundAlt: '#574f45' },
+  canyon:      { id: 'canyon',      name: 'Красный Каньон',     tile: 'rock',  groundBase: '#8a5a40', groundAlt: '#744a34' }
 };
 
-const BIOME_CODES = ['water', 'coast', 'plains', 'forest', 'swamp', 'desert', 'snow', 'mountains', 'city'];
+// ВАЖНО: порядок кодов — часть формата сохранений (encodeMapGrid). Новые биомы
+// только в конец, существующие коды не сдвигаются, старые сейвы читаются.
+const BIOME_CODES = ['water', 'coast', 'plains', 'forest', 'swamp', 'desert', 'snow', 'mountains', 'city',
+  'deep_forest', 'ashland', 'ruins', 'canyon'];
 const CODE_OF = Object.fromEntries(BIOME_CODES.map((id, i) => [id, i]));
 
 // ── Генерация ─────────────────────────────────────────────────────────────
@@ -438,12 +453,27 @@ export function createMap(seed = 20261025) {
         code = CODE_OF.swamp;                                      // заболоченные низины и дельты
       } else if (m < 0.36 && t > 0.55) {
         code = CODE_OF.desert;
+      } else if (m > 0.548 && t > 0.30) {
+        code = CODE_OF.deep_forest;                                // густые чащи
       } else if (m > 0.495) {
         code = CODE_OF.forest;
       } else if (m > 0.40) {
         code = CODE_OF.plains;
       } else {
         code = t > 0.62 ? CODE_OF.desert : CODE_OF.plains;
+      }
+      // Красный каньон: жаркие приподнятые плато с сухим воздухом
+      // Каньон: сухие каменные плато. Раньше условие срабатывало только на
+      // редком сочетании «жарко + сухо», и на части карт каньонов не было
+      // вовсе; теперь смотрим ещё и на высоту — каньоны всегда на виду.
+      if (!water[i] && code === CODE_OF.mountains && (m < 0.36 || (e > sea + 0.13 && m < 0.45))) code = CODE_OF.canyon;
+      // Пепельные пустоши: очень сухие и тёплые низины у пустынь
+      // Пепельные пустоши: выжженные сухие участки пустынь
+      if (!water[i] && code === CODE_OF.desert && m < 0.50 && t > 0.62 && (gx + gy) % 7 === 0) code = CODE_OF.ashland;
+      // Древние руины: редкие пятна среди лесов и равнин (шум высокого порядка)
+      if (!water[i] && (code === CODE_OF.forest || code === CODE_OF.plains || code === CODE_OF.deep_forest)) {
+        const ruinN = fbm(gx * 0.0389 + 17, gy * 0.0389 + 41, seed + 1301, 3, 0.5);
+        if (ruinN > 0.678) code = CODE_OF.ruins;
       }
 
       // Прибрежная полоса — песок
