@@ -113,20 +113,42 @@ export class WorldBuilder {
       const trunk = new THREE.CylinderGeometry(trunkR * 0.7, trunkR, trunkH, detail ? 9 : 6, 1);
       trunk.translate(0, trunkH / 2, 0);
       geos.push({ geo: trunk, mat: barkMat });
-      // Ветви
-      for (let i = 0; i < 3; i++) {
-        const a = (i / 3) * TAU + 0.4;
+      // Корни-лапы у основания: дерево «стоит» в земле, а не вставлено в неё.
+      if (detail) {
+        for (let i = 0; i < 5; i++) {
+          const a = (i / 5) * TAU + 0.3;
+          const root = new THREE.CylinderGeometry(0.05, 0.09, 0.5, 5);
+          root.translate(0, 0.2, 0);
+          root.rotateZ(1.05);
+          root.rotateY(a);
+          root.translate(0, 0.12, 0);
+          geos.push({ geo: root, mat: barkMat });
+        }
+      }
+      // Ветви: два уровня — скелетные и тонкие обрастающие.
+      const branchCount = detail ? 4 : 3;
+      for (let i = 0; i < branchCount; i++) {
+        const a = (i / branchCount) * TAU + 0.4;
         const br = new THREE.CylinderGeometry(0.05, 0.08, 1.5, 5);
         br.translate(0, 0.75, 0);
         br.rotateZ(0.7);
         br.rotateY(a);
         br.translate(0, trunkH * 0.62, 0);
         geos.push({ geo: br, mat: barkMat });
+        if (detail) {
+          const twig = new THREE.CylinderGeometry(0.022, 0.045, 0.9, 4);
+          twig.translate(0, 0.45, 0);
+          twig.rotateZ(0.45);
+          twig.rotateY(a + 0.5);
+          twig.translate(Math.cos(a) * 0.75, trunkH * 0.62 + 0.55, Math.sin(a) * 0.75);
+          geos.push({ geo: twig, mat: barkMat });
+        }
       }
-      // Крона: 3 слоя
-      const layers = detail ? 4 : 2;
+      // Крона: комки разного размера со смещением — живой объём вместо «шара».
+      const layers = detail ? 6 : 2;
       for (let i = 0; i < layers; i++) {
-        const r = 1.55 - i * 0.26;
+        const t = i / Math.max(1, layers - 1);
+        const r = (1.55 - t * 0.62) * (0.82 + rnd(i, 13) * 0.36);
         const blob = new THREE.IcosahedronGeometry(r, detail ? 1 : 0);
         const pos = blob.attributes.position;
         for (let k = 0; k < pos.count; k++) {
@@ -135,7 +157,9 @@ export class WorldBuilder {
           pos.setXYZ(k, px * n, py * n * 0.82, pz * n);
         }
         blob.computeVertexNormals();
-        blob.translate(0, trunkH + 0.55 + i * 0.62, 0);
+        const ang = i * 2.1;
+        const off = detail ? 0.42 : 0;
+        blob.translate(Math.cos(ang) * off, trunkH + 0.55 + t * 1.35, Math.sin(ang) * off);
         geos.push({ geo: blob, mat: leafMat });
       }
       return geos;
@@ -146,10 +170,24 @@ export class WorldBuilder {
       const trunk = new THREE.CylinderGeometry(0.14, 0.2, 3.0, detail ? 8 : 5);
       trunk.translate(0, 1.5, 0);
       geos.push({ geo: trunk, mat: barkMat });
-      for (let i = 0; i < (detail ? 5 : 3); i++) {
-        const r = 1.5 - i * 0.26;
-        const cone = new THREE.ConeGeometry(r, 1.6, detail ? 10 : 6, 1);
-        cone.translate(0, 2.2 + i * 1.05, 0);
+      if (detail) {
+        // Мутовки голых веток внизу ствола — характерный силуэт ели.
+        for (let i = 0; i < 4; i++) {
+          const a = (i / 4) * TAU;
+          const limb = new THREE.CylinderGeometry(0.03, 0.05, 0.7, 4);
+          limb.translate(0, 0.35, 0);
+          limb.rotateZ(1.25);
+          limb.rotateY(a);
+          limb.translate(0, 1.1 + i * 0.32, 0);
+          geos.push({ geo: limb, mat: barkMat });
+        }
+      }
+      for (let i = 0; i < (detail ? 7 : 3); i++) {
+        const r = 1.5 - i * (detail ? 0.17 : 0.26);
+        const cone = new THREE.ConeGeometry(r, 1.6 - i * 0.08, detail ? 10 : 6, 1);
+        // Лёгкое смещение ярусов: крона не идеально симметрична.
+        cone.rotateY(i * 0.6);
+        cone.translate(Math.sin(i) * (detail ? 0.07 : 0), 2.2 + i * 0.86, 0);
         geos.push({ geo: cone, mat: pineMat });
       }
       return geos;
@@ -157,11 +195,23 @@ export class WorldBuilder {
 
     const makeBush = (detail) => {
       const geos = [];
-      for (let i = 0; i < (detail ? 3 : 1); i++) {
-        const r = 0.55 - i * 0.12;
+      for (let i = 0; i < (detail ? 5 : 1); i++) {
+        const r = 0.55 - i * 0.075;
         const blob = new THREE.IcosahedronGeometry(r, detail ? 1 : 0);
-        blob.translate((rnd(i, 3) - 0.5) * 0.5, 0.45 + i * 0.22, (rnd(i, 7) - 0.5) * 0.5);
+        blob.translate((rnd(i, 3) - 0.5) * 0.62, 0.45 + i * 0.17, (rnd(i, 7) - 0.5) * 0.62);
         geos.push({ geo: blob, mat: bushMat });
+      }
+      if (detail) {
+        // Веточки-прутики, торчащие из куста, ломают «мыльные» шары.
+        for (let i = 0; i < 4; i++) {
+          const a = (i / 4) * TAU + 0.7;
+          const twig = new THREE.CylinderGeometry(0.012, 0.022, 0.45, 3);
+          twig.translate(0, 0.22, 0);
+          twig.rotateZ(0.35);
+          twig.rotateY(a);
+          twig.translate(Math.cos(a) * 0.2, 0.55, Math.sin(a) * 0.2);
+          geos.push({ geo: twig, mat: barkMat });
+        }
       }
       return geos;
     };
@@ -175,7 +225,80 @@ export class WorldBuilder {
       }
       geo.computeVertexNormals();
       const geos = [{ geo, mat: rockMat }];
+      if (detail) {
+        // Сколы и мох: камни не бывают «голыми шарами».
+        for (let i = 0; i < 3; i++) {
+          const chip = new THREE.DodecahedronGeometry(0.34 - i * 0.07, 0);
+          chip.scale(1, 0.6, 1);
+          const a = i * 2.3;
+          chip.translate(Math.cos(a) * 0.72, 0.12 + i * 0.09, Math.sin(a) * 0.72);
+          geos.push({ geo: chip, mat: rockMat });
+        }
+        const moss = new THREE.IcosahedronGeometry(0.4, 0);
+        moss.scale(1.15, 0.34, 1.05);
+        moss.translate(0.12, 0.62, -0.08);
+        geos.push({ geo: moss, mat: bushMat });
+      }
       return geos;
+    };
+
+    // ── Мелочь «живого мира»: цветы, грибы, щебень, костровища ─────────────
+    // Это отдельные шаблоны с крошечной геометрией: в кадре они дают 2–4
+    // draw call на ячейку и рисуются только вблизи (maxRenderDist).
+    const makeFlowers = (detail) => {
+      const parts = [];
+      const stemMat = colorMaterial(0x4a6b2a, { roughness: 0.95 });
+      const petalMat = colorMaterial(0xd9a8c8, { roughness: 0.72 });
+      const coreMat = colorMaterial(0xe0a020, { roughness: 0.6 });
+      const n = detail ? 6 : 3;
+      const stemGeo = new THREE.CylinderGeometry(0.006, 0.008, 0.26, 4);
+      for (let i = 0; i < n; i++) {
+        const a = (i / n) * TAU + i * 0.7;
+        const r = 0.05 + (i % 3) * 0.03;
+        const h = 0.2 + (i % 3) * 0.05;
+        const stem = stemGeo.clone();
+        stem.translate(Math.cos(a) * r, h / 2, Math.sin(a) * r);
+        parts.push({ geo: stem, mat: stemMat });
+        const head = new THREE.IcosahedronGeometry(0.032, detail ? 1 : 0);
+        head.scale(1, 0.6, 1);
+        head.translate(Math.cos(a) * r, h, Math.sin(a) * r);
+        parts.push({ geo: head, mat: i % 2 ? petalMat : coreMat });
+      }
+      return parts;
+    };
+
+    const makeMushrooms = (detail) => {
+      const parts = [];
+      const stemMat = colorMaterial(0xd8cfbd, { roughness: 0.9 });
+      const capMat = colorMaterial(0x9a2b24, { roughness: 0.7 });
+      const n = detail ? 4 : 2;
+      for (let i = 0; i < n; i++) {
+        const a = i * 1.9;
+        const x = Math.cos(a) * 0.09, z = Math.sin(a) * 0.09;
+        const s = 0.7 + (i % 3) * 0.2;
+        const stem = new THREE.CylinderGeometry(0.016 * s, 0.022 * s, 0.1 * s, 5);
+        stem.translate(x, 0.05 * s, z);
+        parts.push({ geo: stem, mat: stemMat });
+        const cap = new THREE.SphereGeometry(0.05 * s, detail ? 8 : 5, 4, 0, TAU, 0, Math.PI / 2);
+        cap.scale(1, 0.7, 1);
+        cap.translate(x, 0.1 * s, z);
+        parts.push({ geo: cap, mat: capMat });
+      }
+      return parts;
+    };
+
+    const makeRubble = (detail) => {
+      const parts = [];
+      const n = detail ? 5 : 3;
+      for (let i = 0; i < n; i++) {
+        const a = i * 2.1 + 0.4;
+        const r = 0.1 + (i % 3) * 0.06;
+        const chunk = new THREE.DodecahedronGeometry(r, 0);
+        chunk.rotateY(a);
+        chunk.translate(Math.cos(a) * r * 1.4, r * 0.7, Math.sin(a) * r * 1.4);
+        parts.push({ geo: chunk, mat: rockMat });
+      }
+      return parts;
     };
 
     // Собираем «шаблоны» и превращаем каждый в 1-2 батча (по материалам)
@@ -203,6 +326,12 @@ export class WorldBuilder {
     const pineBatches = buildBatches(makePine, 128, simple);
     const bushBatches = buildBatches(makeBush, 532, simple);
     const rockBatches = buildBatches(makeRock, 335, simple);
+    // Мелочь есть только на средних и высоких настройках: на «Низком» кадр
+    // важнее, а трава/цветы на маленьком экране почти не читаются.
+    const detailOn = q !== 'low';
+    const flowerBatches = detailOn ? buildBatches(makeFlowers, 420, false) : [];
+    const mushroomBatches = detailOn ? buildBatches(makeMushrooms, 220, false) : [];
+    const rubbleBatches = detailOn ? buildBatches(makeRubble, 260, false) : [];
 
     // Распределяем объекты по инстансам
     const buckets = {
@@ -216,6 +345,14 @@ export class WorldBuilder {
     }
     for (const p of this.world.props) {
       if (p.kind === 'rock') buckets.rock.push(p);
+    }
+    // Мелочь расставляем детерминированно по узлам кустов и камней: там, где
+    // уже есть жизнь, появляются цветы и грибы. Новых коллизий это не создаёт
+    // — объекты чисто декоративные и не участвуют в физике.
+    if (detailOn) {
+      buckets.flower = buckets.bush.filter((n, i) => i % 3 === 0);
+      buckets.mushroom = buckets.tree.filter((n, i) => i % 7 === 0);
+      buckets.rubble = buckets.rock.filter((n, i) => i % 2 === 0);
     }
 
     // Батчи нарезаем по пространственным ячейкам: один InstancedMesh на всю карту
@@ -266,10 +403,21 @@ export class WorldBuilder {
     };
 
     this._buildPropObjects();
-    addInstanced(treeBatches, buckets.tree, { castShadow: true, maxRenderDist: 160 });
-    addInstanced(pineBatches, buckets.pine, { castShadow: true, maxRenderDist: 160 });
-    addInstanced(bushBatches, buckets.bush, { castShadow: false, maxRenderDist: 80 });
-    addInstanced(rockBatches, buckets.rock, { castShadow: true, maxRenderDist: 110, yOffset: -0.1, sy: 0.9 });
+    // Детализация шаблонов выросла (корни, ветки второго порядка, сколы камня),
+    // поэтому дистанция отрисовки расширена: иначе новые детали появлялись бы
+    // рывком на границе 160 м. Тени по-прежнему отсекаются отдельно
+    // (cullShadows) и дешевле самой геометрии.
+    const distK = q === 'low' ? 0.72 : 1;
+    addInstanced(treeBatches, buckets.tree, { castShadow: true, maxRenderDist: 190 * distK });
+    addInstanced(pineBatches, buckets.pine, { castShadow: true, maxRenderDist: 190 * distK });
+    addInstanced(bushBatches, buckets.bush, { castShadow: false, maxRenderDist: 95 * distK });
+    addInstanced(rockBatches, buckets.rock, { castShadow: true, maxRenderDist: 130 * distK, yOffset: -0.1, sy: 0.9 });
+    // Декор «живого мира»: близкая дистанция, без теней — почти бесплатно.
+    if (detailOn) {
+      addInstanced(flowerBatches, buckets.flower, { castShadow: false, maxRenderDist: 42 * distK, yOffset: 0.02 });
+      addInstanced(mushroomBatches, buckets.mushroom, { castShadow: false, maxRenderDist: 32 * distK, yOffset: 0.02 });
+      addInstanced(rubbleBatches, buckets.rubble, { castShadow: false, maxRenderDist: 70 * distK, yOffset: 0.0 });
+    }
   }
 
   // Ящики, бочки, заборы, колонны руин: разрушаемые объекты мира.
@@ -843,8 +991,12 @@ export class WorldBuilder {
     this.group.traverse(o => {
       if (o.isMesh || o.isInstancedMesh) {
         o.geometry?.dispose?.();
-        if (Array.isArray(o.material)) o.material.forEach(m => m.dispose?.());
-        else o.material?.dispose?.();
+        // Материалы общие (кэш materials.js): их нельзя диспозить по одному,
+        // иначе следующие чанки/миры останутся с «мёртвыми» текстурами.
+        if (o.userData && o.userData.ownMaterial && o.material) {
+          if (Array.isArray(o.material)) o.material.forEach(m => m.dispose?.());
+          else o.material.dispose?.();
+        }
       }
     });
     this.scene.remove(this.group);

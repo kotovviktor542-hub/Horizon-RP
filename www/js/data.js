@@ -285,7 +285,7 @@ export const ANIMALS = {
     id: 'fox', name: 'Рыжая лиса', sprite: 'fox', behavior: 'skittish', herd: false,
     hp: 34, speed: 96, fleeSpeed: 220, radius: 9, xp: 5,
     biomes: ['plains', 'forest', 'ruins', 'desert'],
-    loot: { food: 1 }, tint: 0xc86a32, build: 'wolf'
+    loot: { food: 1 }, tint: 0xc86a32, build: 'fox'
   },
   desert_lizard: {
     id: 'desert_lizard', name: 'Пустынная ящерица', sprite: 'lizard', behavior: 'skittish', herd: false,

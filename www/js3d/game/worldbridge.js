@@ -400,7 +400,11 @@ export class World3D {
       }
       let mesh = this.animals3d.get(a);
       if (!mesh) {
-        mesh = new Animal3D(this.scene, a);
+        // ВАЖНО: живой мир хранит только defId, а не полное описание вида.
+        // Без этого слияния Animal3D не знал `build` и строил ВСЕХ зверей
+        // ветвью `small` — олень и медведь выглядели кроликом.
+        const def = (e.animalDefs || []).find(d => d.id === (a.defId || a.kind)) || {};
+        mesh = new Animal3D(this.scene, { ...def, ...a });
         mesh.root.position.set(pos.x, gy, pos.z);
         this.animals3d.set(a, mesh);
       }

@@ -56,6 +56,27 @@ function cellHeight(map, gx, gy) {
   return d * HEIGHT_SCALE * (0.75 + t * 0.55);
 }
 
+// Градиентный купол неба. Один и тот же шейдер рисует и видимое небо, и
+// окружение для отражений (PMREM), поэтому металл «отражает» именно то небо,
+// которое видит игрок.
+const SKY_VERT = `
+  varying vec3 vWorldPosition;
+  void main() {
+    vec4 wp = modelMatrix * vec4(position, 1.0);
+    vWorldPosition = wp.xyz;
+    gl_Position = projectionMatrix * viewMatrix * wp;
+  }
+`;
+const SKY_FRAG = `
+  uniform vec3 topColor; uniform vec3 bottomColor;
+  uniform float offset; uniform float exponent;
+  varying vec3 vWorldPosition;
+  void main() {
+    float h = normalize(vWorldPosition + vec3(0.0, offset, 0.0)).y;
+    gl_FragColor = vec4(mix(bottomColor, topColor, max(pow(max(h, 0.0), exponent), 0.0)), 1.0);
+  }
+`;
+
 // ── Палитры неба по времени суток ────────────────────────────────────────
 const SKY_KEYS = [
   { t: 0.00, top: 0x05070f, bottom: 0x121b2c, fog: 0x0b1220, sun: 0x3b4a6b, intensity: 0.16, ambient: 0x223047, amb: 0.30 },
@@ -90,23 +111,8 @@ export class SkySystem {
         offset: { value: 60 },
         exponent: { value: 0.75 }
       },
-      vertexShader: `
-        varying vec3 vWorldPosition;
-        void main() {
-          vec4 wp = modelMatrix * vec4(position, 1.0);
-          vWorldPosition = wp.xyz;
-          gl_Position = projectionMatrix * viewMatrix * wp;
-        }
-      `,
-      fragmentShader: `
-        uniform vec3 topColor; uniform vec3 bottomColor;
-        uniform float offset; uniform float exponent;
-        varying vec3 vWorldPosition;
-        void main() {
-          float h = normalize(vWorldPosition + vec3(0.0, offset, 0.0)).y;
-          gl_FragColor = vec4(mix(bottomColor, topColor, max(pow(max(h, 0.0), exponent), 0.0)), 1.0);
-        }
-      `
+      vertexShader: SKY_VERT,
+      fragmentShader: SKY_FRAG
     });
     this.sky = new THREE.Mesh(skyGeo, skyMat);
     this.sky.frustumCulled = false;
@@ -134,7 +140,39 @@ export class SkySystem {
     this.fill.position.set(-1, 0.7, -0.6);
     scene.add(this.fill);
 
-    // Текстура неба для отражений в envMap (вода, металл)
+    // ── Окружение для отражений (IBL) ──────────────────────────────────
+    // До ремастера фиксированного env map не было вовсе: металл, камень и
+    // вода считались по одной полусфере, поэтому выглядели «пластиковыми».
+    // Собираем крошечную кубическую сцену (небо + земля) и пересчитываем её
+    // только при заметной смене времени суток — это единицы миллисекунд и
+    // один раз на кадр максимум, а металл получает живые отражения.
+    this.envScene = new THREE.Scene();
+    const envGeo = new THREE.SphereGeometry(50, 16, 12);
+    this.envSkyMat = new THREE.ShaderMaterial({
+      uniforms: {
+        topColor: { value: new THREE.Color(0x5590d8) },
+        bottomColor: { value: new THREE.Color(0xd6e6f2) },
+        offset: { value: 8 },
+        exponent: { value: 0.7 }
+      },
+      vertexShader: SKY_VERT,
+      fragmentShader: SKY_FRAG,
+      side: THREE.BackSide,
+      depthWrite: false
+    });
+    this.envSky = new THREE.Mesh(envGeo, this.envSkyMat);
+    this.envScene.add(this.envSky);
+    // Полусфера «земли»: отражения снизу не должны быть небесно-голубыми.
+    this.envGround = new THREE.Mesh(
+      new THREE.SphereGeometry(49, 12, 8, 0, Math.PI * 2, Math.PI * 0.5, Math.PI * 0.5),
+      new THREE.MeshBasicMaterial({ color: 0x3a3428, side: THREE.BackSide })
+    );
+    this.envScene.add(this.envGround);
+    this.envRT = null;          // WebGLRenderTarget создаётся лениво (нужен renderer)
+    this._envTime = -1;
+    this.environmentIntensity = 0.38;
+    this._envApplied = false;
+
     this.fog = new THREE.FogExp2(0xa8bccf, 0.0055);
     scene.fog = this.fog;
 
@@ -203,6 +241,38 @@ export class SkySystem {
     sc.updateProjectionMatrix();
   }
 
+  /**
+   * Пересобирает окружение для отражений. Вызывается лениво из update():
+   * только когда поменялось время суток достаточно заметно.
+   * @param {THREE.WebGLRenderer} renderer
+   * @param {THREE.Scene} mainScene — сцена, которой нужен scene.environment
+   */
+  updateEnvironment(renderer, mainScene, top, bottom, amb) {
+    if (!renderer || !mainScene || !renderer.capabilities) return false;
+    if (renderer.capabilities.isWebGL2 === false) return false;
+    try {
+      if (!this.envRT) {
+        const pmrem = new THREE.PMREMGenerator(renderer);
+        pmrem.compileCubemapShader?.();
+        // 64 px: для отражений на металле и воде этого достаточно, а память
+        // и время генерации в разы меньше, чем у 256 px.
+        this._pmrem = pmrem;
+        this.envRT = pmrem.fromScene(this.envScene, 0.04, 0.1, 100);
+      } else if (this._pmrem) {
+        const rt = this._pmrem.fromScene(this.envScene, 0.04, 0.1, 100);
+        this.envRT.dispose();
+        this.envRT = rt;
+      }
+      mainScene.environment = this.envRT.texture;
+      mainScene.environmentIntensity = this.environmentIntensity;
+      this._envApplied = true;
+      return true;
+    } catch (err) {
+      // Без WebGL2/при ошибке рендера игра должна работать как раньше.
+      return false;
+    }
+  }
+
   update(dt, cameraPos, time, weather = 'clear', weatherIntensity = 1) {
     this.time = ((time % 1) + 1) % 1;
     this.weather = weather;
@@ -254,6 +324,15 @@ export class SkySystem {
     this.sky.material.uniforms.topColor.value.copy(top);
     this.sky.material.uniforms.bottomColor.value.copy(bottom);
     this.fog.color.copy(fogColor);
+
+    // Окружение для отражений: пересобираем при сдвиге времени суток больше
+    // 0.01 (≈15 минут игрового времени). Ночью — реже, днём чаще.
+    this.envSkyMat.uniforms.topColor.value.copy(top);
+    this.envSkyMat.uniforms.bottomColor.value.copy(bottom);
+    if (Math.abs(this.time - this._envTime) > 0.01 || this._envTime < 0) {
+      this._envTime = this.time;
+      this._envDirty = true;
+    }
     this.fog.density = fogDensity;
 
     // Солнце идёт по дуге: восход на востоке, закат на западе
@@ -268,7 +347,10 @@ export class SkySystem {
     this.sun.color.copy(s.sun);
     this.sun.intensity = sunIntensity;
     this.hemi.color.copy(s.ambient);
-    this.hemi.intensity = s.amb * (weather === 'clear' ? 1 : 1.15);
+    // Когда работает IBL (scene.environment), полусферу приглушаем: иначе
+    // небо и окружение складываются и картинка выгорает.
+    const hemiK = this._envApplied ? 0.72 : 1;
+    this.hemi.intensity = s.amb * (weather === 'clear' ? 1 : 1.15) * hemiK;
     this.fill.intensity = 0.12 + (1 - Math.min(1, sunIntensity / 2)) * 0.30;
 
     // Тень следует за игроком, чтобы она всегда была в кадре

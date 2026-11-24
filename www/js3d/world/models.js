@@ -4,12 +4,18 @@
 // окна с эмиссией и т.д. Всё построено процедурно, кэшируется и переиспользуется.
 
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { createMaterial, colorMaterial, emissiveMaterial, fbm, vnoise } from '../core/materials.js';
 
+// Склейка статической геометрии — общая утилита (см. core/merge.js).
+export { mergeStaticMeshes } from '../core/merge.js';
+import { mergeStaticMeshes } from '../core/merge.js';
+
+// ── Утилиты геометрии ────────────────────────────────────────────────────
+const TAU = Math.PI * 2;
 const geoCache = new Map();
 const disposed = [];
 
-// ── Утилиты геометрии ────────────────────────────────────────────────────
 function cachedGeo(key, build) {
   if (geoCache.has(key)) return geoCache.get(key);
   const g = build();
@@ -178,13 +184,43 @@ export const Foliage = {
     const rnd = (n) => { const v = Math.sin(seed * 3.7 + n * 29.1) * 43758.5453; return v - Math.floor(v); };
     const h = (3.5 + rnd(1) * 2) * scale;
     const trunk = new THREE.Mesh(
-      cachedGeo(`dead:${h.toFixed(1)}`, () => new THREE.CylinderGeometry(0.10, 0.26, h, 7, 2)),
+      cachedGeo(`dead:${h.toFixed(1)}`, () => {
+        const g = new THREE.CylinderGeometry(0.10, 0.26, h, 7, 3);
+        // Утолщение у корней и лёгкая кривизна ствола.
+        const pos = g.attributes.position;
+        for (let i = 0; i < pos.count; i++) {
+          const y = pos.getY(i);
+          const t = (y + h / 2) / h;
+          const bend = Math.sin(t * 2.4) * 0.09 * h * 0.2;
+          pos.setX(i, pos.getX(i) + bend);
+          const flare = 1 + Math.max(0, 0.35 - t) * 0.9;
+          pos.setX(i, pos.getX(i) * flare);
+          pos.setZ(i, pos.getZ(i) * flare);
+        }
+        g.computeVertexNormals();
+        return g;
+      }),
       bark
     );
     trunk.position.y = h / 2;
     trunk.rotation.z = (rnd(2) - 0.5) * 0.22;
     trunk.castShadow = true;
     group.add(trunk);
+    // Дупло: тёмная выемка в стволе + наплыв коры вокруг.
+    const hollowMat = colorMaterial(0x14100c, { roughness: 1 });
+    const hole = new THREE.Mesh(new THREE.SphereGeometry(0.1, 8, 6), hollowMat);
+    hole.scale.set(1, 1.6, 0.5);
+    hole.position.set(Math.cos(rnd(11) * TAU) * 0.2, h * 0.5, Math.sin(rnd(11) * TAU) * 0.2);
+    group.add(hole);
+    // Корни-лапы.
+    for (let i = 0; i < 3; i++) {
+      const ang = (i / 3) * TAU + rnd(12) * 0.8;
+      const root = new THREE.Mesh(
+        cachedGeo('deadroot', () => new THREE.CylinderGeometry(0.04, 0.09, 0.55, 5)), bark);
+      root.position.set(Math.cos(ang) * 0.22, 0.1, Math.sin(ang) * 0.22);
+      root.rotation.set(-Math.sin(ang) * 1.1, 0, Math.cos(ang) * 1.1);
+      group.add(root);
+    }
     for (let i = 0; i < 5; i++) {
       const len = (0.8 + rnd(4 + i) * 1.1) * scale;
       const br = new THREE.Mesh(cachedGeo(`deadbr:${len.toFixed(1)}`, () => new THREE.CylinderGeometry(0.03, 0.09, len, 5)), bark);
@@ -198,17 +234,39 @@ export const Foliage = {
     return group;
   },
 
-  // Куст
+  // Куст: несколько комков листвы, веточки у основания и ягоды/цветы
   bush(scale = 1, seed = 4, dry = false) {
     const group = new THREE.Group();
     const mat = dry ? colorMaterial(0x6b6338, { roughness: 0.95 }) : createMaterial('leaves', { repeat: 3 });
+    const bark = createMaterial('bark', { repeat: 1 });
     const rnd = (n) => { const v = Math.sin(seed * 5.1 + n * 13.7) * 43758.5453; return v - Math.floor(v); };
-    for (let i = 0; i < 3; i++) {
+    for (let i = 0; i < 4; i++) {
       const r = (0.42 + rnd(i) * 0.3) * scale;
       const b = new THREE.Mesh(blobGeometry(r, 1, seed + i * 3, 0.8), mat);
-      b.position.set((rnd(i + 5) - 0.5) * 0.7 * scale, r * 0.65, (rnd(i + 9) - 0.5) * 0.7 * scale);
+      b.position.set((rnd(i + 5) - 0.5) * 0.8 * scale, r * 0.62, (rnd(i + 9) - 0.5) * 0.8 * scale);
+      b.rotation.y = rnd(i + 2) * TAU;
       b.castShadow = true;
       group.add(b);
+    }
+    // Веточки-прутики: куст перестаёт быть «шариком из шариков».
+    for (let i = 0; i < 3; i++) {
+      const ang = rnd(i + 21) * TAU;
+      const twig = new THREE.Mesh(
+        cachedGeo('bushtwig', () => new THREE.CylinderGeometry(0.012, 0.024, 0.5, 4)), bark);
+      twig.position.set(Math.cos(ang) * 0.2 * scale, 0.22 * scale, Math.sin(ang) * 0.2 * scale);
+      twig.rotation.set(Math.sin(ang) * 0.3, 0, -Math.cos(ang) * 0.3);
+      group.add(twig);
+    }
+    // Ягоды (у живого) или сухие коробочки (у сухого).
+    const berryMat = dry
+      ? colorMaterial(0x6a5a30, { roughness: 0.9 })
+      : colorMaterial(seed % 3 === 0 ? 0x8f1f2a : 0x2f3f6b, { roughness: 0.5 });
+    for (let i = 0; i < 4; i++) {
+      const berry = new THREE.Mesh(cachedGeo('berry', () => new THREE.SphereGeometry(0.035, 6, 5)), berryMat);
+      const ang = rnd(i + 31) * TAU;
+      const rr = (0.32 + rnd(i + 4) * 0.24) * scale;
+      berry.position.set(Math.cos(ang) * rr, (0.42 + rnd(i + 8) * 0.35) * scale, Math.sin(ang) * rr);
+      group.add(berry);
     }
     return group;
   },
@@ -241,6 +299,21 @@ export const Foliage = {
       small.scale.setScalar(scale * 0.35);
       small.position.set(scale * 0.7, scale * 0.14, scale * 0.35);
       group.add(small);
+      // Основание вросло в землю: тёмная «юбка» мха и мелкая крошка рядом.
+      const mossMat = colorMaterial(0x3c4a22, { roughness: 0.98 });
+      const moss = new THREE.Mesh(blobGeometry(scale * 0.52, 0, seed + 5, 0.28), mossMat);
+      moss.position.set(-scale * 0.12, scale * 0.06, scale * 0.1);
+      group.add(moss);
+      for (let i = 0; i < 3; i++) {
+        const chip = new THREE.Mesh(
+          cachedGeo(`rockchip:${seed % 4}`, () => new THREE.DodecahedronGeometry(0.16, 0)),
+          mat);
+        const ang = seed * 1.7 + i * 2.1;
+        chip.scale.setScalar(scale * (0.16 + (i % 2) * 0.08));
+        chip.position.set(Math.cos(ang) * scale * 0.95, scale * 0.07, Math.sin(ang) * scale * 0.95);
+        chip.rotation.set(ang, ang * 0.5, 0);
+        group.add(chip);
+      }
     }
     return group;
   },
@@ -284,11 +357,103 @@ export const Foliage = {
       plane.computeVertexNormals();
       return plane;
     });
-    for (let i = 0; i < 3; i++) {
+    for (let i = 0; i < 5; i++) {
       const blade = new THREE.Mesh(geo, mat);
-      blade.rotation.y = (i / 3) * Math.PI * 2;
-      blade.scale.setScalar(scale * (0.8 + Math.random() * 0.5));
+      // Пучок: травинки наклонены в разные стороны, а не стоят веером.
+      blade.rotation.y = (i / 5) * Math.PI * 2 + i * 0.3;
+      blade.rotation.z = (i % 3 - 1) * 0.12;
+      blade.scale.set(scale * (0.8 + (i % 3) * 0.16), scale * (0.75 + (i % 4) * 0.14), scale);
+      blade.position.set((i % 2 - 0.5) * 0.09 * scale, 0, (i % 3 - 1) * 0.07 * scale);
       g.add(blade);
+    }
+    return g;
+  },
+
+  // ── Мелкие детали «живого мира» ────────────────────────────────────────
+  // Цветы: пять лепестков на тонком стебле. Ставятся точками в траве/на лугах.
+  flowers(scale = 1, seed = 7) {
+    const g = new THREE.Group();
+    const stemMat = colorMaterial(0x4a6b2a, { roughness: 0.95 });
+    const petalColors = [0xe8d16a, 0xd97aa8, 0xb58cf0, 0xf0f0e0];
+    const petalMat = colorMaterial(petalColors[seed % petalColors.length], { roughness: 0.72 });
+    const stemGeo = cachedGeo('flowerstem', () => new THREE.CylinderGeometry(0.006, 0.008, 0.3, 4));
+    const petalGeo = cachedGeo('flowerpetal', () => new THREE.SphereGeometry(0.028, 5, 4));
+    for (let i = 0; i < 3; i++) {
+      const x = (i - 1) * 0.07 * scale;
+      const z = ((i * 7) % 3 - 1) * 0.05 * scale;
+      const hh = (0.22 + (i % 2) * 0.1) * scale;
+      const stem = new THREE.Mesh(stemGeo, stemMat);
+      stem.position.set(x, hh / 2, z);
+      stem.scale.y = hh / 0.3;
+      g.add(stem);
+      for (let pt = 0; pt < 5; pt++) {
+        const ang = (pt / 5) * TAU;
+        const petal = new THREE.Mesh(petalGeo, petalMat);
+        petal.position.set(x + Math.cos(ang) * 0.028 * scale, hh, z + Math.sin(ang) * 0.028 * scale);
+        petal.scale.set(1, 0.55, 1);
+        g.add(petal);
+      }
+      const core = new THREE.Mesh(petalGeo, colorMaterial(0xe0a020, { roughness: 0.6 }));
+      core.position.set(x, hh + 0.004, z);
+      core.scale.setScalar(0.8);
+      g.add(core);
+    }
+    return g;
+  },
+
+  // Грибы: ножка + шляпка, растут кучкой у пней и в сырых биомах.
+  mushrooms(scale = 1, seed = 11) {
+    const g = new THREE.Group();
+    const stemMat = colorMaterial(0xd8cfbd, { roughness: 0.9 });
+    const capMat = colorMaterial(seed % 2 ? 0x9a2b24 : 0x7a5a3a, { roughness: 0.7 });
+    for (let i = 0; i < 3; i++) {
+      const s = scale * (0.7 + (i % 3) * 0.25);
+      const stem = new THREE.Mesh(cachedGeo('mushstem', () => new THREE.CylinderGeometry(0.018, 0.024, 0.12, 5)), stemMat);
+      stem.position.set((i - 1) * 0.06 * scale, 0.06 * s, ((i * 5) % 3 - 1) * 0.05 * scale);
+      stem.scale.setScalar(s);
+      g.add(stem);
+      const cap = new THREE.Mesh(cachedGeo('mushcap', () => new THREE.SphereGeometry(0.055, 8, 5, 0, TAU, 0, Math.PI / 2)), capMat);
+      cap.position.set(stem.position.x, 0.12 * s, stem.position.z);
+      cap.scale.set(s, s * 0.72, s);
+      g.add(cap);
+    }
+    return g;
+  },
+
+  // Кучка щебня/обломков: руины и осыпи. Дёшево, но убирает «пустые» места.
+  rubble(scale = 1, seed = 13) {
+    const g = new THREE.Group();
+    const mat = createMaterial('rock', { repeat: 1 });
+    for (let i = 0; i < 5; i++) {
+      const r = (0.1 + (i % 3) * 0.07) * scale;
+      const chunk = new THREE.Mesh(cachedGeo(`rubble:${i % 3}`, () => new THREE.DodecahedronGeometry(0.16, 0)), mat);
+      const ang = seed * 1.3 + i * 1.7;
+      chunk.position.set(Math.cos(ang) * 0.22 * scale, r * 0.6, Math.sin(ang) * 0.22 * scale);
+      chunk.rotation.set(ang, ang * 0.6, ang * 0.3);
+      chunk.scale.setScalar(r / 0.16);
+      chunk.castShadow = true;
+      chunk.receiveShadow = true;
+      g.add(chunk);
+    }
+    return g;
+  },
+
+  // Костровище: обгоревшее кольцо камней и зола — след ночёвки.
+  burntSpot(scale = 1) {
+    const g = new THREE.Group();
+    const ashMat = createMaterial('ash', { repeat: 1 });
+    const stoneMat = createMaterial('rock', { repeat: 1 });
+    const bed = new THREE.Mesh(new THREE.CircleGeometry(0.5 * scale, 14), ashMat);
+    bed.rotation.x = -Math.PI / 2;
+    bed.position.y = 0.012;
+    bed.receiveShadow = true;
+    g.add(bed);
+    for (let i = 0; i < 6; i++) {
+      const ang = (i / 6) * TAU + 0.4;
+      const st = new THREE.Mesh(cachedGeo('burntstone', () => new THREE.DodecahedronGeometry(0.09, 0)), stoneMat);
+      st.position.set(Math.cos(ang) * 0.42 * scale, 0.04 * scale, Math.sin(ang) * 0.42 * scale);
+      st.scale.setScalar(scale);
+      g.add(st);
     }
     return g;
   }
@@ -309,6 +474,31 @@ export const Structures = {
     walls.castShadow = true;
     walls.receiveShadow = true;
     group.add(walls);
+
+    // Кладка: горизонтальные швы и угловые камни. Сами стены остаются одним
+    // мешем (коллизия считается по нему), а рельеф кладки читается вблизи.
+    const mortar = colorMaterial(0x6e6a63, { roughness: 0.95 });
+    for (let i = 1; i < Math.max(4, Math.round(h / 0.55)); i++) {
+      const y = (h / Math.max(4, Math.round(h / 0.55))) * i;
+      for (const [sx, sz, len, rotY] of [[0, d / 2 + 0.012, w, 0], [0, -d / 2 - 0.012, w, 0],
+        [w / 2 + 0.012, 0, d, Math.PI / 2], [-w / 2 - 0.012, 0, d, Math.PI / 2]]) {
+        const seam = new THREE.Mesh(new THREE.BoxGeometry(len, 0.035, 0.03), mortar);
+        seam.position.set(sx, y, sz);
+        seam.rotation.y = rotY;
+        group.add(seam);
+      }
+    }
+    // Угловые камни — крупные блоки через ряд.
+    for (const sx of [-1, 1]) {
+      for (const sz of [-1, 1]) {
+        for (let i = 0; i < Math.max(3, Math.round(h / 0.62)); i++) {
+          const block = new THREE.Mesh(new THREE.BoxGeometry(0.44, 0.34, 0.44), wallMat);
+          block.position.set(sx * (w / 2 - 0.2), 0.24 + i * 0.62, sz * (d / 2 - 0.2));
+          block.castShadow = true;
+          group.add(block);
+        }
+      }
+    }
 
     // Фундамент
     const base = new THREE.Mesh(new THREE.BoxGeometry(w + 0.3, 0.45, d + 0.3), createMaterial('stone', { repeat: 3 }));
@@ -364,6 +554,32 @@ export const Structures = {
       }
     }
 
+    // Ставни: по две створки на окно с навесами — оживляет фасад.
+    for (let r = 0; r < winRows; r++) {
+      for (const c of [-1, 1]) {
+        for (const sh of [-1, 1]) {
+          const shutter = new THREE.Mesh(new THREE.BoxGeometry(0.26, 1.16, 0.06), woodMat);
+          shutter.position.set(c * w * 0.26 + sh * 0.66, h * (0.35 + r * 0.34), d / 2 + 0.06);
+          shutter.rotation.y = sh * 0.28;
+          group.add(shutter);
+          // Навесы створки
+          for (const hy of [-0.45, 0.45]) {
+            const hinge = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.05, 0.03), colorMaterial(0x2a2622, { metalness: 0.7, roughness: 0.5 }));
+            hinge.position.set(c * w * 0.26 + sh * 0.5, h * (0.35 + r * 0.34) + hy, d / 2 + 0.1);
+            group.add(hinge);
+          }
+        }
+      }
+    }
+
+    // Крыльцо: две ступени под дверью.
+    for (let i = 0; i < 2; i++) {
+      const step = new THREE.Mesh(new THREE.BoxGeometry(1.6 - i * 0.15, 0.16, 0.42 + i * 0.22), wallMat);
+      step.position.set(0, 0.08, d / 2 + 0.24 + i * 0.2);
+      step.receiveShadow = true;
+      group.add(step);
+    }
+
     // Дверь
     const door = new THREE.Mesh(new THREE.BoxGeometry(1.05, 2.1, 0.16), woodMat);
     door.position.set(0, 1.05, d / 2 + 0.02);
@@ -371,6 +587,19 @@ export const Structures = {
     const knob = new THREE.Mesh(cachedGeo('knob', () => new THREE.SphereGeometry(0.055, 8, 6)), colorMaterial(0xc9a227, { metalness: 0.9, roughness: 0.35 }));
     knob.position.set(0.35, 1.05, d / 2 + 0.12);
     group.add(knob);
+
+    // Конёк кровли и свесы: тонкие брусья по ребру.
+    const ridge = new THREE.Mesh(new THREE.BoxGeometry(w + 0.8, 0.16, 0.22), colorMaterial(0x3b1d16, { roughness: 0.9 }));
+    ridge.position.set(0, h + roofH + 0.02, 0);
+    ridge.castShadow = true;
+    group.add(ridge);
+    for (const side of [-1, 1]) {
+      // Водосточный жёлоб под свесом.
+      const gutter = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, w + 0.7, 6, 1, true), colorMaterial(0x4a4741, { metalness: 0.6, roughness: 0.55 }));
+      gutter.rotation.z = Math.PI / 2;
+      gutter.position.set(0, h - 0.04, side * (d / 2 + 0.32));
+      group.add(gutter);
+    }
 
     // Труба
     const chim = new THREE.Mesh(new THREE.BoxGeometry(0.55, 1.5, 0.55), createMaterial('stone', { repeat: 2 }));
@@ -381,6 +610,9 @@ export const Structures = {
     const light = new THREE.PointLight(0xffb45a, 0.7, 7, 2);
     light.position.set(0, h * 0.55, d / 2 + 0.7);
     group.add(light);
+    // Кладка, ставни, ступени и конёк — это ~100 мелких мешей; склеиваем их
+    // по материалам, чтобы дом остался дешёвым для кадра.
+    mergeStaticMeshes(group);
     return group;
   },
 
@@ -456,6 +688,9 @@ export const Structures = {
   // Крепость/руины: зубчатые стены, башни, арки
   fortress(w = 14, h = 7, d = 12, ruined = false) {
     const group = new THREE.Group();
+    // Знамёна и древки — через общий кэш материалов (не создаём по экземпляру).
+    const woodMatF = () => createMaterial('bark', { repeat: 1 });
+    const canvasMat = () => createMaterial('canvas', { repeat: 1 });
     const stone = createMaterial('stone', { repeat: 3 });
     const wallMat = createMaterial('rock', { repeat: 4 });
 
@@ -511,6 +746,46 @@ export const Structures = {
       }
     }
 
+    // Кладка: горизонтальные швы по периметру стен и бойницы.
+    const mortar = colorMaterial(0x555049, { roughness: 0.96 });
+    const courses = Math.max(3, Math.round(h / 0.7));
+    for (const wl of walls) {
+      for (let i = 1; i < courses; i++) {
+        const y = (h / courses) * i;
+        const long = wl.w > wl.d;
+        const seam = new THREE.Mesh(new THREE.BoxGeometry(
+          long ? wl.w : wallThick + 0.03, 0.04, long ? wallThick + 0.03 : wl.d), mortar);
+        seam.position.set(wl.x, y, wl.z);
+        group.add(seam);
+      }
+      // Бойницы: узкие прорези по центру каждой стены.
+      if (!ruined) {
+        const long = wl.w > wl.d;
+        for (let i = -1; i <= 1; i++) {
+          const slit = new THREE.Mesh(new THREE.BoxGeometry(
+            long ? 0.22 : wallThick + 0.08, 0.75, long ? wallThick + 0.08 : 0.22),
+            colorMaterial(0x14100e, { roughness: 1 }));
+          slit.position.set(
+            wl.x + (long ? i * wl.w * 0.22 : 0),
+            h * 0.62,
+            wl.z + (long ? 0 : i * wl.d * 0.22));
+          group.add(slit);
+        }
+      }
+    }
+    // Контрфорсы — наклонные упоры у основания стен: замок выглядит массивным.
+    if (!ruined) {
+      for (const sx of [-1, 1]) {
+        for (const sz of [-1, 1]) {
+          const buttress = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.75, h * 0.55, 4), wallMat);
+          buttress.position.set(sx * (w / 2 - 0.1), h * 0.27, sz * (d / 2 - 0.1));
+          buttress.rotation.y = Math.PI / 4;
+          buttress.castShadow = true;
+          group.add(buttress);
+        }
+      }
+    }
+
     // Внутренний двор: плиты
     const floor = new THREE.Mesh(new THREE.BoxGeometry(w - 2.4, 0.2, d - 2.4), createMaterial('stone', { repeat: 4 }));
     floor.position.y = 0.1;
@@ -526,6 +801,23 @@ export const Structures = {
       iron.position.set(0, 0.8 + i * 0.9, d / 2 + 0.42);
       group.add(iron);
     }
+    // Каменная арка над воротами и знамёна на башнях.
+    const arch = new THREE.Mesh(new THREE.TorusGeometry(1.9, 0.28, 6, 14, Math.PI), stone);
+    arch.position.set(0, 4.2, d / 2 + 0.05);
+    arch.rotation.z = 0;
+    group.add(arch);
+    if (!ruined) {
+      for (const sx of [-1, 1]) {
+        const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.07, 3.4, 6), woodMatF());
+        pole.position.set(sx * w / 2, h + 3.6, -d / 2 + 0.4);
+        group.add(pole);
+        const cloth = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 2.2, 4, 4), canvasMat());
+        cloth.position.set(sx * w / 2 + 0.78, h + 3.1, -d / 2 + 0.4);
+        cloth.material.side = THREE.DoubleSide;
+        group.add(cloth);
+      }
+    }
+    mergeStaticMeshes(group);
     return group;
   },
 
@@ -561,12 +853,49 @@ export const Structures = {
       group.add(f);
       flames.push(f);
     }
+    // Зольная подушка с раскалёнными углями: костёр стоит в «ямке», а не на траве.
+    const ashMat = createMaterial('ash', { repeat: 1 });
+    const ashBed = new THREE.Mesh(new THREE.CircleGeometry(0.78, 16), ashMat);
+    ashBed.rotation.x = -Math.PI / 2;
+    ashBed.position.y = 0.015;
+    ashBed.receiveShadow = true;
+    group.add(ashBed);
+    const emberMat = emissiveMaterial(0xff5a1e, 1.8);
+    for (let i = 0; i < 7; i++) {
+      const ang = (i / 7) * TAU + 0.4;
+      const ember = new THREE.Mesh(cachedGeo('ember', () => new THREE.DodecahedronGeometry(0.055, 0)), emberMat);
+      ember.position.set(Math.cos(ang) * 0.28, 0.05, Math.sin(ang) * 0.28);
+      ember.scale.set(1, 0.6, 1);
+      group.add(ember);
+    }
+    // Поленница рядом и подставка для котелка — лагерь выглядит обжитым.
+    const logsMat = createMaterial('bark', { repeat: 1 });
+    for (let i = 0; i < 3; i++) {
+      const spare = new THREE.Mesh(cachedGeo('sparelog', () => new THREE.CylinderGeometry(0.08, 0.09, 0.8, 6)), logsMat);
+      spare.rotation.z = Math.PI / 2;
+      spare.rotation.y = 0.35 + i * 0.18;
+      spare.position.set(0.95, 0.09 + i * 0.15, -0.5);
+      group.add(spare);
+    }
+    for (let i = 0; i < 2; i++) {
+      const post = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.05, 0.9, 5), logsMat);
+      post.position.set(-0.75 + i * 0.5, 0.45, -0.62);
+      post.rotation.z = -0.18 + i * 0.36;
+      group.add(post);
+    }
+    const pot = new THREE.Mesh(new THREE.SphereGeometry(0.17, 10, 8, 0, TAU, 0, Math.PI * 0.62),
+      createMaterial('iron', { repeat: 1 }));
+    pot.position.set(-0.5, 0.72, -0.62);
+    pot.rotation.x = Math.PI;
+    group.add(pot);
+
     const light = new THREE.PointLight(0xff8c3a, 3.2, 14, 2);
     light.position.y = 0.9;
     light.castShadow = false;
     group.add(light);
     group.userData.flames = flames;
     group.userData.light = light;
+    mergeStaticMeshes(group);
     group.userData.isCampfire = true;
     return group;
   },
@@ -881,4 +1210,21 @@ export const Vehicles3D = {
 export function clearGeometryCache() {
   for (const g of geoCache.values()) g.dispose();
   geoCache.clear();
+}
+
+// Склеенные геометрии зданий создаются на экземпляр (у них нет общего кэша),
+// поэтому их нужно освобождать вместе со сценой — иначе GPU-память течёт при
+// пересборке мира. Вызывается из worldbuilder.dispose().
+export function disposeMergedMeshes(root) {
+  if (!root) return 0;
+  let n = 0;
+  const junk = [];
+  root.traverse((o) => {
+    if (o.isMesh && o.userData && o.userData.merged) junk.push(o);
+  });
+  for (const m of junk) {
+    m.geometry?.dispose?.();
+    n++;
+  }
+  return n;
 }

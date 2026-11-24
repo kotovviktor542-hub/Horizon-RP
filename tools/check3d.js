@@ -269,6 +269,152 @@ if (svg) {
   ok('В сцене присутствуют полигоны', polys > 200, `path: ${polys}`);
 }
 
+// 8.5 РЕМАСТЕР МОДЕЛЕЙ: проверяем то, что было сломано и что легко откатить
+{
+console.log('--- Ремастер моделей: силуэты, детализация, бюджеты ---');
+const { Animal3D } = await import(`${ROOT}/www/js3d/actors/animals.js`);
+const { ANIMALS } = await import(`${ROOT}/www/js/data.js`);
+const { humanoidVariation } = await import(`${ROOT}/www/js3d/actors/variants.js`);
+const { MATERIAL_SPECS } = await import(`${ROOT}/www/js3d/core/materials.js`);
+
+const boxOf = (o) => new THREE.Box3().setFromObject(o);
+const sizeOf = (o) => {
+  const b = boxOf(o);
+  return { x: b.max.x - b.min.x, y: b.max.y - b.min.y, z: b.max.z - b.min.z, minY: b.min.y };
+};
+const triOf = (o) => {
+  let tris = 0;
+  o.traverse(m => {
+    if (!m.isMesh) return;
+    const g = m.geometry;
+    tris += (g.index ? g.index.count : g.attributes.position.count) / 3;
+  });
+  return Math.round(tris);
+};
+
+// 8.5.1 Лиса больше не копия волка
+{
+  const wolf = new Animal3D(scene, ANIMALS.wolf);
+  const fox = new Animal3D(scene, ANIMALS.fox);
+  const w = sizeOf(wolf.root), f = sizeOf(fox.root);
+  const differs = Math.abs(w.y - f.y) > 0.1 || Math.abs(w.z - f.z) > 0.2;
+  ok('Животные: у лисы свой силуэт, а не копия волка', differs,
+    `волк ${w.x.toFixed(2)}×${w.y.toFixed(2)}×${w.z.toFixed(2)}, лиса ${f.x.toFixed(2)}×${f.y.toFixed(2)}×${f.z.toFixed(2)}`);
+  // Все звери реальных пропорций: высота 0.2–2.2 м, ноги не под землёй
+  let sane = true;
+  const dims = [];
+  for (const id of Object.keys(ANIMALS)) {
+    const a = new Animal3D(scene, ANIMALS[id]);
+    const s2 = sizeOf(a.root);
+    dims.push(`${id} ${s2.y.toFixed(2)}`);
+    if (!(s2.y > 0.15 && s2.y < 2.4) || s2.minY < -0.1) sane = false;
+    a.dispose();
+  }
+  ok('Животные: реальные габариты и ноги на земле', sane, dims.join(', '));
+  wolf.dispose();
+  fox.dispose();
+}
+
+// 8.5.2 Босс пепла — уникальная модель, а не «большой имп»
+{
+  const imp = new Creature3D(scene, { id: 'ash_imp' }, { isBoss: false });
+  const sovereign = new Creature3D(scene, { id: 'boss_ash_sovereign' }, { isBoss: true });
+  const impTris = triOf(imp.root), sovTris = triOf(sovereign.root);
+  ok('Босс пепла: отдельная ветка модели', sovereign.kind === 'sovereign', `ветка: ${sovereign.kind}`);
+  ok('Босс пепла: детализация выше рядового импа в 3 раза', sovTris > impTris * 3,
+    `имп ${impTris} трис → босс ${sovTris} трис`);
+  const sovSize = sizeOf(sovereign.root);
+  ok('Босс пепла: заметно крупнее обычного врага', sovSize.y > 4, `высота модели ${sovSize.y.toFixed(1)} м`);
+  ok('Босс пепла: в руке двуручный меч', !!sovereign.weaponMesh);
+  imp.dispose();
+  sovereign.dispose();
+}
+
+// 8.5.3 Враги одного класса больше не клоны
+{
+  const a = humanoidVariation({ id: 'heavy_trooper' });
+  const b = humanoidVariation({ id: 'goblin_shaman' });
+  const c = humanoidVariation({ id: 'cursed_knight' });
+  const signature = (v) => [v.helmet, v.hood, v.cloak, v.pauldrons, v.backpack, v.bandolier, v.mask, v.beard].join('');
+  const sigs = new Set([signature(a), signature(b), signature(c)]);
+  ok('Враги: детали вида считаются из id (не клоны)', sigs.size >= 3, `разных наборов: ${sigs.size}`);
+  ok('Враги: комплекция зависит от вида', a.bulk > 1.2 && b.height < 1, `тяжеловес ×${a.bulk}, гоблин ×${b.height}`);
+  // Модели разных врагов действительно различаются по числу мешей
+  const m1 = new Creature3D(scene, { id: 'heavy_trooper' }, { isBoss: false });
+  const m2 = new Creature3D(scene, { id: 'zombie' }, { isBoss: false });
+  let n1 = 0, n2 = 0;
+  m1.root.traverse(o => { if (o.isMesh) n1++; });
+  m2.root.traverse(o => { if (o.isMesh) n2++; });
+  ok('Враги: разные виды — разное число деталей', n1 !== n2, `элита ${n1} мешей, зомби ${n2} мешей`);
+  m1.dispose();
+  m2.dispose();
+}
+
+// 8.5.4 Склейка не ломает анимируемые узлы
+{
+  const c = new Creature3D(scene, { id: 'soldier' }, { isBoss: false });
+  // armR/legR — это наборы узлов {shoulder, elbow}, а torso/head — сами меши.
+  const nodeOk = (v) => !!v && (v.isObject3D ? !!v.parent : Object.values(v).some(x => x && x.isObject3D));
+  const limbs = ['torso', 'head', 'armR', 'armL', 'legR', 'legL'];
+  const intact = limbs.every(k => nodeOk(c.parts[k]));
+  const before = c.parts.armR.shoulder.rotation.x;
+  for (let i = 0; i < 20; i++) c.update(0.016, { position: { x: 0, y: 0, z: 0 }, facing: 0, speed: 2, attacking: true });
+  const moved = Math.abs(c.parts.armR.shoulder.rotation.x - before) > 0.02;
+  ok('Враги: склейка сохраняет скелет и анимацию', intact && moved, `узлов: ${limbs.length}, рука двигается: ${moved}`);
+  c.dispose();
+}
+
+// 8.5.5 Материалы: нормали, металл и окружение
+{
+  const names = Object.keys(MATERIAL_SPECS);
+  const withNormal = names.filter(n => !!MATERIAL_SPECS[n].height);
+  ok('Материалы: карты нормалей у большинства поверхностей', withNormal.length >= names.length * 0.4,
+    `${withNormal.length} из ${names.length}`);
+  const metals = names.filter(n => (MATERIAL_SPECS[n].metalness || 0) > 0.5);
+  ok('Материалы: есть отдельные металлы (железо, золото)', metals.length >= 2, metals.join(', '));
+  const old = Object.keys(MATERIAL_SPECS).filter(n => ['wood', 'iron', 'gold', 'skin', 'fur', 'roof', 'canvas'].includes(n));
+  ok('Материалы: добавлены поверхности для ремастера', old.length >= 7, old.join(', '));
+  // Окружение (IBL) создаётся и не роняет игру без renderer
+  const { SkySystem } = await import(`${ROOT}/www/js3d/core/sky.js`);
+  const sky = new SkySystem(new THREE.Scene());
+  const applied = sky.updateEnvironment(null, new THREE.Scene());
+  ok('Освещение: env map не ломает headless-рендер', applied === false, 'без renderer окружение не применяется, но и не падает');
+}
+
+// 8.5.6 Геометрия зданий: детализация выросла, draw calls остались низкими
+{
+  const { Structures } = await import(`${ROOT}/www/js3d/world/models.js`);
+  const house = Structures.house(7, 4.2, 6, 1);
+  const tris = triOf(house);
+  let meshes = 0;
+  house.traverse(o => { if (o.isMesh) meshes++; });
+  ok('Здания: детализация дома выросла (кладка, ставни, ступени)', tris > 900, `трис: ${tris}`);
+  ok('Здания: детали склеены по материалам (мало draw calls)', meshes < 25, `мешей: ${meshes}`);
+  const fort = Structures.fortress(14, 7, 12, false);
+  let fortMeshes = 0;
+  fort.traverse(o => { if (o.isMesh) fortMeshes++; });
+  ok('Здания: крепость тоже склеена', fortMeshes < 20, `мешей: ${fortMeshes}, трис: ${triOf(fort)}`);
+  // Мелкие детали «живого мира»
+  const { Foliage } = await import(`${ROOT}/www/js3d/world/models.js`);
+  const small = ['flowers', 'mushrooms', 'rubble', 'burntSpot'].filter(k => typeof Foliage[k] === 'function');
+  ok('Мир: добавлены мелкие детали (цветы, грибы, щебень, костровища)', small.length === 4, small.join(', '));
+}
+
+// 8.5.7 Бюджеты: суммарная геометрия осталась в разумных пределах
+{
+  const { Foliage } = await import(`${ROOT}/www/js3d/world/models.js`);
+  const spots = [
+    Foliage.deciduous(1, 1, 0), Foliage.pine(1, 2), Foliage.bush(1, 4, false),
+    Foliage.rock(1.2, 5), Foliage.dead(1, 3)
+  ];
+  const total = spots.reduce((s2, g) => s2 + triOf(g), 0);
+  ok('Производительность: шаблоны растительности в бюджете', total < 4500, `сумма ${total} трис на 5 моделей`);
+  const heroTris = triOf(hero.root);
+  ok('Производительность: герой в бюджете (<9000 трис)', heroTris < 9000, `${heroTris} трис`);
+}
+
+}
+
 // 9. Производительность
 // Замер: лучшее из трёх серий — на загруженных раннерах CI одиночный
 // замер легко ловит паузу планировщика и даёт ложное падение.

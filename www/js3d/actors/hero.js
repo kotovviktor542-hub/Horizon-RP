@@ -3,6 +3,7 @@
 // и сменной экипировкой: оружие в руке, шлем, нагрудник, плащ.
 
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { createMaterial, colorMaterial, emissiveMaterial } from '../core/materials.js';
 
 const TAU = Math.PI * 2;
@@ -20,7 +21,10 @@ export const Weapon3D = {
     const steel = new THREE.MeshStandardMaterial({ color: 0xd8e0ea, metalness: 0.95, roughness: 0.18 });
     const darkSteel = new THREE.MeshStandardMaterial({ color: 0x6b7480, metalness: 0.9, roughness: 0.32 });
     const grip = createMaterial('leather', { repeat: 1 });
-    const gold = new THREE.MeshStandardMaterial({ color: 0xd4a63a, metalness: 1, roughness: 0.22 });
+    const gold = createMaterial('gold', { repeat: 1 });
+    const wood = createMaterial('wood', { repeat: 1 });
+    // Обмотка рукояти: кольца из тёмной кожи — деталь, которая читается в руке.
+    const wrapMat = colorMaterial(0x2c2218, { roughness: 0.92 });
 
     const isMagic = category === 'magic';
     const isBow = category === 'bow';
@@ -29,26 +33,73 @@ export const Weapon3D = {
     const isSpear = category === 'spear';
 
     if (isBow) {
-      // Лук: дуга из сегментов + тетива
+      // Лук: рекурсивные плечи (двойной изгиб), рожки на концах, обмотка
+      // рукояти и тетива с гнёздами. Раньше это была одна трубка-дуга.
       const curve = new THREE.CatmullRomCurve3([
-        new THREE.Vector3(0, 0.55, 0.0), new THREE.Vector3(0.12, 0.28, 0.22),
-        new THREE.Vector3(0.16, 0, 0.3), new THREE.Vector3(0.12, -0.28, 0.22),
-        new THREE.Vector3(0, -0.55, 0.0)
+        new THREE.Vector3(0.0, 0.62, -0.06),
+        new THREE.Vector3(0.10, 0.44, 0.10),
+        new THREE.Vector3(0.16, 0.22, 0.22),
+        new THREE.Vector3(0.17, 0.0, 0.26),
+        new THREE.Vector3(0.16, -0.22, 0.22),
+        new THREE.Vector3(0.10, -0.44, 0.10),
+        new THREE.Vector3(0.0, -0.62, -0.06)
       ]);
-      const limb = new THREE.Mesh(new THREE.TubeGeometry(curve, 18, 0.032, 7, false), createMaterial('bark', { repeat: 1 }));
+      const limb = new THREE.Mesh(new THREE.TubeGeometry(curve, 26, 0.03, 8, false), wood);
       limb.castShadow = true;
       group.add(limb);
-      const stringGeo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, 0.55, 0), new THREE.Vector3(0, -0.55, 0)]);
+      // Рожки и гнёзда тетивы.
+      for (const sy of [-1, 1]) {
+        const nock = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.026, 0.07, 6), gold);
+        nock.position.set(0, sy * 0.645, -0.07);
+        nock.rotation.x = -sy * 0.25;
+        group.add(nock);
+        const tip = new THREE.Mesh(new THREE.SphereGeometry(0.014, 6, 5), gold);
+        tip.position.set(0, sy * 0.685, -0.075);
+        group.add(tip);
+      }
+      // Рукоять: утолщение и кожаная обмотка кольцами.
+      const riser = new THREE.Mesh(new THREE.CylinderGeometry(0.042, 0.042, 0.20, 8), wood);
+      riser.position.set(0.155, 0, 0.255);
+      riser.rotation.x = Math.PI / 2;
+      group.add(riser);
+      for (let i = 0; i < 4; i++) {
+        const band = new THREE.Mesh(new THREE.TorusGeometry(0.044, 0.007, 5, 10), wrapMat);
+        band.position.set(0.155, -0.075 + i * 0.05, 0.255);
+        band.rotation.y = Math.PI / 2;
+        group.add(band);
+      }
+      // Тетива и «гнездо» стрелы.
+      const stringGeo = new THREE.BufferGeometry().setFromPoints([
+        new THREE.Vector3(0, 0.645, -0.07), new THREE.Vector3(0, 0, 0.10),
+        new THREE.Vector3(0, -0.645, -0.07)
+      ]);
       group.add(new THREE.Line(stringGeo, new THREE.LineBasicMaterial({ color: 0xe8e8ee })));
-      group.add(new THREE.Mesh(new THREE.SphereGeometry(0.05, 8, 6), gold));
+      const arrowRest = new THREE.Mesh(new THREE.BoxGeometry(0.045, 0.012, 0.02), gold);
+      arrowRest.position.set(0.16, 0.0, 0.15);
+      group.add(arrowRest);
     } else if (isMagic) {
-      // Посох: древко, кристалл в оправе, свечение
-      const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.034, 1.25, 8), createMaterial('bark', { repeat: 1 }));
+      // Посох: витое древко с обмоткой, кованые кольца, кристалл в оправе.
+      const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.026, 0.034, 1.25, 8), wood);
       shaft.position.y = 0.1;
       shaft.castShadow = true;
       group.add(shaft);
+      for (let i = 0; i < 5; i++) {
+        const band = new THREE.Mesh(new THREE.TorusGeometry(0.032, 0.007, 5, 10), i % 2 ? gold : wrapMat);
+        band.position.y = -0.28 + i * 0.16;
+        band.rotation.x = Math.PI / 2;
+        group.add(band);
+      }
+      // Оправа: три «когтя», удерживающие кристалл.
+      for (let i = 0; i < 3; i++) {
+        const ang = (i / 3) * TAU;
+        const claw = new THREE.Mesh(new THREE.ConeGeometry(0.018, 0.16, 5), gold);
+        claw.position.set(Math.cos(ang) * 0.075, 0.80, Math.sin(ang) * 0.075);
+        claw.rotation.x = Math.sin(ang) * 0.42;
+        claw.rotation.z = -Math.cos(ang) * 0.42;
+        group.add(claw);
+      }
       const cradle = new THREE.Mesh(new THREE.TorusGeometry(0.1, 0.022, 6, 14), gold);
-      cradle.position.y = 0.78;
+      cradle.position.y = 0.72;
       cradle.rotation.x = Math.PI / 2;
       group.add(cradle);
       const crystal = new THREE.Mesh(new THREE.OctahedronGeometry(0.13, 0), emissiveMaterial(glow, 2.4, { transparent: true, opacity: 0.9 }));
@@ -65,6 +116,14 @@ export const Weapon3D = {
       handle.position.y = handleLen / 2;
       handle.castShadow = true;
       group.add(handle);
+      // Обмотка рукояти: 3–5 колец тёмной кожи (у топора и копья — длиннее).
+      const rings = isAxe || isSpear ? 5 : isDagger ? 2 : 3;
+      for (let i = 0; i < rings; i++) {
+        const band = new THREE.Mesh(new THREE.TorusGeometry(0.036, 0.006, 4, 10), wrapMat);
+        band.position.y = handleLen * (0.12 + (i / Math.max(1, rings - 1)) * 0.72);
+        band.rotation.x = Math.PI / 2;
+        group.add(band);
+      }
       // Навершие
       const pommel = new THREE.Mesh(new THREE.SphereGeometry(0.045, 8, 6), gold);
       pommel.position.y = -0.01;
@@ -114,6 +173,17 @@ export const Weapon3D = {
           const fuller = new THREE.Mesh(new THREE.BoxGeometry(bladeW * 0.22, bladeLen * 0.7, 0.032), darkSteel);
           fuller.position.set(0, handleLen + bladeLen * 0.42, 0);
           group.add(fuller);
+          // Фаски вдоль кромок: две узкие полосы светлее клинка — «заточенное»
+          // лезвие ловит блик иначе, чем плоскость.
+          for (const side of [-1, 1]) {
+            const bevel = new THREE.Mesh(new THREE.BoxGeometry(bladeW * 0.16, bladeLen * 0.82, 0.034), steel);
+            bevel.position.set(side * bladeW * 0.3, handleLen + bladeLen * 0.45, 0);
+            group.add(bevel);
+          }
+          // Пятка клинка: утолщение у гарды.
+          const ricasso = new THREE.Mesh(new THREE.BoxGeometry(bladeW * 1.08, 0.05, 0.036), darkSteel);
+          ricasso.position.set(0, handleLen + 0.03, 0);
+          group.add(ricasso);
         }
         // Магическое свечение для редкого оружия
         if (rarity === 'legendary' || rarity === 'epic' || rarity === 'mythic') {
@@ -158,11 +228,16 @@ export class Hero3D {
   }
 
   _build() {
-    const skin = new THREE.MeshStandardMaterial({ color: 0xc79a72, roughness: 0.72, metalness: 0.02 });
-    const cloth = new THREE.MeshStandardMaterial({ color: 0x2b3340, roughness: 0.88 });
+    // Материалы берём из общей библиотеки: у кожи лица и ткани есть карты
+    // нормалей, поэтому при движении камеры читаются поры и плетение, а не
+    // «залитая» поверхность.
+    const skin = createMaterial('skin', { repeat: 2 });
+    const cloth = createMaterial('cloth', { repeat: 2 });
     const leather = createMaterial('leather', { repeat: 1 });
     const chain = new THREE.MeshStandardMaterial({ color: 0x6d727c, metalness: 0.85, roughness: 0.42 });
-    this.materials = { skin, cloth, leather, chain };
+    const hairMat = createMaterial('fur', { repeat: 2 });
+    const goldMat = new THREE.MeshStandardMaterial({ color: 0xb08b3a, metalness: 0.95, roughness: 0.28 });
+    this.materials = { skin, cloth, leather, chain, hairMat, gold: goldMat };
 
     // Тазобедренный узел — корень анимации
     const hips = new THREE.Group();
@@ -187,6 +262,19 @@ export class Hero3D {
     const buckle = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.06, 0.03), new THREE.MeshStandardMaterial({ color: 0xb08b3a, metalness: 0.95, roughness: 0.28 }));
     buckle.position.set(0, 0.105, 0.13);
     torso.add(buckle);
+    // Подсумок на бедре и петля — снаряжение, а не «голый» ремень.
+    const pouch = new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.12, 0.07), leather);
+    pouch.position.set(-0.17, 0.02, 0.09);
+    pouch.rotation.y = 0.25;
+    torso.add(pouch);
+    const pouchFlap = new THREE.Mesh(new THREE.BoxGeometry(0.115, 0.05, 0.075), leather);
+    pouchFlap.position.set(-0.17, 0.075, 0.09);
+    pouchFlap.rotation.y = 0.25;
+    torso.add(pouchFlap);
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(0.026, 0.007, 5, 10), goldMat);
+    ring.position.set(0.185, 0.06, 0.06);
+    ring.rotation.y = Math.PI / 2;
+    torso.add(ring);
 
     // Грудная клетка (сужение к талии — анатомия, а не куб)
     const chestGeo = new THREE.CylinderGeometry(0.255, 0.195, 0.52, 12, 2);
@@ -206,6 +294,24 @@ export class Hero3D {
     torso.add(armorPlate);
     this.parts.armor = armorPlate;
 
+    // Клёпки по краю нагрудника: мелкая деталь, но именно она читается как
+    // «сделанная вещь» на близкой дистанции.
+    for (const side of [-1, 1]) {
+      for (let i = 0; i < 4; i++) {
+        const rivet = new THREE.Mesh(new THREE.SphereGeometry(0.011, 6, 5), goldMat);
+        rivet.position.set(side * (0.20 - i * 0.012), 0.14 + i * 0.11, 0.185 - i * 0.012);
+        torso.add(rivet);
+      }
+    }
+    // Центральное ребро жёсткости и кожаный ремень через грудь.
+    const ridge = new THREE.Mesh(new THREE.BoxGeometry(0.028, 0.44, 0.02), chain);
+    ridge.position.set(0, 0.34, 0.196);
+    torso.add(ridge);
+    const strap = new THREE.Mesh(new THREE.BoxGeometry(0.075, 0.5, 0.02), leather);
+    strap.position.set(0.10, 0.32, 0.185);
+    strap.rotation.z = 0.42;
+    torso.add(strap);
+
     // Плечи
     for (const side of [-1, 1]) {
       const pad = new THREE.Mesh(new THREE.SphereGeometry(0.115, 12, 9, 0, TAU, 0, Math.PI / 1.75), chain);
@@ -213,6 +319,12 @@ export class Hero3D {
       pad.scale.set(1.05, 0.8, 0.95);
       pad.castShadow = true;
       torso.add(pad);
+      // Вторая, меньшая пластина поверх — «доспех из сегментов».
+      const pad2 = new THREE.Mesh(new THREE.SphereGeometry(0.085, 10, 8, 0, TAU, 0, Math.PI / 2), chain);
+      pad2.position.set(side * 0.285, 0.575, 0);
+      pad2.scale.set(1, 0.7, 1);
+      pad2.rotation.z = side * -0.3;
+      torso.add(pad2);
       if (side === 1) this.parts.shoulderR = pad;
       else this.parts.shoulderL = pad;
     }
@@ -240,11 +352,62 @@ export class Hero3D {
       eye.position.set(side * 0.058, 0.018, 0.132);
       head.add(eye);
     }
-    // Волосы/капюшон
-    const hair = new THREE.Mesh(new THREE.SphereGeometry(0.162, 16, 12, 0, TAU, 0, Math.PI / 1.9), colorMaterial(0x241a16, { roughness: 0.92 }));
+    // Лицо: нос, надбровные дуги, губы, уши и скулы — чтобы в портретном
+    // ракурсе (камера от третьего лица близко) силуэт был человеческим.
+    const nose = new THREE.Mesh(new THREE.ConeGeometry(0.026, 0.075, 6), skin);
+    nose.position.set(0, -0.006, 0.152);
+    nose.rotation.x = Math.PI / 2.15;
+    head.add(nose);
+    const noseTip = new THREE.Mesh(new THREE.SphereGeometry(0.021, 7, 6), skin);
+    noseTip.position.set(0, -0.012, 0.183);
+    head.add(noseTip);
+    for (const side of [-1, 1]) {
+      // Надбровная дуга
+      const brow = new THREE.Mesh(new THREE.BoxGeometry(0.055, 0.012, 0.02), hairMat);
+      brow.position.set(side * 0.058, 0.052, 0.138);
+      brow.rotation.z = side * 0.16;
+      head.add(brow);
+      // Скула
+      const cheek = new THREE.Mesh(new THREE.SphereGeometry(0.043, 8, 6), skin);
+      cheek.position.set(side * 0.088, -0.018, 0.108);
+      cheek.scale.set(1, 0.8, 0.62);
+      head.add(cheek);
+      // Ухо: раковина и мочка
+      const ear = new THREE.Mesh(new THREE.SphereGeometry(0.032, 8, 6), skin);
+      ear.position.set(side * 0.145, 0.004, 0.006);
+      ear.scale.set(0.42, 1.15, 0.78);
+      head.add(ear);
+      const lobe = new THREE.Mesh(new THREE.SphereGeometry(0.016, 6, 5), skin);
+      lobe.position.set(side * 0.145, -0.03, 0.008);
+      head.add(lobe);
+    }
+    // Губы: верхняя и нижняя, слегка приоткрыты
+    const lipMat = new THREE.MeshStandardMaterial({ color: 0x9c5c4e, roughness: 0.6 });
+    const lipU = new THREE.Mesh(new THREE.BoxGeometry(0.062, 0.012, 0.014), lipMat);
+    lipU.position.set(0, -0.062, 0.146);
+    head.add(lipU);
+    const lipL = new THREE.Mesh(new THREE.BoxGeometry(0.054, 0.014, 0.014), lipMat);
+    lipL.position.set(0, -0.078, 0.144);
+    head.add(lipL);
+    // Подбородок
+    const chin = new THREE.Mesh(new THREE.SphereGeometry(0.038, 8, 6), skin);
+    chin.position.set(0, -0.106, 0.118);
+    chin.scale.set(1, 0.72, 0.7);
+    head.add(chin);
+
+    // Волосы: купол + пряди по бокам и сзади (силуэт не «шлем»)
+    const hair = new THREE.Mesh(new THREE.SphereGeometry(0.162, 16, 12, 0, TAU, 0, Math.PI / 1.9), hairMat);
     hair.position.y = 0.012;
     hair.scale.set(0.96, 1.0, 0.98);
     head.add(hair);
+    for (let i = 0; i < 7; i++) {
+      const ang = Math.PI * (0.18 + (i / 6) * 0.64);
+      const strand = new THREE.Mesh(new THREE.ConeGeometry(0.022, 0.10 + (i % 3) * 0.03, 5), hairMat);
+      strand.position.set(Math.cos(ang) * 0.145, -0.02 - (i % 2) * 0.02, -Math.sin(ang) * 0.145);
+      strand.rotation.x = 0.25;
+      strand.rotation.z = Math.cos(ang) * 0.3;
+      head.add(strand);
+    }
 
     // Шлем (сменная экипировка, скрыт по умолчанию)
     const helmGeo = new THREE.SphereGeometry(0.178, 16, 12, 0, TAU, 0, Math.PI / 1.75);
@@ -296,6 +459,21 @@ export class Hero3D {
       elbow.add(hand);
       const palm = new THREE.Mesh(new THREE.BoxGeometry(0.085, 0.1, 0.055), skin);
       hand.add(palm);
+      // Пальцы: четыре фаланги + большой палец. При замахе кисть читается
+      // как рука, а не как «бочонок».
+      for (let f = 0; f < 4; f++) {
+        const finger = new THREE.Mesh(new THREE.CylinderGeometry(0.0115, 0.010, 0.062, 5), skin);
+        finger.position.set((f - 1.5) * 0.021, -0.078, 0.004);
+        finger.rotation.x = 0.12 + f * 0.02;
+        hand.add(finger);
+        const knuckle = new THREE.Mesh(new THREE.SphereGeometry(0.0125, 6, 5), skin);
+        knuckle.position.set((f - 1.5) * 0.021, -0.05, 0.012);
+        hand.add(knuckle);
+      }
+      const thumb = new THREE.Mesh(new THREE.CylinderGeometry(0.013, 0.011, 0.055, 5), skin);
+      thumb.position.set(side * 0.045, -0.028, 0.024);
+      thumb.rotation.set(0.5, 0, side * -0.7);
+      hand.add(thumb);
 
       armParts[side === 1 ? 'R' : 'L'] = { shoulder, elbow, hand };
     }
@@ -332,6 +510,13 @@ export class Hero3D {
       boot.position.set(0, -0.05, 0.05);
       boot.castShadow = true;
       foot.add(boot);
+      // Подошва и каблук — обувь перестаёт быть «кирпичом».
+      const sole = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.028, 0.275), colorMaterial(0x1e1a16, { roughness: 0.95 }));
+      sole.position.set(0, -0.104, 0.052);
+      foot.add(sole);
+      const cuff = new THREE.Mesh(new THREE.CylinderGeometry(0.082, 0.072, 0.06, 8), leather);
+      cuff.position.set(0, 0.015, 0.01);
+      foot.add(cuff);
 
       legParts[side === 1 ? 'R' : 'L'] = { hip, knee, foot };
     }
@@ -356,19 +541,68 @@ export class Hero3D {
     this.lantern.position.set(0, 1.5, 0.3);
     this.root.add(this.lantern);
 
-    // Тень-пятно под героем (для читаемости на любом фоне)
-    const shadowTex = this._makeBlobShadow();
-    if (!shadowTex) { this.blobShadow = null; return; }
-    const shadowPlane = new THREE.Mesh(
-      new THREE.PlaneGeometry(1.2, 1.2),
-      new THREE.MeshBasicMaterial({ map: shadowTex, transparent: true, opacity: 0.45, depthWrite: false })
-    );
-    shadowPlane.rotation.x = -Math.PI / 2;
-    shadowPlane.position.y = 0.02;
-    this.root.add(shadowPlane);
-    this.blobShadow = shadowPlane;
-
     this.root.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+
+    // Тень-пятно под героем (для читаемости на любом фоне). Без canvas
+    // (headless-тесты) просто не создаём — остальная модель строится всегда.
+    const shadowTex = this._makeBlobShadow();
+    if (!shadowTex) { this.blobShadow = null; }
+    else {
+      const shadowPlane = new THREE.Mesh(
+        new THREE.PlaneGeometry(1.2, 1.2),
+        new THREE.MeshBasicMaterial({ map: shadowTex, transparent: true, opacity: 0.45, depthWrite: false })
+      );
+      shadowPlane.rotation.x = -Math.PI / 2;
+      shadowPlane.position.y = 0.02;
+      this.root.add(shadowPlane);
+      this.blobShadow = shadowPlane;
+    }
+    // Детализация добавила ~50 мелких мешей. Склеиваем статику по материалам:
+    // 4–5 draw call на группу вместо десятков, вершины при этом остаются.
+    this._mergeStaticParts();
+  }
+
+  // Склейка статических мешей внутри одного родителя с общим материалом.
+  // Всё, что лежит в this.parts (анимируемые узлы и сменная экипировка),
+  // не трогаем: к нему обращаются анимации и equipArmor/equipWeapon.
+  _mergeStaticParts() {
+    if (typeof mergeGeometries !== 'function') return;
+    const animated = new Set();
+    const collect = (v) => {
+      if (!v) return;
+      if (Array.isArray(v)) { v.forEach(collect); return; }
+      if (v.isObject3D) animated.add(v);
+    };
+    Object.values(this.parts).forEach(collect);
+
+    const buckets = new Map();
+    this.root.traverse((o) => {
+      if (!o.isMesh || !o.geometry || !o.material) return;
+      if (animated.has(o) || o.userData.animated) return;
+      if (o.material.transparent) return;
+      const key = `${o.parent?.uuid}|${o.material.uuid}`;
+      if (!buckets.has(key)) buckets.set(key, []);
+      buckets.get(key).push(o);
+    });
+    for (const [, list] of buckets) {
+      if (list.length < 2) continue;
+      const parent = list[0].parent;
+      const geos = [];
+      for (const mesh of list) {
+        mesh.updateMatrix();
+        const g = mesh.geometry.clone();
+        g.applyMatrix4(mesh.matrix);
+        geos.push(g);
+      }
+      const merged = mergeGeometries(geos, false);
+      geos.forEach(g => g.dispose());
+      if (!merged) continue;
+      const mesh = new THREE.Mesh(merged, list[0].material);
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      for (const old of list) parent.remove(old);
+      parent.add(mesh);
+    }
   }
 
   _makeBlobShadow() {

@@ -728,6 +728,11 @@ export class Game3D {
     // Небо и погода
     const weather = this._resolveWeather(e);
     this.sky.update(dt, this.camera.position, e.timeOfDay, weather, 1);
+    // IBL: пересчёт окружения только когда время суток реально изменилось.
+    if (this.sky._envDirty) {
+      this.sky._envDirty = false;
+      this.sky.updateEnvironment(this.renderer, this.scene);
+    }
     this.effects.weather.setWeather(weather, 1);
 
     // Камера от третьего лица

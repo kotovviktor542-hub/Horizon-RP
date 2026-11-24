@@ -126,7 +126,8 @@ export const MATERIAL_SPECS = {
       const mixed = mixc(base, [120, 122, 62], Math.max(0, dry - 0.55) * 1.8);
       const g = mixed.map((c, i) => clamp255(c + (blade - 0.5) * 26 + (i === 1 ? 6 : 0)));
       return [g[0], g[1], g[2], 255];
-    }
+    },
+    height: (u, v) => fbm(u * 30, v * 30, 11, 3) * 0.7 + vnoise(u * 90, v * 90, 12) * 0.3,
   },
   dirt: {
     color: [0.30, 0.23, 0.15], roughness: 0.96,
@@ -136,7 +137,8 @@ export const MATERIAL_SPECS = {
       const base = mixc([74, 56, 38], [112, 88, 62], n);
       const c = base.map(k => clamp255(k + (pebble - 0.5) * 30));
       return [c[0], c[1], c[2], 255];
-    }
+    },
+    height: (u, v) => fbm(u * 16, v * 16, 21, 3) * 0.8,
   },
   rock: {
     color: [0.42, 0.42, 0.45], roughness: 0.85,
@@ -209,7 +211,8 @@ export const MATERIAL_SPECS = {
       const base = mixc([30, 56, 22], [78, 112, 42], clump);
       const c = base.map((k, i) => clamp255(k + (leaf - 0.5) * 34 + (i === 1 ? 8 : 0)));
       return [c[0], c[1], c[2], 255];
-    }
+    },
+    height: (u, v) => fbm(u * 26, v * 26, 51, 3) * 0.9,
   },
   pine: {
     color: [0.13, 0.26, 0.16], roughness: 0.9,
@@ -243,7 +246,8 @@ export const MATERIAL_SPECS = {
       const base = mixc([96, 100, 108], [168, 172, 180], n);
       const c = base.map(k => clamp255(k + (scratch > 0.96 ? 30 : 0)));
       return [c[0], c[1], c[2], 255];
-    }
+    },
+    height: (u, v) => vnoise(u * 60, v * 60, 111) * 0.35,
   },
   cloth: {
     color: [0.36, 0.20, 0.18], roughness: 0.94,
@@ -253,7 +257,8 @@ export const MATERIAL_SPECS = {
       const base = mixc([76, 44, 38], [132, 82, 68], n);
       const c = base.map(k => clamp255(k + (weave - 0.5) * 18));
       return [c[0], c[1], c[2], 255];
-    }
+    },
+    height: (u, v) => (Math.sin(u * 160) * Math.sin(v * 160)) * 0.35,
   },
   leather: {
     color: [0.28, 0.19, 0.12], roughness: 0.72,
@@ -263,7 +268,8 @@ export const MATERIAL_SPECS = {
       const base = mixc([62, 42, 26], [104, 74, 46], n);
       const c = base.map(k => clamp255(k + (grain - 0.5) * 20));
       return [c[0], c[1], c[2], 255];
-    }
+    },
+    height: (u, v) => fbm(u * 52, v * 52, 101, 3) * 0.8,
   },
   bone: {
     color: [0.86, 0.83, 0.72], roughness: 0.65,
@@ -271,6 +277,137 @@ export const MATERIAL_SPECS = {
       const n = fbm(u * 18, v * 18, 113, 4);
       const base = mixc([198, 192, 172], [236, 232, 214], n);
       return [base[0], base[1], base[2], 255];
+    }
+  },
+
+  // ── REMASTER: материалы, которых не хватало моделям ───────────────────
+  // Дерево (доски, древки, щиты): волокна вдоль, сучки и потёртости.
+  wood: {
+    color: [0.44, 0.31, 0.18], roughness: 0.82,
+    albedo: (u, v) => {
+      const grain = fbm(u * 6, v * 90, 137, 4);
+      const knot = Math.abs(fbm(u * 9, v * 9, 139, 3) - 0.5);
+      const base = mixc([92, 62, 34], [146, 106, 62], grain);
+      const dark = knot < 0.035 ? 0.62 : 1;
+      const c = base.map(k => clamp255(k * dark));
+      return [c[0], c[1], c[2], 255];
+    },
+    height: (u, v) => fbm(u * 5, v * 70, 141, 3) * 0.8
+  },
+  // Кованое железо: тёмное, с окалиной и задирами — доспехи, клинки, обручи.
+  iron: {
+    color: [0.30, 0.32, 0.36], roughness: 0.46, metalness: 0.92,
+    albedo: (u, v) => {
+      const n = fbm(u * 30, v * 30, 143, 4);
+      const scale = vnoise(u * 70, v * 70, 147);
+      const base = mixc([54, 58, 66], [116, 122, 132], n);
+      const c = base.map(k => clamp255(k + (scale - 0.5) * 26));
+      return [c[0], c[1], c[2], 255];
+    }
+  },
+  // Позолота/латунь для рукоятей, пряжек и отделки.
+  gold: {
+    color: [0.78, 0.63, 0.28], roughness: 0.26, metalness: 0.95,
+    albedo: (u, v) => {
+      const n = fbm(u * 24, v * 24, 149, 4);
+      const base = mixc([168, 130, 54], [226, 190, 108], n);
+      const c = base.map(k => clamp255(k));
+      return [c[0], c[1], c[2], 255];
+    }
+  },
+  // Кожа лица и рук персонажей и NPC.
+  skin: {
+    color: [0.76, 0.60, 0.47], roughness: 0.66,
+    albedo: (u, v) => {
+      const pore = vnoise(u * 200, v * 200, 151);
+      const n = fbm(u * 16, v * 16, 153, 4);
+      const base = mixc([186, 142, 110], [214, 172, 138], n);
+      const warmth = vnoise(u * 8, v * 8, 157);
+      const c = base.map((k, i) => clamp255(k + (pore - 0.5) * 12 + (i === 0 ? (warmth - 0.5) * 14 : 0)));
+      return [c[0], c[1], c[2], 255];
+    }
+  },
+  // Мех животных: короткие пряди с направлением роста.
+  fur: {
+    color: [0.34, 0.27, 0.20], roughness: 0.92,
+    albedo: (u, v) => {
+      const strand = Math.sin(v * 260 + fbm(u * 12, v * 12, 163, 3) * 22);
+      const n = fbm(u * 20, v * 20, 167, 4);
+      const base = mixc([72, 56, 40], [128, 104, 76], n);
+      const c = base.map(k => clamp255(k + strand * 16));
+      return [c[0], c[1], c[2], 255];
+    },
+    height: (u, v) => Math.sin(v * 240 + fbm(u * 10, v * 10, 163, 3) * 18) * 0.6
+  },
+  // Черепица крыш: ряды со швом, выветренная кромка.
+  roof: {
+    color: [0.38, 0.17, 0.13], roughness: 0.86,
+    albedo: (u, v) => {
+      const row = Math.floor(v * 14);
+      const stagger = (row % 2) * 0.5;
+      const seam = Math.abs(((u * 10 + stagger) % 1) - 0.5);
+      const n = fbm(u * 22, v * 22, 173, 4);
+      const base = mixc([92, 40, 32], [148, 74, 56], n);
+      const c = base.map(k => clamp255(k * (seam > 0.44 ? 0.72 : 1)));
+      return [c[0], c[1], c[2], 255];
+    },
+    height: (u, v) => {
+      const row = (v * 14) % 1;
+      return Math.sin(row * Math.PI) * 1.4 + vnoise(u * 30, v * 30, 179) * 0.25;
+    }
+  },
+  // Чистое стекло витражей/окон (используется с эмиссией отдельно).
+  glass: {
+    color: [0.55, 0.72, 0.82], roughness: 0.08, metalness: 0.1,
+    albedo: (u, v) => {
+      const n = fbm(u * 12, v * 12, 181, 3);
+      const base = mixc([134, 176, 196], [186, 214, 228], n);
+      return [base[0], base[1], base[2], 255];
+    }
+  },
+  // Лёд: голубой, с трещинами — ледяные колоссы и пещеры.
+  ice: {
+    color: [0.62, 0.80, 0.92], roughness: 0.22, metalness: 0.05,
+    albedo: (u, v) => {
+      const crack = Math.abs(fbm(u * 10, v * 10, 191, 4) - 0.5);
+      const n = fbm(u * 18, v * 18, 193, 3);
+      const base = mixc([150, 194, 222], [212, 236, 248], n);
+      const c = base.map(k => clamp255(crack < 0.03 ? k * 0.72 : k));
+      return [c[0], c[1], c[2], 255];
+    }
+  },
+  // Обожжённая земля и пепел.
+  ash: {
+    color: [0.32, 0.30, 0.29], roughness: 0.95,
+    albedo: (u, v) => {
+      const n = fbm(u * 16, v * 16, 197, 5);
+      const ember = Math.abs(fbm(u * 40, v * 40, 199, 3) - 0.5);
+      const base = mixc([52, 50, 48], [104, 100, 96], n);
+      const c = base.map((k, i) => clamp255(ember < 0.02 && i === 0 ? k + 90 : k));
+      return [c[0], c[1], c[2], 255];
+    }
+  },
+  // Солома/тростник: крыши хижин, тюки, поля.
+  thatch: {
+    color: [0.56, 0.47, 0.26], roughness: 0.94,
+    albedo: (u, v) => {
+      const straw = Math.sin(u * 300 + v * 20) * 0.5 + 0.5;
+      const n = fbm(u * 14, v * 40, 211, 4);
+      const base = mixc([120, 100, 52], [186, 160, 92], n);
+      const c = base.map(k => clamp255(k + (straw - 0.5) * 26));
+      return [c[0], c[1], c[2], 255];
+    }
+  },
+  // Цветная ткань для плащей, знамён и шатров.
+  canvas: {
+    color: [0.42, 0.30, 0.24], roughness: 0.92,
+    albedo: (u, v) => {
+      const weave = (Math.sin(u * 240) * Math.sin(v * 240)) * 0.5 + 0.5;
+      const n = fbm(u * 18, v * 18, 217, 4);
+      const stain = fbm(u * 5, v * 5, 219, 3);
+      const base = mixc([96, 68, 54], [156, 118, 96], n);
+      const c = base.map(k => clamp255(k + (weave - 0.5) * 14 - Math.max(0, stain - 0.6) * 40));
+      return [c[0], c[1], c[2], 255];
     }
   }
 };
