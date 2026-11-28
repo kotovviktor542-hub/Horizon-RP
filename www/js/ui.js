@@ -1106,11 +1106,16 @@ export class UIManager {
     if (cv) {
       const prev = this.renderer.minimapCanvas;
       const prevCtx = this.renderer.mmCtx;
-      this.renderer.minimapCanvas = cv;
-      this.renderer.mmCtx = cv.getContext('2d');
-      this.renderer.renderMinimap(eng);
-      this.renderer.minimapCanvas = prev;
-      this.renderer.mmCtx = prevCtx;
+      const mapCtx = cv.getContext('2d');
+      // Нет 2D-контекста (лимит канвасов на телефоне) — карта останется пустой,
+      // но меню продолжит работать.
+      if (mapCtx) {
+        this.renderer.minimapCanvas = cv;
+        this.renderer.mmCtx = mapCtx;
+        this.renderer.renderMinimap(eng);
+        this.renderer.minimapCanvas = prev;
+        this.renderer.mmCtx = prevCtx;
+      }
     }
 
     body.querySelectorAll('[data-travel]').forEach(b => b.addEventListener('click', () => {

@@ -300,6 +300,8 @@ export class Renderer {
           off.width = 48;
           off.height = 48;
           const octx = off.getContext('2d');
+          // Лимит 2D-канвасов на мобильном: без контекста обходимся без паттерна
+          if (!octx) { img.onload = null; return; }
           octx.imageSmoothingEnabled = false;
           octx.drawImage(img, 0, 0, 48, 48);
           this.patterns[key] = this.ctx.createPattern(off, 'repeat');
