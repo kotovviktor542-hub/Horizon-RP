@@ -228,6 +228,12 @@ export class TerrainManager {
     // 1. Цветовая детализация: почти белая с вариацией яркости и лёгким сдвигом тона
     const cvA = mk();
     const ctxA = cvA.getContext('2d');
+    // Без 2D-контекста (лимит канвасов на мобильном) ландшафт рисуется без
+    // микрорельефа, но не падает.
+    if (!ctxA || typeof ctxA.createImageData !== 'function') {
+      this._detail = null;
+      return null;
+    }
     const imgA = ctxA.createImageData(size, size);
     const dA = imgA.data;
     for (let y = 0; y < size; y++) {
@@ -253,6 +259,10 @@ export class TerrainManager {
     // 2. Нормали: бугры, кочки, трещины
     const cvN = mk();
     const ctxN = cvN.getContext('2d');
+    if (!ctxN || typeof ctxN.createImageData !== 'function') {
+      this._detail = null;
+      return null;
+    }
     const imgN = ctxN.createImageData(size, size);
     const dN = imgN.data;
     const height = (u, v) => fbm(u * 18, v * 18, 29, 4) * 0.7 + fbm(u * 46, v * 46, 5, 2) * 0.3;
@@ -292,11 +302,13 @@ export class TerrainManager {
     if (typeof document !== 'undefined') {
       try {
         const detail = this._buildDetailTextures();
-        params.map = detail.albedo;
-        params.normalMap = detail.normal;
-        params.normalScale = new THREE.Vector2(0.7, 0.7);
-        // UV чанка: 1 тайл на 6 world-единиц → правдоподобный масштаб фактуры
-        params.map.repeat.set(1, 1);
+        if (detail && detail.albedo) {
+          params.map = detail.albedo;
+          params.normalMap = detail.normal;
+          params.normalScale = new THREE.Vector2(0.7, 0.7);
+          // UV чанка: 1 тайл на 6 world-единиц → правдоподобный масштаб фактуры
+          params.map.repeat.set(1, 1);
+        }
       } catch (err) {
         console.warn('[VEXMORA 3D] детальные текстуры рельефа недоступны:', err?.message);
       }

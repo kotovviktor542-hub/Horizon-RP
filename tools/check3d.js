@@ -415,6 +415,62 @@ const triOf = (o) => {
 
 }
 
+// 8.6. Устойчивость к отсутствию 2D-контекста (лимит канвасов на мобильных)
+// В браузере при исчерпании лимита canvas.getContext('2d') возвращает null;
+// до этой проверки такой случай ронял модель героя, текстуры рельефа,
+// подписи руин и мини-карту — то есть весь 3D-режим.
+{
+  const realCreate = document.createElement;
+  let calls = 0;
+  document.createElement = (tag) => {
+    const el = realCreate(tag);
+    if (tag === 'canvas') {
+      const orig = el.getContext;
+      el.getContext = function (kind, ...rest) {
+        calls++;
+        // Раз в три запроса «контекст кончился»
+        return calls % 3 === 0 ? null : orig.call(this, kind, ...rest);
+      };
+    }
+    return el;
+  };
+  let crashed = null;
+  let hero2 = null, terr2 = null, fx2 = null, wb2 = null, label2 = 'n/a';
+  // Отдельная сцена: иначе лишние объекты попадут в бюджеты теней и света
+  // из следующих блоков проверок.
+  const scene2 = new THREE.Scene();
+  try {
+    hero2 = new Hero3D(scene2);
+    terr2 = new TerrainManager(scene2, world.map, 'high');
+    terr2.update(start, 0.016, 'high');
+    fx2 = new Effects3D(scene2);
+    fx2.damageNumber(new THREE.Vector3(0, 0, 0), 42, 'normal');
+    for (let i = 0; i < 10; i++) fx2.update(0.016, camera, { x: 0, y: 0, z: 0 });
+    wb2 = new WorldBuilder(scene2, world, world.map, terr2, 'high');
+    wb2.update(start, 1);
+    label2 = 'ок';
+  } catch (err) {
+    crashed = err;
+  }
+  document.createElement = realCreate;
+  ok('Без 2D-контекста: герой, рельеф, эффекты и подписи не падают',
+    !crashed, crashed ? crashed.message : `запросов контекста: ${calls}, мир: ${label2}`);
+  if (hero2) {
+    let heroMeshes = 0;
+    hero2.root.traverse(o => { if (o.isMesh) heroMeshes++; });
+    ok('Без 2D-контекста: модель героя собрана', heroMeshes > 20, `мешей: ${heroMeshes}`);
+    hero2.dispose?.();
+  }
+  if (terr2) {
+    ok('Без 2D-контекста: рельеф построен без текстур детализации',
+      terr2.chunks.size >= 20 && !!(terr2._mat || terr2._terrainMaterial()),
+      `чанков: ${terr2.chunks.size}`);
+    terr2.dispose?.();
+  }
+  if (fx2) fx2.dispose?.();
+  if (wb2) wb2.dispose?.();
+}
+
 // 9. Производительность
 // Замер: лучшее из трёх серий — на загруженных раннерах CI одиночный
 // замер легко ловит паузу планировщика и даёт ложное падение.

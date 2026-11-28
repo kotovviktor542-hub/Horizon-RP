@@ -611,6 +611,10 @@ export class Hero3D {
     const cv = document.createElement('canvas');
     cv.width = cv.height = size;
     const ctx = cv.getContext('2d');
+    // На мобильных браузер есть лимит 2D-канвасов: при его исчерпании
+    // getContext('2d') возвращает null. Без этой проверки падала вся модель
+    // героя, а с ней и весь 3D-режим. Тень необязательна.
+    if (!ctx || typeof ctx.createRadialGradient !== 'function') return null;
     const grad = ctx.createRadialGradient(size / 2, size / 2, 2, size / 2, size / 2, size / 2);
     grad.addColorStop(0, 'rgba(0,0,0,0.85)');
     grad.addColorStop(0.55, 'rgba(0,0,0,0.35)');

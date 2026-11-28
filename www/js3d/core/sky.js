@@ -329,7 +329,9 @@ export class SkySystem {
     // 0.01 (≈15 минут игрового времени). Ночью — реже, днём чаще.
     this.envSkyMat.uniforms.topColor.value.copy(top);
     this.envSkyMat.uniforms.bottomColor.value.copy(bottom);
-    if (Math.abs(this.time - this._envTime) > 0.01 || this._envTime < 0) {
+    // 0.02 игровых суток ≈ 5 секунд реального времени: реже пересобираем
+    // кубическую карту, чтобы не ловить микро-подвисания на мобильных.
+    if (Math.abs(this.time - this._envTime) > 0.02 || this._envTime < 0) {
       this._envTime = this.time;
       this._envDirty = true;
     }

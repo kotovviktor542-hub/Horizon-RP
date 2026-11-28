@@ -729,9 +729,12 @@ export class Game3D {
     const weather = this._resolveWeather(e);
     this.sky.update(dt, this.camera.position, e.timeOfDay, weather, 1);
     // IBL: пересчёт окружения только когда время суток реально изменилось.
+    // На «Низком» и «Среднем» пресетах отражения не включаем: там важнее
+    // стабильный кадр, а полусферический свет даёт достаточный объём.
     if (this.sky._envDirty) {
       this.sky._envDirty = false;
-      this.sky.updateEnvironment(this.renderer, this.scene);
+      const ibllOn = this.quality3d === 'high' || this.quality3d === 'ultra';
+      if (ibllOn) this.sky.updateEnvironment(this.renderer, this.scene);
     }
     this.effects.weather.setWeather(weather, 1);
 
@@ -790,6 +793,8 @@ export class Game3D {
     const mm = document.getElementById('minimap3d');
     if (!mm) return;
     const ctx = mm.getContext('2d');
+    // Без 2D-контекста мини-карту просто не обновляем.
+    if (!ctx) return;
     const w = mm.width, h = mm.height;
     ctx.clearRect(0, 0, w, h);
     // Мини-карту рисует существующий 2D-рендерер во временный canvas
@@ -800,6 +805,7 @@ export class Game3D {
           this._offCanvas.width = 108;
           this._offCanvas.height = 108;
           this._offCtx = this._offCanvas.getContext('2d');
+          if (!this._offCtx) return;              // нет контекста — без мини-карты
         }
         const prevCanvas = this.renderer2d.minimapCanvas;
         const prevCtx = this.renderer2d.mmCtx;

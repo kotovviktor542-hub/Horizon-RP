@@ -129,6 +129,9 @@ class DamageNumbers {
     const cv = document.createElement('canvas');
     cv.width = 256; cv.height = 128;
     const ctx = cv.getContext('2d');
+    // Нет 2D-контекста (лимит канвасов/headless) — числа урона не рисуем,
+    // но игра продолжает работать.
+    if (!ctx || typeof ctx.fillText !== 'function') return null;
     ctx.clearRect(0, 0, 256, 128);
     ctx.font = 'bold 84px system-ui, -apple-system, sans-serif';
     ctx.textAlign = 'center';

@@ -688,11 +688,15 @@ export class WorldBuilder {
         const data = item.data.type === 'cave_ref' ? item.data : item.data;
         const model = buildLandmarkModel({ ...data, kind: data.kind || (item.data.type === 'hidden_cache' ? 'cache' : 'ruin') });
         if (item.data.name && item.data.type === 'ruin') {
-          // Руины подписываем: игрок должен видеть, что это точка интереса
+          // Руины подписываем: игрок должен видеть, что это точка интереса.
+          // Спрайт может не создаться (нет 2D-канваса / лимит канвасов на
+          // мобильном) — тогда просто пропускаем подпись, а не падаем.
           const label = this._makeLabelSprite(item.data.name.slice(0, 22), 0x1b2430);
-          label.position.set(item.x, this.terrain.heightAt3D(item.x, item.z) + 5.2, item.z);
-          label.scale.multiplyScalar(0.9);
-          model.add(label);
+          if (label) {
+            label.position.set(item.x, this.terrain.heightAt3D(item.x, item.z) + 5.2, item.z);
+            label.scale.multiplyScalar(0.9);
+            model.add(label);
+          }
         }
         model.position.set(item.x, this.terrain.heightAt3D(item.x, item.z), item.z);
         model.rotation.y = item.data.angle || 0;
